@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+.env
+data/raw/
+data/processed/
+outputs/
+models/
+*.mp4
+*.wav
+*.h5
+*.log
+

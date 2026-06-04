@@ -1,0 +1,13 @@
+[project]
+name = "rehab-affect-perception"
+version = "0.1.0"
+description = "Human affect and rehabilitation state perception module for companion robots."
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+

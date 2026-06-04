@@ -1,0 +1,45 @@
+{
+  "states": [
+    {
+      "name": "engaged",
+      "description": "User is actively following the rehabilitation interaction.",
+      "suggested_robot_action": "continue_and_encourage"
+    },
+    {
+      "name": "neutral",
+      "description": "No obvious positive or negative state signal.",
+      "suggested_robot_action": "continue_current_plan"
+    },
+    {
+      "name": "confused",
+      "description": "User may not understand the instruction or task goal.",
+      "suggested_robot_action": "repeat_instruction_slowly"
+    },
+    {
+      "name": "fatigued",
+      "description": "User shows fatigue or decreasing interaction energy.",
+      "suggested_robot_action": "slow_down_and_offer_break"
+    },
+    {
+      "name": "frustrated",
+      "description": "User shows frustration, resistance, or negative engagement.",
+      "suggested_robot_action": "pause_and_reduce_pressure"
+    },
+    {
+      "name": "discomfort",
+      "description": "User may feel pain or physical discomfort.",
+      "suggested_robot_action": "stop_and_alert_caregiver"
+    },
+    {
+      "name": "low_attention",
+      "description": "User attention is low or drifting away from the task.",
+      "suggested_robot_action": "regain_attention_or_simplify_task"
+    },
+    {
+      "name": "need_help",
+      "description": "User appears to need external assistance.",
+      "suggested_robot_action": "offer_help_or_call_caregiver"
+    }
+  ]
+}
+
