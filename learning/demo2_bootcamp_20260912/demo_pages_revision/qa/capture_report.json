@@ -1,0 +1,30 @@
+{
+  "actual_frontend": "src/rehab_affect/demo2_portal.py::render_demo2_upload_html",
+  "data": "fictional browser fixture",
+  "live_service_used": false,
+  "db_access": false,
+  "upload_submitted": false,
+  "requests": [
+    {
+      "path": "/demo2/upload",
+      "method": "GET"
+    },
+    {
+      "path": "/api/v1/demo2/school/context",
+      "method": "GET"
+    },
+    {
+      "path": "/api/v1/demo2/auth/me",
+      "method": "GET"
+    },
+    {
+      "path": "/api/v1/demo2/upload/workspace",
+      "method": "GET"
+    }
+  ],
+  "pageErrors": [],
+  "screenshots": [
+    "upload_page.png",
+    "task_states.png"
+  ]
+}

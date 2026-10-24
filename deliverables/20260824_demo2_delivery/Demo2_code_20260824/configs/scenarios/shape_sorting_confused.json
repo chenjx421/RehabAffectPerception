@@ -1,0 +1,85 @@
+{
+  "scenario_id": "shape_sorting_confused",
+  "task": "shape_sorting",
+  "description": "Student starts engaged, then becomes confused during a shape sorting task.",
+  "steps": [
+    {
+      "step": 0,
+      "ground_truth_state": "engaged",
+      "observable_cues": {
+        "speech_text": "好的，我试试",
+        "voice_amplitude": 0.06,
+        "face_state_hint": "engaged",
+        "attention_score": 0.86,
+        "movement_speed": 0.34,
+        "instruction_repeated": 0,
+        "response_delay_sec": 0.8,
+        "recent_failure_count": 0,
+        "task_success": true,
+        "task_stage": "instruction"
+      },
+      "robot_context": {
+        "task_id": "shape_sorting",
+        "task_stage": "instruction",
+        "robot_distance_m": 1.35,
+        "obstacle_distance_m": 1.4,
+        "is_robot_moving": false,
+        "task_difficulty": "normal",
+        "visible_objects": ["student", "desk", "teaching_aid"]
+      },
+      "expected_action_id": "continue_and_encourage"
+    },
+    {
+      "step": 1,
+      "ground_truth_state": "confused",
+      "observable_cues": {
+        "speech_text": "我不会，这个怎么做？",
+        "voice_amplitude": 0.05,
+        "face_state_hint": "confused",
+        "attention_score": 0.58,
+        "movement_speed": 0.08,
+        "instruction_repeated": 2,
+        "response_delay_sec": 4.2,
+        "recent_failure_count": 1,
+        "task_success": false,
+        "task_stage": "task_attempt"
+      },
+      "robot_context": {
+        "task_id": "shape_sorting",
+        "task_stage": "task_attempt",
+        "robot_distance_m": 1.25,
+        "obstacle_distance_m": 1.2,
+        "is_robot_moving": false,
+        "task_difficulty": "normal",
+        "visible_objects": ["student", "desk", "teaching_aid", "teacher"]
+      },
+      "expected_action_id": "repeat_instruction_slowly"
+    },
+    {
+      "step": 2,
+      "ground_truth_state": "confused",
+      "observable_cues": {
+        "speech_text": "老师说的是哪一个？",
+        "voice_amplitude": 0.05,
+        "face_state_hint": "confused",
+        "attention_score": 0.54,
+        "movement_speed": 0.06,
+        "instruction_repeated": 2,
+        "response_delay_sec": 4.5,
+        "recent_failure_count": 2,
+        "task_success": false,
+        "task_stage": "task_attempt"
+      },
+      "robot_context": {
+        "task_id": "shape_sorting",
+        "task_stage": "task_attempt",
+        "robot_distance_m": 1.2,
+        "obstacle_distance_m": 1.2,
+        "is_robot_moving": false,
+        "task_difficulty": "normal",
+        "visible_objects": ["student", "desk", "teaching_aid", "teacher"]
+      },
+      "expected_action_id": "repeat_instruction_slowly"
+    }
+  ]
+}

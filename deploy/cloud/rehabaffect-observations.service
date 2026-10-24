@@ -1,0 +1,29 @@
+[Unit]
+Description=RehabAffect sampled classroom observations
+After=network-online.target rehabaffect-app.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rehabaffect
+Group=rehabaffect
+WorkingDirectory=/opt/rehabaffect
+EnvironmentFile=/etc/rehabaffect/cloud.env
+EnvironmentFile=/etc/rehabaffect/observations.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/rehabaffect/.venv/bin/python /opt/rehabaffect/scripts/cloud_observation_worker.py
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=130
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/rehabaffect
+MemoryMax=768M
+CPUQuota=100%
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

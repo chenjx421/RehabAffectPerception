@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f3f8fe" />
+  <meta name="description" content="RehabAffect 辅读学校课堂分析内测平台" />
+  <title>登录 · 课堂学习分析平台</title>
+  <style>
+:root {
+  --canvas:#f3f8fe;
+  --paper:#ffffff;
+  --ink:#172b4d;
+  --muted:#5b6b80;
+  --line:#cfdcea;
+  --line-strong:#aac4df;
+  --blue:#1f63c6;
+  --blue-deep:#123b70;
+  --blue-soft:#e9f3ff;
+  --blue-pale:#f7fbff;
+  --success:#167451;
+  --success-soft:#eaf7f2;
+  --warning:#9a5a08;
+  --warning-soft:#fff7e8;
+  --danger:#b42318;
+  --danger-soft:#fff1f0;
+  --shadow:0 14px 34px rgba(29,75,122,.07);
+}
+* { box-sizing:border-box; }
+html { min-width:320px; background:var(--canvas); color-scheme:light; }
+body {
+  margin:0;
+  min-width:320px;
+  min-height:100vh;
+  overflow-x:hidden;
+  background:var(--canvas);
+  color:var(--ink);
+  font-family:"Microsoft YaHei UI","PingFang SC","Segoe UI",sans-serif;
+  font-size:16px;
+  line-height:1.55;
+}
+button,input,select { font:inherit; }
+button,a,input,select { -webkit-tap-highlight-color:transparent; }
+button { cursor:pointer; }
+a { color:inherit; }
+svg { display:block; width:20px; height:20px; flex:none; }
+.skip-link {
+  position:fixed; top:8px; left:8px; z-index:100;
+  padding:10px 14px; background:var(--blue-deep); color:#fff;
+  border-radius:6px; transform:translateY(-150%);
+}
+.skip-link:focus { transform:none; }
+:focus-visible { outline:3px solid rgba(31,99,198,.28); outline-offset:3px; }
+.site-header {
+  position:sticky; top:0; z-index:20; border-bottom:1px solid var(--line);
+  background:rgba(255,255,255,.96);
+}
+.header-inner {
+  width:min(1180px,calc(100% - 40px)); min-height:72px; margin:auto;
+  display:flex; align-items:center; gap:18px;
+}
+.brand { display:flex; align-items:center; gap:12px; min-width:0; text-decoration:none; }
+.brand-icon { width:42px; height:42px; padding:9px; color:#fff; background:var(--blue); border-radius:8px; }
+.brand-copy { min-width:0; }
+.brand-copy strong { display:block; font-size:18px; line-height:1.2; letter-spacing:0; }
+.brand-copy span { display:block; color:var(--muted); font-size:12px; }
+.header-actions { margin-left:auto; display:flex; align-items:center; justify-content:flex-end; gap:10px; min-width:0; }
+.account-chip { min-width:0; padding:7px 11px; border-left:2px solid var(--blue); background:var(--blue-pale); }
+.account-chip span,.account-chip strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.account-chip span { color:var(--muted); font-size:11px; }
+.account-chip strong { font-size:13px; }
+.page-shell { width:min(1180px,calc(100% - 40px)); margin:0 auto; padding:36px 0 64px; }
+.page-heading { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; margin-bottom:24px; }
+.eyebrow { display:block; margin-bottom:8px; color:var(--blue); font-size:12px; font-weight:800; letter-spacing:0; }
+h1,h2,h3,p { overflow-wrap:anywhere; }
+h1 { margin:0; font-size:32px; line-height:1.3; letter-spacing:0; }
+h2 { margin:0; font-size:22px; line-height:1.25; letter-spacing:0; }
+h3 { margin:0; font-size:17px; line-height:1.35; }
+p { margin:0; }
+.lead { max-width:690px; margin-top:10px; color:var(--muted); }
+.card { min-width:0; border:1px solid var(--line); border-radius:8px; background:var(--paper); box-shadow:var(--shadow); }
+.card-head { padding:20px 22px; border-bottom:1px solid var(--line); }
+.card-head p { margin-top:4px; color:var(--muted); font-size:14px; }
+.card-body { padding:22px; }
+.button {
+  min-height:44px; display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  border:1px solid var(--line-strong); border-radius:6px; padding:9px 15px;
+  background:#fff; color:var(--blue-deep); font-weight:700; text-decoration:none;
+  transition:background-color .18s ease,border-color .18s ease,color .18s ease;
+}
+.button:hover { border-color:var(--blue); background:var(--blue-pale); }
+.button.primary { border-color:var(--blue); background:var(--blue); color:#fff; }
+.button.primary:hover { background:var(--blue-deep); }
+.button.quiet { border-color:transparent; background:transparent; }
+.button:disabled { cursor:not-allowed; opacity:.58; }
+.button svg { width:18px; height:18px; }
+.field { min-width:0; }
+.field label,.field-label { display:block; margin-bottom:7px; color:var(--blue-deep); font-size:13px; font-weight:700; }
+.field small { display:block; margin-top:6px; color:var(--muted); font-size:12px; }
+input,select {
+  width:100%; min-width:0; min-height:44px; border:1px solid var(--line-strong);
+  border-radius:6px; padding:9px 12px; background:#fff; color:var(--ink);
+}
+input::placeholder { color:#8b99aa; }
+input:hover,select:hover { border-color:#7fa7cf; }
+input:focus,select:focus { border-color:var(--blue); outline:3px solid rgba(31,99,198,.14); }
+.form-error,.page-message {
+  display:none; margin-top:14px; border-left:3px solid var(--danger);
+  padding:10px 12px; background:var(--danger-soft); color:#8b1d16; font-size:14px;
+}
+.form-error.visible,.page-message.visible { display:block; }
+.form-error.info { border-left-color:var(--blue); background:var(--blue-soft); color:var(--blue-deep); }
+.page-message.info { border-left-color:var(--blue); background:var(--blue-soft); color:var(--blue-deep); }
+.page-message.success { border-left-color:var(--success); background:var(--success-soft); color:#0d5c3f; }
+.security-note { border-left:3px solid var(--blue); padding:14px 16px; background:var(--blue-pale); color:#3f5570; }
+.security-note strong { display:block; margin-bottom:3px; color:var(--blue-deep); }
+.security-note p { font-size:13px; }
+.status-dot { display:inline-block; width:8px; height:8px; margin-right:7px; border-radius:4px; background:var(--success); }
+.status-badge { display:inline-flex; align-items:center; min-height:28px; padding:4px 9px; border:1px solid var(--line); border-radius:4px; background:var(--blue-pale); color:var(--blue-deep); font-size:12px; font-weight:700; }
+.status-badge.success { border-color:#acd9c8; background:var(--success-soft); color:#0d6042; }
+.status-badge.warning { border-color:#ead0a8; background:var(--warning-soft); color:#7b4708; }
+.status-badge.danger { border-color:#efc1bd; background:var(--danger-soft); color:#8e2018; }
+.empty-state { border:1px dashed var(--line-strong); padding:24px; background:var(--blue-pale); color:var(--muted); text-align:center; }
+.loading-line { color:var(--muted); font-size:14px; }
+.table-wrap { max-width:100%; overflow-x:auto; border:1px solid var(--line); border-radius:6px; }
+table { width:100%; min-width:680px; border-collapse:collapse; background:#fff; }
+th,td { padding:12px 14px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; font-size:13px; }
+th { background:var(--blue-pale); color:var(--muted); font-size:12px; font-weight:800; }
+tr:last-child td { border-bottom:0; }
+.mono { font-family:"Cascadia Code",Consolas,monospace; font-size:.92em; }
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+@media (max-width:780px) {
+  .header-inner,.page-shell { width:min(100% - 28px,1180px); }
+  .header-inner { min-height:64px; }
+  .brand-copy span,.account-chip span { display:none; }
+  .page-shell { padding-top:24px; }
+  .page-heading { align-items:flex-start; flex-direction:column; gap:14px; }
+  .header-actions .button span { display:none; }
+  .header-actions .button { width:44px; padding:8px; }
+}
+@media (max-width:720px) {
+  .header-inner { display:grid; grid-template-columns:minmax(0,1fr); gap:0; padding:10px 0 12px; }
+  .brand { width:100%; }
+  .brand-copy span { display:block; }
+  .header-actions {
+    width:100%; min-width:0; margin:9px 0 0; padding-top:9px;
+    justify-content:flex-start; align-items:stretch; flex-wrap:wrap;
+    border-top:1px solid var(--line);
+  }
+  .account-chip { flex:1 1 104px; max-width:none; min-width:0; padding:7px 9px; }
+  .account-chip span { display:block; }
+  .account-chip strong {
+    overflow:visible; text-overflow:clip; white-space:normal;
+    overflow-wrap:anywhere; word-break:break-word;
+  }
+  .header-actions .button { flex:0 0 44px; min-width:44px; align-self:center; }
+  .header-actions .button:last-child { margin-left:auto; }
+}
+@media (max-width:480px) {
+  .header-inner,.page-shell { width:min(100% - 20px,1180px); }
+  .brand-icon { width:38px; height:38px; }
+  .brand-copy strong { font-size:16px; }
+  .account-chip { max-width:none; padding-inline:8px; }
+  .card-head,.card-body { padding:18px; }
+  h1 { font-size:28px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  *,*::before,*::after { scroll-behavior:auto !important; transition-duration:.01ms !important; }
+}
+
+:root { --canvas:#f6f9fd; --ink:#263746; --muted:#627386; --line:#dce5ee; --blue-deep:#244f83; --shadow:none; }
+body { background:#fff; font-family:"Microsoft YaHei UI","PingFang SC","Segoe UI",sans-serif; font-size:15px; letter-spacing:0; }
+.entry-shell { min-height:100svh; display:flex; flex-direction:column; border-top:4px solid var(--blue); }
+.entry-header { min-height:88px; width:min(1200px,calc(100% - 64px)); margin:0 auto; display:flex; align-items:center; justify-content:space-between; gap:20px; }
+.entry-header .brand { width:auto; }
+.entry-header .brand-copy strong { font-size:19px; font-weight:600; }
+.entry-header .brand-copy span { font-size:11px; margin-top:3px; }
+.entry-header .brand-icon { background:#edf4fe; color:var(--blue); width:44px; height:44px; }
+.entry-header nav { display:flex; flex-shrink:0; align-items:center; gap:20px; font-size:13px; color:var(--muted); white-space:nowrap; }
+.entry-header nav a { text-underline-offset:5px; text-decoration:none; }
+.entry-header nav a:hover { color:var(--blue); text-decoration:underline; }
+.pilot-label { padding-left:13px; border-left:1px solid var(--line); font-size:12px; color:var(--muted); }
+.entry-main { flex:1; display:grid; place-items:center; padding:44px 24px 60px; background:#f6f9fd; border-block:1px solid #e7edf5; }
+.entry-form-area { width:min(432px,100%); }
+.entry-kicker { color:var(--blue); font-size:12px; font-weight:600; margin-bottom:10px; }
+.entry-form-area h1 { font-size:30px; line-height:1.4; font-weight:600; color:#263b53; letter-spacing:0; }
+.entry-subtitle { margin-top:10px; color:var(--muted); font-size:14px; line-height:1.8; }
+.role-switch { display:grid; grid-template-columns:1fr 1fr; margin:30px 0 28px; border-bottom:1px solid #cad8e8; }
+.role-switch button { min-height:47px; background:transparent; border:0; border-bottom:3px solid transparent; margin-bottom:-1px; color:var(--muted); font-weight:500; }
+.role-switch button[aria-checked="true"] { color:var(--blue); border-bottom-color:var(--blue); font-weight:700; }
+.entry-form { display:grid; gap:20px; }
+.entry-form .field label { color:#364b62; font-weight:500; font-size:14px; }
+.entry-form input,.entry-form select { min-height:50px; border-color:#ccd8e5; padding:12px 14px; border-radius:6px; }
+.entry-form .button.primary { min-height:50px; width:100%; font-weight:600; box-shadow:0 4px 10px #2265bd14; }
+.entry-form .form-error { margin:0; }
+.password-field { position:relative; }
+.password-field input { padding-right:56px; }
+.reveal-password { position:absolute; right:4px; top:3px; width:44px; height:44px; display:grid; place-items:center; background:transparent; border:0; color:#667b92; }
+.reveal-password:hover { color:var(--blue); }
+.entry-links { display:flex; justify-content:center; gap:8px; margin-top:24px; font-size:13px; color:var(--muted); }
+.entry-links a { color:var(--blue); font-weight:600; text-underline-offset:4px; }
+.entry-terms { font-size:12px; color:var(--muted); line-height:1.9; margin-top:24px; }
+.entry-terms a { text-underline-offset:3px; color:#486588; }
+.entry-footer { width:min(1200px,calc(100% - 64px)); margin:0 auto; min-height:68px; display:flex; align-items:center; justify-content:space-between; gap:12px; color:#7b8898; font-size:12px; }
+.entry-footer a { text-decoration:none; text-underline-offset:3px; }
+.entry-footer a:hover { text-decoration:underline; }
+.school-area { width:min(640px,100%); }
+.school-area .entry-form { margin-top:30px; }
+.form-pair { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+.school-summary { border-left:3px solid var(--blue); padding:12px 16px; background:#eaf2fc; margin-top:26px; }
+.school-summary strong { display:block; font-size:15px; font-weight:600; }
+.school-summary span { font-size:12px; color:var(--muted); }
+.school-steps { display:flex; align-items:center; gap:14px; margin-bottom:30px; font-size:12px; color:var(--muted); }
+.school-steps b { color:var(--blue); font-weight:600; }
+.school-steps i { width:28px; height:1px; background:#c5d5e9; }
+.registration-success { padding:24px 0; border-top:2px solid #327a69; }
+.registration-success h2 { font-size:23px; margin:16px 0 10px; }
+.registration-success p { margin-bottom:18px; color:var(--muted); line-height:1.9; }
+.request-reference { font-family:Consolas,monospace; font-size:13px; word-break:break-all; color:#3e596f; }
+.policy-article { width:min(760px,100%); }
+.policy-article h1 { font-size:30px; }
+.policy-article h2 { margin-top:30px; margin-bottom:10px; font-size:18px; }
+.policy-article p { margin-top:8px; color:#4c6073; line-height:1.95; }
+.policy-article .policy-date { font-size:12px; color:var(--muted); margin-top:12px; }
+@media(max-width:600px) {
+  .entry-header { width:calc(100% - 32px); min-height:76px; gap:10px; }
+  .entry-header .brand-copy strong { font-size:16px; }
+  .entry-header .brand-copy span { font-size:10px; }
+  .entry-header nav { gap:12px; font-size:12px; }
+  .pilot-label { display:none; }
+  .entry-main { padding:32px 24px 42px; }
+  .entry-form-area h1,.policy-article h1 { font-size:26px; }
+  .entry-footer { width:calc(100% - 40px); align-items:flex-start; padding:20px 0; font-size:11px; flex-wrap:wrap; }
+  .form-pair { grid-template-columns:1fr; }
+  .role-switch { margin-top:24px; }
+}
+</style>
+</head>
+<body>
+  <a class="skip-link" href="#mainContent">跳到主要内容</a>
+  <div class="entry-shell">
+<header class="entry-header"><a class="brand" href="login.html"><svg class="brand-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5.5A2.5 2.5 0 0 1 5.5 3H10a2 2 0 0 1 2 2v16a3 3 0 0 0-3-3H3Z"/><path d="M21 5.5A2.5 2.5 0 0 0 18.5 3H14a2 2 0 0 0-2 2v16a3 3 0 0 1 3-3h6Z"/><path d="m16 9 1.4 1.4L20 7.8"/></svg><span class="brand-copy"><strong>课堂学习分析平台</strong><span>RehabAffect · 云图智航</span></span></a><nav aria-label="入口导航"><a href="register.html">会员注册</a><span class="pilot-label">界面预览</span></nav></header>
+<main class="entry-main" id="mainContent"><section class="entry-form-area" aria-labelledby="loginTitle">
+<p class="entry-kicker">欢迎使用 RehabAffect</p><h1 id="loginTitle">登录课堂工作台</h1><p class="entry-subtitle" id="roleDescription">从一节课开始，记录每个孩子的学习。</p>
+<div class="role-switch" role="radiogroup" aria-label="登录身份"><button type="button" role="radio" aria-checked="true" data-role="school_uploader" id="userRole">用户登录</button><button type="button" role="radio" aria-checked="false" data-role="company_admin" id="adminRole" tabindex="-1">管理员登录</button></div>
+<form id="loginForm" class="entry-form">
+<div class="field"><label for="username">账号</label><input id="username" name="username" autocomplete="username" maxlength="80" required placeholder="输入账号，例如 t1" /></div>
+<div class="field"><label for="password">密码</label><div class="password-field"><input id="password" name="password" type="password" autocomplete="current-password" maxlength="256" required placeholder="输入登录密码" /><button type="button" class="reveal-password" id="showPassword" aria-label="显示密码" title="显示密码" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>
+<div class="form-error" id="formError" role="alert" aria-live="polite"></div>
+<button class="button primary" id="loginButton" type="submit">登录</button></form>
+<p class="entry-links"><span>还没有账号？</span><a href="register.html">申请开通</a></p>
+<p class="entry-terms">登录即表示已阅读<a href="privacy.html">数据安全与隐私说明</a>。课堂资料的上传授权将在上传时单独确认。</p>
+</section></main>
+<footer class="entry-footer"><span>云图智航 · 课堂学习与个体成长</span><a href="privacy.html">数据安全与隐私说明</a></footer></div>
+  
+<script>
+const form=document.querySelector('form');
+if(form)form.addEventListener('submit',event=>{event.preventDefault();const error=document.getElementById('formError');error.textContent='此文件仅供页面预览，未连接后台，也不会提交信息。实际登录请使用部署后的平台地址。';error.className='form-error visible info';});
+document.querySelectorAll('[data-role]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-role]').forEach(item=>{item.setAttribute('aria-checked',String(item===button));item.tabIndex=item===button?0:-1;});document.getElementById('roleDescription').textContent=button.dataset.role==='company_admin'?'查看账号、上传任务和后台数据。':'从一节课开始，记录每个孩子的学习。';}));
+const reveal=document.getElementById('showPassword');
+if(reveal)reveal.addEventListener('click',()=>{const input=document.getElementById('password');const visible=input.type==='password';input.type=visible?'text':'password';reveal.setAttribute('aria-pressed',String(visible));reveal.setAttribute('aria-label',visible?'隐藏密码':'显示密码');});
+</script></body>
+</html>

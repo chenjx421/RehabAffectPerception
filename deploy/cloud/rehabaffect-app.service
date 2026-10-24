@@ -1,0 +1,32 @@
+[Unit]
+Description=RehabAffect single-process school pilot (migration approval required)
+After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=rehabaffect
+Group=rehabaffect
+WorkingDirectory=/opt/rehabaffect
+EnvironmentFile=/etc/rehabaffect/cloud.env
+UMask=0077
+# Read-only DB preflight: no application import and no SQLite auto-creation.
+ExecStartPre=/opt/rehabaffect/.venv/bin/python /opt/rehabaffect/scripts/cloud_runtime_preflight.py app
+ExecStart=/opt/rehabaffect/.venv/bin/python -m src.rehab_affect.scenario_lab_server --host 127.0.0.1 --port 8793 --policy rule
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGINT
+KillMode=mixed
+TimeoutStopSec=45
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/rehabaffect
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

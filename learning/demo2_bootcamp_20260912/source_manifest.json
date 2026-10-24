@@ -1,0 +1,2556 @@
+{
+  "date": "2026-09-12",
+  "files": [
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\demo2_face_detection.py",
+      "sha256": "dab2512c1fc561dbf21cd446ae8c3d52cccc1f61393bb8b6d6f470fc5bb16b2a",
+      "symbols": [
+        {
+          "name": "_failure",
+          "line": 50,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_success",
+          "line": 55,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_validate_image_path",
+          "line": 61,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_validate_model",
+          "line": 76,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_collect_candidates",
+          "line": 94,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_format_candidates",
+          "line": 161,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_normalize_faces",
+          "line": 167,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_view_regions",
+          "line": 178,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_merge_candidates",
+          "line": 192,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_detect_in_process",
+          "line": 225,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_run_worker",
+          "line": 286,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "detect_faces",
+          "line": 328,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_worker_main",
+          "line": 354,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\demo2_roi_tracking.py",
+      "sha256": "a61f0b3f866bb038c319cc7041abe471e27326fa8982349e90f261d945768ad9",
+      "symbols": [
+        {
+          "name": "TrackingError",
+          "line": 59,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_Failure",
+          "line": 68,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_result",
+          "line": 74,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_failure",
+          "line": 79,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_number",
+          "line": 83,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_bbox",
+          "line": 95,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_local_path",
+          "line": 105,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_stamp",
+          "line": 132,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_file_stamp",
+          "line": 140,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_inputs",
+          "line": 144,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_read_sample",
+          "line": 172,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_image_header",
+          "line": 191,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_point",
+          "line": 227,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_insufficient",
+          "line": 232,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_patch",
+          "line": 236,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_appearance",
+          "line": 241,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_ambiguous",
+          "line": 252,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_follow",
+          "line": 274,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_track_in_process",
+          "line": 361,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_worker_command",
+          "line": 398,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_run_worker",
+          "line": 402,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_checked_result",
+          "line": 480,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "track_frames",
+          "line": 527,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_worker_main",
+          "line": 576,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "__init__",
+          "line": 62,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "__init__",
+          "line": 69,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "read_stdout",
+          "line": 420,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "write_stdin",
+          "line": 435,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\demo2_media_analysis.py",
+      "sha256": "571948fca2c272fe1a26b5e3136cc5669569ae653b77b2b06f31fa7ee4da9a36",
+      "symbols": [
+        {
+          "name": "MediaAnalysisError",
+          "line": 55,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "MediaAnalysisCancelled",
+          "line": 61,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_check_stop",
+          "line": 66,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_resolve_tool",
+          "line": 71,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_no_links",
+          "line": 106,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_local_path",
+          "line": 116,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_input_options",
+          "line": 132,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_record_diagnostics",
+          "line": 140,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_pipe_chunks",
+          "line": 192,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_number",
+          "line": 291,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_probe_media",
+          "line": 299,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "process_video_task",
+          "line": 351,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_audio_evidence",
+          "line": 582,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "__init__",
+          "line": 56,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "__init__",
+          "line": 62,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "send",
+          "line": 207,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "read_stdout",
+          "line": 215,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "drain_stderr",
+          "line": 228,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "check",
+          "line": 244,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "emit",
+          "line": 368,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "source_signature",
+          "line": 383,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "check_source",
+          "line": 388,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "reserve",
+          "line": 428,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "relative",
+          "line": 434,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\demo2_media_worker.py",
+      "sha256": "3405cc809a1d7e7f7c20acd9b3d1a33b3bf777a691d34170f179d1acc2e268f9",
+      "symbols": [
+        {
+          "name": "_public_processing_error",
+          "line": 36,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "WorkerLock",
+          "line": 45,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "VideoAnalysisWorker",
+          "line": 85,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "__init__",
+          "line": 48,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "acquire",
+          "line": 52,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "release",
+          "line": 79,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "__init__",
+          "line": 86,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_fail_task",
+          "line": 95,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "run_once",
+          "line": 107,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_loop",
+          "line": 151,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "start",
+          "line": 163,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "stop",
+          "line": 176,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\demo2_identity.py",
+      "sha256": "3055bda84661dfcf879a8235d13c47cdd06789cbee2501e31981c4eedbc011d1",
+      "symbols": [
+        {
+          "name": "_shell",
+          "line": 156,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_students",
+          "line": 198,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_identity",
+          "line": 245,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\demo2_identity_store.py",
+      "sha256": "931fdd6734956ce4cc68e552adea5bca8aa26c13773054cf19e7393dd24bbaa3",
+      "symbols": [
+        {
+          "name": "IdentityError",
+          "line": 34,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_has_controls",
+          "line": 40,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_field",
+          "line": 44,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_number",
+          "line": 53,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_bbox",
+          "line": 65,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_iou",
+          "line": 79,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "Demo2IdentityStore",
+          "line": 87,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "__init__",
+          "line": 35,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "__init__",
+          "line": 88,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_account",
+          "line": 145,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_context",
+          "line": 156,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_scope",
+          "line": 169,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_empty_school_snapshot",
+          "line": 176,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_task_has_bindings",
+          "line": 197,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_task",
+          "line": 203,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_public_student",
+          "line": 212,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_students",
+          "line": 215,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_audit",
+          "line": 221,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "roster",
+          "line": 224,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "create_student",
+          "line": 236,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_revision",
+          "line": 259,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_sample_image",
+          "line": 267,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_image_parts",
+          "line": 288,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_image_path",
+          "line": 297,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_frames",
+          "line": 312,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_parse_frames",
+          "line": 348,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_require_media",
+          "line": 396,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_frame",
+          "line": 411,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_public_binding",
+          "line": 423,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_bindings",
+          "line": 434,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_workspace",
+          "line": 440,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "workspace",
+          "line": 499,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "confirm_task_school",
+          "line": 502,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "save_binding",
+          "line": 536,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "revoke_binding",
+          "line": 597,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "frame_file",
+          "line": 622,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "preview_source",
+          "line": 631,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "export",
+          "line": 642,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "tracking_seed",
+          "line": 645,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "unique_fields",
+          "line": 179,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\demo2_dossier.py",
+      "sha256": "2804d80aab0776bf590cc1e405fa8b338ea1c447177f2a7d26983a3db2836380",
+      "symbols": [
+        {
+          "name": "_shell",
+          "line": 40,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_student",
+          "line": 87,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_task",
+          "line": 132,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_admin",
+          "line": 148,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\demo2_dossier_store.py",
+      "sha256": "64a85e1a4b8604e89c63a0f4c841692120fe27b7184b09c19bb3b6c88772d5b6",
+      "symbols": [
+        {
+          "name": "DossierError",
+          "line": 37,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_today",
+          "line": 43,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_text",
+          "line": 47,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_payload",
+          "line": 58,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_date",
+          "line": 65,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_json",
+          "line": 74,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_file_content",
+          "line": 78,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "Demo2DossierStore",
+          "line": 139,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "__init__",
+          "line": 38,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "__init__",
+          "line": 140,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_vault",
+          "line": 194,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_seal",
+          "line": 203,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_open",
+          "line": 212,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_seal_json",
+          "line": 221,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_open_json",
+          "line": 224,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_vault_status",
+          "line": 235,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_safe_path",
+          "line": 245,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_file",
+          "line": 263,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_write_file",
+          "line": 268,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_actor",
+          "line": 279,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_session",
+          "line": 300,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_audit",
+          "line": 310,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_scope",
+          "line": 314,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_student",
+          "line": 318,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_authorization",
+          "line": 327,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_document",
+          "line": 336,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_auth_active",
+          "line": 346,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_available",
+          "line": 349,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_require_available",
+          "line": 355,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_public_authorization",
+          "line": 359,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_public_document",
+          "line": 364,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_retire",
+          "line": 374,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "cleanup_expired",
+          "line": 381,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "save_authorization",
+          "line": 438,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "withdraw_authorization",
+          "line": 461,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "create_document",
+          "line": 476,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "document_download",
+          "line": 540,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "delete_document",
+          "line": 561,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_task",
+          "line": 574,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_live_bindings",
+          "line": 585,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_reference_public",
+          "line": 599,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_references",
+          "line": 625,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "student_workspace",
+          "line": 631,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "task_workspace",
+          "line": 642,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "create_reference",
+          "line": 657,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "reference_export",
+          "line": 687,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "admin_summary",
+          "line": 698,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\demo2_dossier_vault.py",
+      "sha256": "2a8c27b1ace5a05244ff8f1c9d883bda57b08daec4b2b7ada1042488a17fc078",
+      "symbols": [
+        {
+          "name": "VaultError",
+          "line": 53,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_error",
+          "line": 62,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_check_local_drive",
+          "line": 66,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_local_root",
+          "line": 82,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_is_link",
+          "line": 102,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_directory_tree",
+          "line": 108,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_read_key_file",
+          "line": 128,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_publish_key",
+          "line": 161,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_DataBlob",
+          "line": 209,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_dpapi",
+          "line": 213,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_fernet",
+          "line": 255,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "DossierVault",
+          "line": 273,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "__init__",
+          "line": 56,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "__init__",
+          "line": 282,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_cipher",
+          "line": 286,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "status",
+          "line": 321,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "seal",
+          "line": 329,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "open",
+          "line": 341,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\demo2_frame_preview.py",
+      "sha256": "b15161bd32da7c0b395b9dde263c2719bacb32f1da347f433f435a7d0c74cdcb",
+      "symbols": [
+        {
+          "name": "PreviewError",
+          "line": 34,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_remaining",
+          "line": 41,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_local_source",
+          "line": 48,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_source_signature",
+          "line": 68,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_run_tool",
+          "line": 78,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_probe_video",
+          "line": 154,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_scale_filter",
+          "line": 178,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_jpeg_dimensions",
+          "line": 188,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "extract_preview",
+          "line": 219,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "__init__",
+          "line": 35,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "read_stdout",
+          "line": 104,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\demo2_media_cache.py",
+      "sha256": "7269ee4dac38da12ed856ab81c791302cd21bf302903da627d3fb022c0bcb701",
+      "symbols": [
+        {
+          "name": "MediaResultCache",
+          "line": 12,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "__init__",
+          "line": 13,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_expire",
+          "line": 21,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "get",
+          "line": 27,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "put",
+          "line": 36,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\demo2_entry.py",
+      "sha256": "987a6728fe1113611fd0998f095408db8df85288217c6aa720e0fb63eeff806f",
+      "symbols": [
+        {
+          "name": "_shell",
+          "line": 149,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_login",
+          "line": 179,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_school",
+          "line": 216,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_register",
+          "line": 245,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_membership",
+          "line": 280,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_privacy",
+          "line": 325,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\demo2_portal.py",
+      "sha256": "83dbf7339fda2d70fa175c55161db44dc8364166c463fed30901b29b6b5760a8",
+      "symbols": [
+        {
+          "name": "_account_payload",
+          "line": 10,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_document",
+          "line": 214,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_demo2_login_html",
+          "line": 233,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_demo2_register_html",
+          "line": 239,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_demo2_privacy_html",
+          "line": 245,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_demo2_school_html",
+          "line": 251,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_demo2_video_html",
+          "line": 257,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_demo2_membership_html",
+          "line": 263,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_workspace_nav",
+          "line": 297,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_demo2_upload_html",
+          "line": 312,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_demo2_admin_html",
+          "line": 743,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\demo2_channel_admin_store.py",
+      "sha256": "097e4753872afd7c9f2bf8c4a30cd8473dcfe7ce1431d82029f341d50c5d6e29",
+      "symbols": [
+        {
+          "name": "ChannelAdminError",
+          "line": 27,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_text",
+          "line": 33,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "Demo2ChannelAdminStore",
+          "line": 43,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "__init__",
+          "line": 28,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "__init__",
+          "line": 44,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_admin",
+          "line": 47,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_recheck_admin",
+          "line": 57,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_channel",
+          "line": 78,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_version",
+          "line": 85,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_public_channel",
+          "line": 92,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "list_channels",
+          "line": 113,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "update_channel",
+          "line": 121,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\student_record_store.py",
+      "sha256": "ad693bae191cf6b951cdb66f3f299cdf25c93aa4a94c4fa7cc196f0f58fe6287",
+      "symbols": [
+        {
+          "name": "_now",
+          "line": 113,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "RegistrationRateLimitError",
+          "line": 117,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_bounded_fields",
+          "line": 121,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_valid_registration_contact",
+          "line": 134,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_iso",
+          "line": 149,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_safe_filename",
+          "line": 153,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_directory_size",
+          "line": 159,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_decode_document",
+          "line": 165,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_password_hash",
+          "line": 180,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_token_hash",
+          "line": 189,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_processing_json",
+          "line": 193,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_public_processing_data",
+          "line": 205,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_initial_password",
+          "line": 219,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_configured_course_upload_limit",
+          "line": 224,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_extract_preview",
+          "line": 235,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "Demo2StudentRecordStore",
+          "line": 252,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "get_demo2_student_store",
+          "line": 2681,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "main",
+          "line": 2690,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "__init__",
+          "line": 260,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_connect",
+          "line": 272,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_initialize",
+          "line": 283,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_seed_initial_accounts",
+          "line": 578,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "ensure_students",
+          "line": 613,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "authenticate_account",
+          "line": 632,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "set_seeded_pilot_passwords",
+          "line": 674,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_school_context_for_account",
+          "line": 727,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "account_school_context",
+          "line": 734,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "save_account_school_context",
+          "line": 743,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "check_registration_rate_limit",
+          "line": 765,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "submit_registration_application",
+          "line": 794,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "create_account_session",
+          "line": 825,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "account_from_session",
+          "line": 885,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "revoke_account_session",
+          "line": 929,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "account_upload_workspace",
+          "line": 958,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "admin_platform_summary",
+          "line": 1015,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "student_record",
+          "line": 1164,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "save_document",
+          "line": 1191,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "save_support_profile",
+          "line": 1270,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "delete_document",
+          "line": 1308,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "document_for_download",
+          "line": 1328,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "video_channels",
+          "line": 1342,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "record_security_acceptance",
+          "line": 1390,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "archive_video_result",
+          "line": 1450,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "create_video_task",
+          "line": 1543,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "append_video_chunk",
+          "line": 1726,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "cancel_video_task",
+          "line": 1813,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_controlled_video_path",
+          "line": 1868,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_video_analysis_dir",
+          "line": 1886,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_video_source_path",
+          "line": 1891,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_require_live_video",
+          "line": 1901,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_video_task_row",
+          "line": 1912,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_authorized_video_task",
+          "line": 1918,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "account_video_task",
+          "line": 1926,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_video_audio_path",
+          "line": 1931,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "account_video_media",
+          "line": 1961,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_remove_video_analysis_artifacts",
+          "line": 1983,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "claim_next_video_analysis",
+          "line": 2003,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_claimed_video_task",
+          "line": 2046,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "update_video_analysis_progress",
+          "line": 2053,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "finish_video_analysis",
+          "line": 2068,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "fail_video_analysis",
+          "line": 2109,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "recover_interrupted_video_analysis",
+          "line": 2129,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "retry_account_video_analysis",
+          "line": 2154,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "enqueue_legacy_video_analysis",
+          "line": 2157,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_enqueue_account_video_analysis",
+          "line": 2160,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "enforce_raw_media_retention",
+          "line": 2182,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "video_result_for_download",
+          "line": 2282,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "account_video_result_for_download",
+          "line": 2298,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_build_video_precheck",
+          "line": 2331,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "update_policy",
+          "line": 2407,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "storage_summary",
+          "line": 2437,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_public_account",
+          "line": 2543,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_public_document",
+          "line": 2564,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_public_policy",
+          "line": 2572,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_public_acceptance",
+          "line": 2579,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_public_resource",
+          "line": 2589,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_public_video_task",
+          "line": 2599,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_audit",
+          "line": 2661,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\scenario_lab_server.py",
+      "sha256": "b25dd22579c304558ce06847d272f44adbc370737d308f058b10caf785da50e5",
+      "symbols": [
+        {
+          "name": "Demo2APIError",
+          "line": 93,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_DossierMaintenance",
+          "line": 101,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_legacy_dossier_notice",
+          "line": 131,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_is_retired_legacy_data_path",
+          "line": 151,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_public_dossier_admin_summary",
+          "line": 158,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_log_demo2_get_failure",
+          "line": 180,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_account_value",
+          "line": 199,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_account_id",
+          "line": 205,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_account_role",
+          "line": 209,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_public_account",
+          "line": 213,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_session_token",
+          "line": 230,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_render_demo2_portal_page",
+          "line": 241,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_bound_channel_ids",
+          "line": 273,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_workspace_has_task",
+          "line": 305,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_workspace_quota_exhausted",
+          "line": 316,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_is_quota_error",
+          "line": 332,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_is_protected_legacy_demo2_path",
+          "line": 337,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_remove_physical_paths",
+          "line": 348,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_channels_for_account",
+          "line": 369,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "list_scenarios",
+          "line": 384,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "mujoco_assets_for_scenario",
+          "line": 400,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_step_number_from_frame",
+          "line": 422,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "load_scenario_by_id",
+          "line": 429,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "process_edited_step",
+          "line": 437,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "process_closed_loop_scenario",
+          "line": 466,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "build_edited_step",
+          "line": 483,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "create_handler",
+          "line": 501,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "run_server",
+          "line": 2122,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_render_lab_html",
+          "line": 2189,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "build_parser",
+          "line": 2796,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "main",
+          "line": 2806,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "__init__",
+          "line": 94,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "__init__",
+          "line": 104,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_run",
+          "line": 112,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "start",
+          "line": 122,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "stop",
+          "line": 125,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "collect",
+          "line": 283,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "dossier_call",
+          "line": 530,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "sync_demo_students",
+          "line": 551,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "ScenarioLabHandler",
+          "line": 556,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "retention_worker",
+          "line": 2145,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "cleanup_expired_dossiers",
+          "line": 561,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "handle_one_request",
+          "line": 564,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_write_response",
+          "line": 571,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "flush_headers",
+          "line": 580,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "send_error",
+          "line": 586,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "do_GET",
+          "line": 595,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "do_POST",
+          "line": 686,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_handle_demo2_page",
+          "line": 843,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_handle_demo2_api_get",
+          "line": 896,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_handle_demo2_api_post",
+          "line": 1001,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_send_dossier_json",
+          "line": 1105,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_dossier_error",
+          "line": 1113,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_dossier_query",
+          "line": 1122,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_dossier_content_length",
+          "line": 1134,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_read_dossier_json",
+          "line": 1148,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_send_dossier_document",
+          "line": 1196,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_handle_dossier_page",
+          "line": 1219,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_handle_dossier_api",
+          "line": 1245,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_login",
+          "line": 1305,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_logout",
+          "line": 1338,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_create_account_upload_task",
+          "line": 1347,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_account_video_analysis_action",
+          "line": 1402,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_account_video_result_for_download",
+          "line": 1432,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_cancel_account_upload_task",
+          "line": 1451,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_append_account_upload_chunk",
+          "line": 1471,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_require_role",
+          "line": 1494,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_require_student_access",
+          "line": 1498,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_discard_denied_body",
+          "line": 1505,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_guard_legacy_student_access",
+          "line": 1532,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_membership_call",
+          "line": 1557,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_identity_call",
+          "line": 1571,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_channel_admin_call",
+          "line": 1588,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_require_json_command",
+          "line": 1604,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_identity_query",
+          "line": 1610,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_handle_identity_api_get",
+          "line": 1622,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_handle_identity_api_post",
+          "line": 1654,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_track_identity_region",
+          "line": 1675,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_validated_track_points",
+          "line": 1715,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_tracking_reason",
+          "line": 1753,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_identity_file_stamp",
+          "line": 1757,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_detect_identity_faces",
+          "line": 1761,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_send_identity_preview",
+          "line": 1807,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_require_account",
+          "line": 1863,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_current_account",
+          "line": 1870,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_session_cookie_token",
+          "line": 1879,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_session_cookie",
+          "line": 1892,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_send_redirect",
+          "line": 1902,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_send_json_error",
+          "line": 1909,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_send_demo2_json",
+          "line": 1915,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "log_message",
+          "line": 1930,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_read_json",
+          "line": 1933,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_send_html",
+          "line": 1949,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_send_text_payload",
+          "line": 1955,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_send_empty",
+          "line": 1980,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_send_download",
+          "line": 1985,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_send_media",
+          "line": 1995,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_send_mujoco_asset",
+          "line": 2038,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_send_seewo_demo_asset",
+          "line": 2060,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_send_seewo_demo2_asset",
+          "line": 2081,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_send_json",
+          "line": 2110,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "unique_object",
+          "line": 1176,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "reject_constant",
+          "line": 1184,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\seewo_student_demo.py",
+      "sha256": "64c1c62bd35990362d7b9591e5575ae05a24941f535b6afe6cfeb5b2a700e6f5",
+      "symbols": [
+        {
+          "name": "VideoMeta",
+          "line": 80,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "load_seewo_student_demo",
+          "line": 98,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "build_seewo_student_demo",
+          "line": 113,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_load_student_support_profile",
+          "line": 166,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "render_seewo_student_demo_html",
+          "line": 184,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_read_video_meta",
+          "line": 1244,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_sample_video_features",
+          "line": 1258,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_extract_audio_windows",
+          "line": 1298,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_empty_audio_windows",
+          "line": 1347,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_build_timeline",
+          "line": 1354,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_aggregate_window_features",
+          "line": 1399,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_infer_state",
+          "line": 1415,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_quality",
+          "line": 1463,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_rough_scene",
+          "line": 1479,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_summarize_timeline",
+          "line": 1492,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_build_student_tracking",
+          "line": 1510,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_select_key_moments",
+          "line": 1624,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_summarize_support_profile_for_tracking",
+          "line": 1646,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_build_teacher_effectiveness",
+          "line": 1675,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_teacher_metric",
+          "line": 1830,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_count_recovered_challenges",
+          "line": 1853,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_speech_speed_score",
+          "line": 1865,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_lecture_balance_score",
+          "line": 1879,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_personalization_score",
+          "line": 1885,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_teacher_score_band",
+          "line": 1906,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_score_level",
+          "line": 1916,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_teacher_effect_summary",
+          "line": 1924,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_teacher_strengths",
+          "line": 1932,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_teacher_improvement_focus",
+          "line": 1940,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_parse_percent",
+          "line": 1948,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_parse_duration_minutes",
+          "line": 1955,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_parse_number",
+          "line": 1972,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_moment_from_event",
+          "line": 1977,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_write_visual_assets",
+          "line": 2003,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_annotated_frame",
+          "line": 2042,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_draw_roi",
+          "line": 2057,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_parse_report",
+          "line": 2063,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_normalize_samples",
+          "line": 2118,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_crop",
+          "line": 2125,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_safe_percentile",
+          "line": 2130,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_clip01",
+          "line": 2136,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_format_time",
+          "line": 2140,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_import_cv2",
+          "line": 2145,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "to_dict",
+          "line": 87,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\fusion.py",
+      "sha256": "227d035804c79394232012cdfccc856b0bcb50a6e5017e9f5ce6d8514df52b10",
+      "symbols": [
+        {
+          "name": "canonical_state",
+          "line": 87,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "action_profile",
+          "line": 91,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "fuse_signals",
+          "line": 95,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\smoothing.py",
+      "sha256": "15dc900f4835bec6627be7f7426d5feb0435c8729363c83b7dce938c6e439219",
+      "symbols": [
+        {
+          "name": "TemporalSmoother",
+          "line": 9,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "__init__",
+          "line": 12,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "update",
+          "line": 29,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\learned_policy.py",
+      "sha256": "3513a3c00b714e9bd59fba1ddd981a174eac7d7b6d2fea4ed4b15ee7efa92b22",
+      "symbols": [
+        {
+          "name": "feature_names",
+          "line": 49,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "featurize",
+          "line": 71,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "LearnedSchoolPolicy",
+          "line": 99,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_bounded_or_zero",
+          "line": 245,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_one_hot",
+          "line": 251,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "fit",
+          "line": 107,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "decide",
+          "line": 148,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "predict_action_id",
+          "line": 179,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "predict_action_confidence",
+          "line": 186,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_apply_action_shield",
+          "line": 200,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "save",
+          "line": 219,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "load",
+          "line": 233,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "D:\\GIT\\RehabAffectPerception\\src\\rehab_affect\\train_policy.py",
+      "sha256": "1d8d19061df8819a9ea1c7321bed585f4288223b40f39c89c76a1fb04f3a1813",
+      "symbols": [
+        {
+          "name": "collect_training_rows",
+          "line": 30,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "collect_training_rows_from_scenarios",
+          "line": 43,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "train_and_evaluate",
+          "line": 80,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_split_scenarios",
+          "line": 206,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_run_policy_benchmark",
+          "line": 231,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_accuracy",
+          "line": 254,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "build_parser",
+          "line": 260,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "main",
+          "line": 278,
+          "kind": "FunctionDef"
+        }
+      ]
+    }
+  ]
+}

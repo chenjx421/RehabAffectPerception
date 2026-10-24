@@ -1,0 +1,32 @@
+[Unit]
+Description=RehabAffect private cloud restored-copy acceptance
+After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=rehabaffect
+Group=rehabaffect
+WorkingDirectory=/opt/rehabaffect
+EnvironmentFile=/etc/rehabaffect/preview.env
+Environment=CLOUD_PREVIEW_ONLY=yes
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=TZ=Asia/Shanghai
+UMask=0077
+ExecStartPre=/opt/rehabaffect/.venv/bin/python /opt/rehabaffect/scripts/cloud_runtime_preflight.py app
+ExecStart=/opt/rehabaffect/.venv/bin/python /opt/rehabaffect/scripts/cloud_preview_server.py
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=45
+KillMode=mixed
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/rehabaffect
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

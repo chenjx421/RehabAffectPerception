@@ -1,13 +1,13 @@
-# 康复陪伴机器人情绪与状态感知项目方案
+# 辅读学校辅助机器人状态感知与动作决策项目方案
 
 ## 1. 项目定位
 
-本项目面向残障陪伴与康复训练机器人，构建一个人类状态感知模块。它不做医学诊断，而是估计用户在交互过程中的状态线索，例如疲劳、困惑、疼痛疑似、烦躁、注意力下降和积极配合。
+本项目面向辅读学校/特殊教育支持场景，构建一个辅助机器人具身感知与动作决策模块。它不做医学诊断，也不替代教师，而是估计学生在课堂任务、生活技能训练或互动练习中的状态线索，例如专注、困惑、疲劳、挫败、抗拒、注意力下降、需要帮助或疑似不适风险。
 
 更专业的英文定位是：
 
 ```text
-Human affect and rehabilitation state perception for assistive companion robots.
+Embodied student-state perception and action decision for assistive robots in special education schools.
 ```
 
 ## 2. 为什么不能只用 pi0/pi0.5
@@ -18,7 +18,7 @@ pi0/pi0.5 是 VLA policy，主要负责：
 视觉观测 + 语言指令 + 机器人状态 -> 机器人动作
 ```
 
-情绪与康复状态识别应该作为独立的 perception 模块：
+学生状态识别应该作为独立的 perception 模块：
 
 ```text
 人脸 / 语音 / 姿态 / 交互行为 -> human_state
@@ -28,7 +28,7 @@ pi0/pi0.5 是 VLA policy，主要负责：
 
 ```text
 用户状态 = fatigued
-机器人策略 = 降低训练强度，询问是否休息
+机器人策略 = 降低任务负荷，询问是否休息
 ```
 
 ## 3. 推荐硬件
@@ -69,16 +69,16 @@ all signals
 
 ### 5.1 公开数据 warm start
 
-可以用公开情绪数据做人脸/语音模型的预训练或参考，但不能直接当康复场景真值。
+可以用公开情绪、语音、姿态或课堂行为数据做人脸/语音/姿态模型的预训练或参考，但不能直接当辅读学校场景真值。
 
 ### 5.2 场景数据采集
 
-康复场景每段样本建议 5-15 秒，标注内容包括：
+辅读学校场景每段样本建议 5-15 秒，标注内容包括：
 
-- 用户状态：`engaged`、`confused`、`fatigued`、`frustrated`、`discomfort` 等。
+- 用户状态：`engaged`、`confused`、`fatigued`、`frustrated`、`refusing`、`pain_risk`、`needs_help` 等。
 - valence/arousal：连续情绪维度。
-- 任务阶段：听指令、执行动作、等待反馈、休息。
-- 机器人事件：指令内容、是否重复提醒、任务是否完成。
+- 任务阶段：听指令、尝试任务、等待反馈、休息/安静角。
+- 机器人事件：指令内容、是否分步骤提示、是否重复提醒、任务是否完成。
 - 标注置信度：标注者对该标签的确定程度。
 
 ### 5.3 主动学习
@@ -88,7 +88,7 @@ all signals
 - 模型低置信度。
 - 多模态信号冲突。
 - 用户明确反馈模型判断错误。
-- 康复师认为值得修正的失败案例。
+- 教师、特教老师或照护者认为值得修正的失败案例。
 
 ## 6. 与机器人策略的接口
 
@@ -102,7 +102,9 @@ all signals
   "arousal": 0.22,
   "confidence": 0.78,
   "evidence": ["face", "voice", "task_behavior"],
-  "suggested_robot_action": "slow_down_and_offer_break",
+  "recommended_robot_action": "reduce_task_load_and_offer_break",
+  "risk_level": "medium",
+  "handoff_required": false,
   "timestamp": 1780000000.0
 }
 ```
@@ -112,9 +114,11 @@ all signals
 | State | Robot Behavior |
 | --- | --- |
 | `confused` | 重复解释，换更简单的话 |
-| `fatigued` | 放慢节奏，询问是否休息 |
-| `discomfort` | 暂停任务，通知护理人员 |
+| `fatigued` | 降低任务负荷，询问是否休息 |
+| `pain_risk` | 暂停任务，询问不适并通知教师或照护者 |
 | `frustrated` | 降低催促，提供鼓励 |
+| `refusing` | 暂停，询问是否继续并提供选择 |
+| `needs_help` | 提供协助或呼叫教师/照护者 |
 | `engaged` | 继续任务，给正反馈 |
 
 ## 7. 面试/沟通说法
@@ -122,6 +126,5 @@ all signals
 可以这样讲：
 
 ```text
-我会把这个需求拆成 Human State Perception 模块，而不是直接让机器人“判断真实情绪”。第一版先用 RGB 和麦克风做人脸表情、语音情绪、姿态与交互行为特征，再做多帧平滑和多模态融合，输出 state、valence、arousal、confidence 和 suggested action。模型低置信度时不触发强决策，涉及 discomfort 时只做暂停和提醒护理人员，避免误判带来的风险。
+我会把这个需求拆成 Student-State Perception 和 Embodied Action Policy 两层，而不是直接让机器人“判断真实情绪”。第一版先用 RGB、麦克风、姿态与课堂任务行为特征做多帧平滑和多模态融合，输出 human_state，再结合机器人距离、障碍物、任务阶段等 robot_context 生成 robot_action。模型低置信度时不触发强决策，涉及 pain_risk、needs_help 或 refusing 时只做暂停、询问、保持距离和提醒教师/照护者，避免误判带来的风险。
 ```
-

@@ -1,0 +1,80 @@
+{
+  "checked_at_utc": "2026-10-20T14:00:27.917117+00:00",
+  "target": "YOUR_SERVER_IP",
+  "direct_connection": true,
+  "credentials_or_cookies_used": false,
+  "tls_verification_bypassed": false,
+  "checks": [
+    {
+      "scheme": "https",
+      "path": "/invite",
+      "status": 200
+    },
+    {
+      "scheme": "https",
+      "path": "/demo2/login",
+      "status": 401,
+      "error_code": "invitation_required"
+    },
+    {
+      "scheme": "https",
+      "path": "/api/v1/demo2/auth/me",
+      "status": 401,
+      "error_code": "invitation_required"
+    },
+    {
+      "scheme": "https",
+      "path": "/api/v1/demo2/upload/workspace",
+      "status": 401,
+      "error_code": "invitation_required"
+    },
+    {
+      "scheme": "http",
+      "path": "/",
+      "status": 404
+    },
+    {
+      "scheme": "http",
+      "path": "/invite",
+      "status": 404
+    },
+    {
+      "scheme": "http",
+      "path": "/.well-known/acme-challenge/not-a-real-token",
+      "status": 404
+    }
+  ],
+  "certificate": {
+    "issuer": [
+      [
+        [
+          "countryName",
+          "US"
+        ]
+      ],
+      [
+        [
+          "organizationName",
+          "Let's Encrypt"
+        ]
+      ],
+      [
+        [
+          "commonName",
+          "YE1"
+        ]
+      ]
+    ],
+    "subject_alt_name": [
+      [
+        "IP Address",
+        "YOUR_SERVER_IP"
+      ]
+    ],
+    "not_after": "Oct 27 04:41:02 2026 GMT",
+    "sha256": "0c39ad4ff51aa8155f7c4edf1979c71eab8a40ab0aac163d4c2d8d93f354b714",
+    "validated_against_default_trust_store": true
+  },
+  "result": "PASS",
+  "public_verified": true
+}

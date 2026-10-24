@@ -1,0 +1,11 @@
+[Unit]
+Description=Renew the isolated maintenance IP certificate
+Wants=network-online.target
+After=network-online.target nginx.service
+ConditionPathExists=/etc/letsencrypt-rehab-ip/production/renewal/YOUR_SERVER_IP.conf
+
+[Service]
+Type=oneshot
+UMask=0077
+TimeoutStartSec=20min
+ExecStart=/opt/rehab-ip-certbot/bin/certbot renew --cert-name YOUR_SERVER_IP --non-interactive --quiet --no-random-sleep-on-renew --config-dir /etc/letsencrypt-rehab-ip/production --work-dir /var/lib/letsencrypt-rehab-ip/production --logs-dir /var/log/letsencrypt-rehab-ip/production --no-directory-hooks --deploy-hook /usr/local/sbin/rehab-ip-cert-reload

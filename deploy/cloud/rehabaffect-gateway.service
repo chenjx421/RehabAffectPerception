@@ -1,0 +1,32 @@
+[Unit]
+Description=RehabAffect loopback invitation gateway (not a public listener)
+Requires=rehabaffect-app.service
+After=rehabaffect-app.service
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=rehabaffect-gateway
+Group=rehabaffect-gateway
+WorkingDirectory=/opt/rehabaffect
+EnvironmentFile=/etc/rehabaffect/cloud.env
+UnsetEnvironment=REHAB_DEMO2_DOSSIER_KEY REHAB_DEMO2_ACCOUNT_PASSWORD_PREFIX REHAB_REPORT_LLM_API_KEY REHAB_DEEPSEEK_API_KEY
+UMask=0077
+ExecStartPre=/opt/rehabaffect/.venv/bin/python /opt/rehabaffect/scripts/cloud_runtime_preflight.py gateway
+ExecStart=/opt/rehabaffect/.venv/bin/python -m src.rehab_affect.demo2_manager_gateway --config /etc/rehabaffect/gateway.json
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGINT
+KillMode=mixed
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

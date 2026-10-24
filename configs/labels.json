@@ -3,43 +3,74 @@
     {
       "name": "engaged",
       "description": "User is actively following the rehabilitation interaction.",
-      "suggested_robot_action": "continue_and_encourage"
+      "recommended_robot_action": "continue_and_encourage",
+      "risk_level": "low",
+      "handoff_required": false,
+      "aliases": []
     },
     {
       "name": "neutral",
       "description": "No obvious positive or negative state signal.",
-      "suggested_robot_action": "continue_current_plan"
+      "recommended_robot_action": "continue_current_plan",
+      "risk_level": "low",
+      "handoff_required": false,
+      "aliases": []
     },
     {
       "name": "confused",
       "description": "User may not understand the instruction or task goal.",
-      "suggested_robot_action": "repeat_instruction_slowly"
+      "recommended_robot_action": "repeat_instruction_slowly",
+      "risk_level": "medium",
+      "handoff_required": false,
+      "aliases": []
     },
     {
       "name": "fatigued",
       "description": "User shows fatigue or decreasing interaction energy.",
-      "suggested_robot_action": "slow_down_and_offer_break"
+      "recommended_robot_action": "reduce_task_load_and_offer_break",
+      "risk_level": "medium",
+      "handoff_required": false,
+      "aliases": []
     },
     {
       "name": "frustrated",
-      "description": "User shows frustration, resistance, or negative engagement.",
-      "suggested_robot_action": "pause_and_reduce_pressure"
+      "description": "User shows irritation or negative affect during the task.",
+      "recommended_robot_action": "pause_and_reduce_pressure",
+      "risk_level": "medium",
+      "handoff_required": false,
+      "aliases": []
     },
     {
-      "name": "discomfort",
-      "description": "User may feel pain or physical discomfort.",
-      "suggested_robot_action": "stop_and_alert_caregiver"
+      "name": "refusing",
+      "description": "User appears to refuse or withdraw consent for the current interaction.",
+      "recommended_robot_action": "pause_ask_consent_and_offer_choice",
+      "risk_level": "medium",
+      "handoff_required": false,
+      "aliases": []
+    },
+    {
+      "name": "pain_risk",
+      "description": "User may be experiencing pain or physical discomfort; this is a safety cue, not a diagnosis.",
+      "recommended_robot_action": "stop_check_pain_risk_and_alert_teacher_or_caregiver",
+      "risk_level": "high",
+      "handoff_required": true,
+      "aliases": ["discomfort"]
     },
     {
       "name": "low_attention",
       "description": "User attention is low or drifting away from the task.",
-      "suggested_robot_action": "regain_attention_or_simplify_task"
+      "recommended_robot_action": "regain_attention_or_simplify_task",
+      "risk_level": "medium",
+      "handoff_required": false,
+      "aliases": []
     },
     {
-      "name": "need_help",
-      "description": "User appears to need external assistance.",
-      "suggested_robot_action": "offer_help_or_call_caregiver"
+      "name": "needs_help",
+      "description": "User appears to need assistance from the robot, teacher, therapist, or caregiver.",
+      "recommended_robot_action": "offer_help_or_call_caregiver",
+      "risk_level": "high",
+      "handoff_required": true,
+      "aliases": ["need_help"]
     }
   ]
 }
-

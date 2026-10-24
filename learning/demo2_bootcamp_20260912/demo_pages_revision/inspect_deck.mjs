@@ -1,0 +1,13 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import sharp from 'sharp';
+import { FileBlob, PresentationFile } from '@oai/artifact-tool';
+const root = 'D:/GIT/RehabAffectPerception';
+const dir = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Z]:)/i, '$1');
+const p = await PresentationFile.importPptx(await FileBlob.load(root + '/output/presentations/Demo2_实习项目三天学习_20260912_讲解版.pptx'));
+const snap = await p.inspect({kind:'slide,textbox,image,layout', maxChars:300000});
+await fs.writeFile(dir+'/qa/source-inspect.ndjson', snap.ndjson);
+console.log(JSON.stringify({slides:p.slides.items.length,slideMethods:Object.getOwnPropertyNames(Object.getPrototypeOf(p.slides.items[0])),shapeCollectionMethods:Object.getOwnPropertyNames(Object.getPrototypeOf(p.slides.items[0].shapes)),firstShapes:p.slides.items[0].shapes.items.map(s=>({id:s.id,text:s.text.toString(),position:s.position}))}));
+const thumbs=[];
+for(let i=1;i<=36;i++) thumbs.push({input:await sharp(root+`/tmp/demo2_learning_ppt_20260912/rendered/slide-${String(i).padStart(2,'0')}.png`).resize(320,180).toBuffer(),left:((i-1)%4)*320,top:Math.floor((i-1)/4)*180});
+await sharp({create:{width:1280,height:1620,channels:3,background:'#dfe5ee'}}).composite(thumbs).png().toFile(dir+'/qa/source-montage.png');

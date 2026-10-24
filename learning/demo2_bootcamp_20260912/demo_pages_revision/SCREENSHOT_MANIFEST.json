@@ -1,0 +1,431 @@
+{
+  "sourceDeck": "D:/GIT/RehabAffectPerception/output/presentations/Demo2_实习项目三天学习_20260912_讲解版.pptx",
+  "sourceSha256": "36e1f7ab7b2404121954e2b40e6ce84ad945ab0462da89adca0e6d247058585f",
+  "outputDeck": "D:/GIT/RehabAffectPerception/output/presentations/Demo2_实习项目三天学习_20260912_Demo页面版_定稿.pptx",
+  "slides": 42,
+  "newPages": 6,
+  "screenshotPages": [
+    5,
+    6,
+    7,
+    21,
+    22,
+    33,
+    34,
+    35,
+    36,
+    38
+  ],
+  "assets": [
+    {
+      "key": "upload",
+      "slideId": "j5ia1a",
+      "image": "D:\\GIT\\RehabAffectPerception\\learning\\demo2_bootcamp_20260912\\demo_pages_revision/assets/upload_page.png",
+      "sha256": "48c50f1dd650fe58ab1c35b17be5bb7470613c62679ec2f34a7822a252f8d127",
+      "rect": [
+        168,
+        432,
+        2390,
+        1160
+      ],
+      "source": "demo2_portal.py:312; scenario_lab_server.py:1347; student_record_store.py:1543",
+      "caption": "填写课程批次并读取名额，再选择视频。此截图未选择文件、未提交上传。",
+      "page": 5
+    },
+    {
+      "key": "tasks",
+      "slideId": "cyt5pa",
+      "image": "D:\\GIT\\RehabAffectPerception\\learning\\demo2_bootcamp_20260912\\demo_pages_revision/assets/task_states.png",
+      "sha256": "52d4b8dfa1d641859ce7413fdf17ae3a6f30e0608047f7a0897b7b53b6e533c1",
+      "rect": [
+        0,
+        570,
+        1718,
+        792
+      ],
+      "source": "demo2_portal.py:559; demo2_media_worker.py:107; demo2_media_analysis.py:351",
+      "caption": "等待处理 → 后台处理中 → 证据已就绪；最后一步仍标注“待教师复核”。",
+      "page": 6
+    },
+    {
+      "key": "identity-entry",
+      "slideId": "2zbzh3",
+      "image": "D:/GIT/RehabAffectPerception/output/playwright/demo2_teacher_flow_20260911_isolated/manual_reloaded.png",
+      "sha256": "f891a8aa738f78626c848a8d5d87d354a59e2090e000b3d8b4fdd8017de3b010",
+      "rect": [
+        1030,
+        404,
+        312,
+        419
+      ],
+      "source": "demo2_identity.py:245; scenario_lab_server.py:1637; demo2_face_detection.py:328",
+      "caption": "隔离测试中的真实界面：此处模拟检测不可用，保留手动画框入口。",
+      "page": 7
+    },
+    {
+      "key": "manual",
+      "slideId": "y5wne50z",
+      "image": "D:/GIT/RehabAffectPerception/output/playwright/demo2_teacher_flow_20260911_isolated/manual_reloaded.png",
+      "sha256": "f891a8aa738f78626c848a8d5d87d354a59e2090e000b3d8b4fdd8017de3b010",
+      "rect": [
+        24,
+        280,
+        1318,
+        655
+      ],
+      "source": "demo2_identity.py:245; demo2_identity_store.py:536",
+      "caption": "左侧画框选人 → 右侧选择姓名 → 确认；绿色框表示当前帧已保存的确认。",
+      "page": 21
+    },
+    {
+      "key": "tracking-entry",
+      "slideId": "76dcxf",
+      "image": "D:/GIT/RehabAffectPerception/output/playwright/demo2_teacher_flow_20260911_isolated/manual_reloaded.png",
+      "sha256": "f891a8aa738f78626c848a8d5d87d354a59e2090e000b3d8b4fdd8017de3b010",
+      "rect": [
+        24,
+        1158,
+        1318,
+        310
+      ],
+      "source": "demo2_identity.py:245; scenario_lab_server.py:1654; demo2_identity_store.py:645",
+      "caption": "先保存当前帧的身份确认，再从这条记录点击“查看后续5秒”。",
+      "page": 22
+    },
+    {
+      "key": "versions",
+      "slideId": "apujde",
+      "image": "D:/GIT/RehabAffectPerception/output/playwright/demo2_dossier_20260911_isolated/run_20260911_163930_425447/student_documents.png",
+      "sha256": "4f377edff06874250725a8ed9210785be5f7d450c777ab50239df42951a4a236",
+      "rect": [
+        80,
+        657,
+        590,
+        475
+      ],
+      "secondRect": [
+        80,
+        1138,
+        590,
+        467
+      ],
+      "source": "demo2_dossier.py:87; demo2_dossier_store.py:476; demo2_dossier_store.py:657",
+      "caption": "虚构资料的隔离验收截图；版本更新与历史课堂引用分别保存。",
+      "page": 33
+    },
+    {
+      "key": "reference",
+      "slideId": "i5o3q10v",
+      "image": "D:/GIT/RehabAffectPerception/output/playwright/demo2_dossier_20260911_isolated/run_20260911_163930_425447/course_reference.png",
+      "sha256": "e7f6f0ee3bacc7cc93658fc2136da8c70cd761da39aa8242942ec134ef8821e2",
+      "rect": [
+        80,
+        368,
+        1208,
+        650
+      ],
+      "source": "demo2_dossier.py:132; demo2_dossier_store.py:657",
+      "caption": "选择已确认学生与具体资料版本，再保存课堂引用；已保存引用可以导出核对。",
+      "page": 34
+    },
+    {
+      "key": "authorization",
+      "slideId": "wnqh07ex",
+      "image": "D:/GIT/RehabAffectPerception/output/playwright/demo2_dossier_20260911_isolated/run_20260911_163930_425447/student_authorization.png",
+      "sha256": "59eaee608bc86a1c616d2776bdf23e396640f2c61ddf1d13b5b1ce36deb0126e",
+      "rect": [
+        714,
+        522,
+        580,
+        617
+      ],
+      "source": "demo2_dossier.py:87; demo2_dossier_store.py:438",
+      "caption": "隔离测试表单中的授权依据明确标注为虚构，不可作为真实授权证明。",
+      "page": 35
+    },
+    {
+      "key": "admin",
+      "slideId": "lcn6tkb6",
+      "image": "D:/GIT/RehabAffectPerception/output/playwright/demo2_dossier_20260911_isolated/run_20260911_163930_425447/admin_dossiers.png",
+      "sha256": "84ddf81b67468377596513627d284e657d03f011a667c4904d78e32a61a964c0",
+      "rect": [
+        80,
+        98,
+        1210,
+        625
+      ],
+      "source": "demo2_dossier.py:148; demo2_dossier_store.py:698",
+      "caption": "公司运维查看数量、期限和密文占用；学生资料正文由独立授权控制。",
+      "page": 36
+    },
+    {
+      "key": "withdrawn",
+      "slideId": "4jlmjq",
+      "image": "D:/GIT/RehabAffectPerception/output/playwright/demo2_dossier_20260911_isolated/run_20260911_163930_425447/authorization_withdrawn.png",
+      "sha256": "b0629655d308954dd875a00a57253258c127b4eb54a49ec80a961d82766fe8da",
+      "rect": [
+        80,
+        588,
+        1204,
+        420
+      ],
+      "source": "demo2_dossier_store.py:461; demo2_dossier_store.py:374; demo2_dossier_store.py:381",
+      "caption": "已撤回的版本隐藏正文，新增资料暂停；已删除版本也不再提供内容。",
+      "page": 38
+    }
+  ],
+  "pageMap": [
+    {
+      "page": 1,
+      "originalPage": 1,
+      "title": "RehabAffectPerception",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 2,
+      "originalPage": 2,
+      "title": "模型与算法清单",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 3,
+      "originalPage": 3,
+      "title": "实现范围与历史实验",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 4,
+      "originalPage": 4,
+      "title": "视频进入系统后的路径",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 5,
+      "originalPage": null,
+      "title": "Demo 页面：提交课堂视频",
+      "hasDemoScreenshot": true
+    },
+    {
+      "page": 6,
+      "originalPage": null,
+      "title": "Demo 页面：上传后的三种任务状态",
+      "hasDemoScreenshot": true
+    },
+    {
+      "page": 7,
+      "originalPage": null,
+      "title": "Demo 页面：人物确认与自动定位入口",
+      "hasDemoScreenshot": true
+    },
+    {
+      "page": 8,
+      "originalPage": 5,
+      "title": "YuNet 模型卡",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 9,
+      "originalPage": 6,
+      "title": "CNN与预训练的含义",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 10,
+      "originalPage": 7,
+      "title": "真正执行推理的代码",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 11,
+      "originalPage": 8,
+      "title": "图像数组与低清细节",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 12,
+      "originalPage": 9,
+      "title": "抽帧与时间证据",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 13,
+      "originalPage": 10,
+      "title": "补边后的坐标回映",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 14,
+      "originalPage": 11,
+      "title": "归一化框的计算",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 15,
+      "originalPage": 12,
+      "title": "IoU与重复框抑制",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 16,
+      "originalPage": 13,
+      "title": "多视图检测的取舍",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 17,
+      "originalPage": 14,
+      "title": "第一天验收",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 18,
+      "originalPage": 15,
+      "title": "Shi–Tomasi 角点",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 19,
+      "originalPage": 16,
+      "title": "金字塔 LK 光流",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 20,
+      "originalPage": 17,
+      "title": "跟随失败时的处理",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 21,
+      "originalPage": 18,
+      "title": "Demo 页面：漏检后的手动画框",
+      "hasDemoScreenshot": true
+    },
+    {
+      "page": 22,
+      "originalPage": null,
+      "title": "Demo 页面：确认记录与短时跟随入口",
+      "hasDemoScreenshot": true
+    },
+    {
+      "page": 23,
+      "originalPage": 19,
+      "title": "低清录像的排查顺序",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 24,
+      "originalPage": 20,
+      "title": "旧状态规则与平滑",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 25,
+      "originalPage": 21,
+      "title": "音频能量与语音识别",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 26,
+      "originalPage": 22,
+      "title": "学习目标的量化口径",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 27,
+      "originalPage": 23,
+      "title": "模型评测与数据泄漏",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 28,
+      "originalPage": 24,
+      "title": "第二天验收与训练设计",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 29,
+      "originalPage": 25,
+      "title": "前后端的实际框架",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 30,
+      "originalPage": 26,
+      "title": "四通道与分片上传",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 31,
+      "originalPage": 27,
+      "title": "后台队列与错误恢复",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 32,
+      "originalPage": 28,
+      "title": "学生身份的数据关系",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 33,
+      "originalPage": null,
+      "title": "Demo 页面：IEP 资料与版本",
+      "hasDemoScreenshot": true
+    },
+    {
+      "page": 34,
+      "originalPage": 29,
+      "title": "Demo 页面：关联本次课堂的资料版本",
+      "hasDemoScreenshot": true
+    },
+    {
+      "page": 35,
+      "originalPage": 30,
+      "title": "Demo 页面：登记资料授权",
+      "hasDemoScreenshot": true
+    },
+    {
+      "page": 36,
+      "originalPage": 31,
+      "title": "Demo 页面：公司后台可见的资料状态",
+      "hasDemoScreenshot": true
+    },
+    {
+      "page": 37,
+      "originalPage": 32,
+      "title": "加密、撤回与到期",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 38,
+      "originalPage": null,
+      "title": "Demo 页面：撤回后的访问状态",
+      "hasDemoScreenshot": true
+    },
+    {
+      "page": 39,
+      "originalPage": 33,
+      "title": "五类验证证据",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 40,
+      "originalPage": 34,
+      "title": "性能数字怎样讲",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 41,
+      "originalPage": 35,
+      "title": "实习成果的四个落点",
+      "hasDemoScreenshot": false
+    },
+    {
+      "page": 42,
+      "originalPage": 36,
+      "title": "三分钟项目答辩",
+      "hasDemoScreenshot": false
+    }
+  ]
+}

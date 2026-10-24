@@ -1,0 +1,55 @@
+{
+  "scene": "special_education_classroom",
+  "objects": [
+    {
+      "name": "student",
+      "description": "Student interacting with the assistive robot.",
+      "safety_relevant": true
+    },
+    {
+      "name": "teacher",
+      "description": "Teacher or classroom staff available for handoff.",
+      "safety_relevant": true
+    },
+    {
+      "name": "assistive_robot",
+      "description": "Robot that provides prompts, movement, and safety-aware assistance.",
+      "safety_relevant": true
+    },
+    {
+      "name": "desk",
+      "description": "Classroom table or task surface.",
+      "safety_relevant": false
+    },
+    {
+      "name": "chair",
+      "description": "Classroom chair.",
+      "safety_relevant": true
+    },
+    {
+      "name": "wheelchair",
+      "description": "Mobility aid that requires safe robot distance.",
+      "safety_relevant": true
+    },
+    {
+      "name": "whiteboard",
+      "description": "Instruction display area.",
+      "safety_relevant": false
+    },
+    {
+      "name": "teaching_aid",
+      "description": "Blocks, cards, puzzles, or other classroom task objects.",
+      "safety_relevant": false
+    },
+    {
+      "name": "obstacle",
+      "description": "Bag, box, misplaced chair, or other navigation obstacle.",
+      "safety_relevant": true
+    },
+    {
+      "name": "quiet_corner",
+      "description": "Calm area used when the student needs a break or reduced stimulation.",
+      "safety_relevant": false
+    }
+  ]
+}
