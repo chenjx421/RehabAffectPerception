@@ -41,12 +41,15 @@ MAX_SOURCE_FPS = 120
 MAX_STREAMS = 16
 MAX_AUDIO_INTERVALS = 100000
 MAX_DECODED_FRAMES = MAX_DURATION_SEC * MAX_SOURCE_FPS
-MAX_SAMPLE_SIDE = 640
+# Keep the full-scene evidence bounded, but retain enough pixels for the
+# small-face classroom detector.  The detector still runs at its fixed 640
+# input size over enlarged local views.
+MAX_SAMPLE_SIDE = 768
 WINDOW_SEC = 20
 SIMPLE_STATE_WINDOW_SEC = 30
 MAX_SIMPLE_PERSONS = 3
 MAX_FACE_DETECTION_SAMPLES = 120
-SIMPLE_ANALYSIS_VERSION = "simple_student_seats_v3_2"
+SIMPLE_ANALYSIS_VERSION = "simple_student_seats_v3_6"
 AUDIO_RATE = 16000
 ENERGY_THRESHOLD_RMS = 0.01
 PROBE_TIMEOUT_SEC = 30.0

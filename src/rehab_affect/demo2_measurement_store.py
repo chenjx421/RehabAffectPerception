@@ -277,6 +277,7 @@ class Demo2MeasurementStore:
 
     def course_workspace(self, token, task_id):
         from .demo2_course_analysis import build_workspace
+        from .demo2_evaluation_store import Demo2EvaluationStore
         account = self._account(token)
         identity = self.identities.workspace(token, task_id)
         with self.records._connect() as db:
@@ -289,12 +290,36 @@ class Demo2MeasurementStore:
             values = [self._effective_record(db,account,r) for r in values]
             from .video_applicability import assess
             suitability=assess(db,task,self.records)
-        result=build_workspace(identity, task, values)
+        # Evaluation/report is a separate store, but it is joined here by the
+        # immutable task id so the course page sees the same source video.
+        evaluations=Demo2EvaluationStore(self.records).for_task(token,task_id)
+        result=build_workspace(identity, task, values, evaluations=evaluations)
         result['applicability']=suitability
         if not suitability['confirmed_for_source']:
             explanation=suitability['label']+'。请先确认内容适用性；可保留通用观察，但不据此推断学生能力或教师教学质量。'
             result['report']={**result['report'],'title':'视频适用性检查记录（未形成课堂评价）','ready':False,'character_count':len(explanation),'sections':[{'title':'暂不生成特教评价','text':explanation}]}
         return result
+
+    def course_report(self, token, task_id):
+        """Build the downloadable report from the current task workspace."""
+        from .demo2_course_analysis import build_task_report
+        from .demo2_evaluation_store import Demo2EvaluationStore
+        work=self.course_workspace(token, task_id)
+        # Keep the legacy in-page report untouched when there is no saved
+        # evaluation, while the explicit download endpoint always exposes the
+        # stable task/report contract and its evidence-limit sections.
+        with self.records._connect() as db:
+            account=self._account(token)
+            task=self.identities._task(db,account,task_id)
+        evaluations=Demo2EvaluationStore(self.records).for_task(token,task_id)
+        return build_task_report(
+            task=task,
+            school_context=work.get('school_context'),
+            people=work.get('people',[]),
+            records=work.get('records',[]),
+            evaluations=evaluations,
+            base_report=work['report'],
+        )
 
     def course_tasks(self, token):
         account = self._account(token)

@@ -56,3 +56,4 @@ def test_gateway_admits_only_intended_routes():
     assert '/api/v1/demo2/evaluations' in gateway._GET_API
     assert {'/api/v1/demo2/evaluations','/api/v1/demo2/evaluations/preview','/api/v1/demo2/evaluations/withdraw'} <= gateway._POST_API
     assert '/api/v1/demo2/evaluations/delete' not in gateway._POST_API
+    assert '/api/v1/demo2/course-analysis/report' in gateway._GET_API

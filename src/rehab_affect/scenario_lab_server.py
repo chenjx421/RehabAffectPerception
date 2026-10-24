@@ -1060,6 +1060,15 @@ def create_handler(
                     task_id, = self._identity_query(parsed, ('task_id',))
                     self._send_demo2_json({'ok':True, 'workspace':self._measurement_call(
                         'course_workspace', self._session_cookie_token(), task_id)})
+                elif parsed.path == f"{DEMO2_API_PREFIX}/course-analysis/report":
+                    self._require_role(account, 'school_uploader')
+                    task_id, = self._identity_query(parsed, ('task_id',))
+                    report = self._measurement_call('course_report', self._session_cookie_token(), task_id)
+                    report_id = report.get('report_id', task_id)
+                    self._send_demo2_json(
+                        {'ok': True, 'report': report},
+                        headers={'Content-Disposition': f'attachment; filename="classroom-report-{report_id}.json"'},
+                    )
                 elif parsed.path == f'{DEMO2_API_PREFIX}/teaching-support':
                     self._require_role(account,'school_uploader')
                     task_id, = self._identity_query(parsed,('task_id',))

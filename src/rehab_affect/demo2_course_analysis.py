@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 
 from .assessment_rubric import DIMENSION_WEIGHTS, RUBRIC_VERSION
+from .evaluation_report_contract import build_linkage, build_task_report
 
 DIMENSIONS = {'accuracy':'任务正确性','independence':'独立完成','consistency':'表现稳定性','transfer':'情境迁移'}
 STATES = {'unknown':'无法判断','participating':'参与任务','repeat_prompt':'需要重复提示',
@@ -17,7 +18,7 @@ def _excerpt(value, limit=100):
     return text if len(text)<=limit else text[:limit]+'…'
 
 
-def build_workspace(identity, task, records):
+def build_workspace(identity, task, records, evaluations=()):
     students = {s['student_id']:s for s in identity['students']}
     bindings = [b for b in identity['bindings'] if b['status']=='confirmed'
                 and b['current_revision'] and b['role']=='student']
@@ -28,9 +29,18 @@ def build_workspace(identity, task, records):
         if sid not in students:
             continue
         values = [r for r in records if r['student_id']==sid]
-        people.append({**students[sid], 'records':values,
+        person = {**students[sid], 'records':values,
                        'bindings':[b for b in bindings if b['student_id']==sid],
-                       'scored_count':sum(r['assessment']['overall_score'] is not None for r in values)})
+                       'scored_count':sum(r['assessment']['overall_score'] is not None for r in values)}
+        if evaluations:
+            person['identifiers'] = build_linkage(
+                school_context=identity.get('school_context'),
+                student_id=sid,
+                course_id=identity.get('course_id') or task.get('course_id') or task.get('task_id'),
+                task_id=task.get('task_id'),
+                iep_summary_id=students[sid].get('iep_summary_id', ''),
+            )
+        people.append(person)
     try:
         raw = json.loads(task.get('processing_result_json') or '{}')
     except (ValueError,TypeError):
@@ -50,7 +60,30 @@ def build_workspace(identity, task, records):
               'states':STATES, 'support_levels':SUPPORT,
               'source_note':'评分与状态来自教师复核，不是自动情绪识别；单帧身份不代表连续人物追踪。',
               'report_scope':'仅本账号、本校及当前视频；未纳入未关联的其他课堂视频。'}
-    result['report'] = build_report(result)
+    result['report'] = (build_task_report(
+        task=task,
+        school_context=identity.get('school_context'),
+        people=people,
+        records=records,
+        evaluations=evaluations,
+        base_report=build_report(result),
+    ) if evaluations else build_report(result))
+    # The task-level report is the canonical link for the class result.  Copy
+    # its stable ids onto the visible workspace so consumers do not have to
+    # reconstruct the relationship from display names.
+    if evaluations:
+        report_ids = result['report']['identifiers']
+        result['identifiers'] = {**build_linkage(
+                                    school_context=identity.get('school_context'),
+                                    course_id=identity.get('course_id') or task.get('course_id') or task.get('task_id'),
+                                    task_id=task.get('task_id'),
+                                ),
+                                 'evaluation_id': report_ids.get('evaluation_id',''),
+                                 'report_id': report_ids.get('report_id','')}
+        for person in result['people']:
+            person['identifiers'] = {**person.get('identifiers',{}),
+                                     'evaluation_id': report_ids.get('evaluation_id',''),
+                                     'report_id': report_ids.get('report_id','')}
     return result
 
 

@@ -62,12 +62,22 @@ class Demo2EvaluationStore:
 
     def _normalize(self,payload):
         keys={'record_id','expected_version','lesson_id','lesson_date','course_name','subject_id','template_id','goal_context','school_source','school_rater','reviewed','items'}
-        optional={'weight_policy','focus_domains','task_id','frame_revision'}
+        optional={'weight_policy','focus_domains','task_id','frame_revision',
+                  'course_id','iep_summary_id','report_id'}
         if not isinstance(payload,dict) or not keys<=set(payload) or set(payload)-keys-optional:
             raise MeasurementError(400,'invalid_payload','请提交完整的课堂评价字段；分数和权重由服务端计算')
         data={k:self._text(payload[k],limit=2000 if k=='goal_context' else 200,required=k!='school_rater')
               for k in ('lesson_id','lesson_date','course_name','subject_id','template_id','goal_context','school_source','school_rater')}
         data['record_id']=self._id(payload['record_id'])
+        # The browser may choose a record id, but the evaluation id is a
+        # server-owned stable alias used by reports and future integrations.
+        data['evaluation_id']=f"evaluation-{data['record_id']}"
+        # Keep the persisted payload self-describing.  These defaults are
+        # written on new records so the returned record and audit snapshot
+        # remain byte-for-byte compatible; legacy rows are annotated on read.
+        data['course_id']=self._text(payload.get('course_id',''), limit=160, required=False)
+        data['iep_summary_id']=self._text(payload.get('iep_summary_id',''), limit=160, required=False)
+        data['report_id']=self._text(payload.get('report_id',''), limit=160, required=False)
         if type(payload['expected_version']) is not int or payload['expected_version']<0:
             raise MeasurementError(400,'invalid_version','记录版本无效')
         data['expected_version']=payload['expected_version']
@@ -101,6 +111,7 @@ class Demo2EvaluationStore:
         # Normalize whitespace/control characters only after the shape is validated.
         data['items']=[{**r,**{k:self._text(r[k],limit=2000,required=False) for k in ('evidence','reason','suggestion')}} for r in data['items']]
         result=evaluate(data)
+        result['evaluation_id']=data['evaluation_id']
         return data,result
 
     def workspace(self,token):
@@ -124,6 +135,10 @@ class Demo2EvaluationStore:
         # Annotate legacy JSON on read, without rewriting its historical version.
         data=dict(data)
         data.setdefault('task_id','')
+        data.setdefault('course_id','')
+        data.setdefault('evaluation_id',f"evaluation-{data.get('record_id','')}")
+        data.setdefault('iep_summary_id','')
+        data.setdefault('report_id','')
         data.setdefault('frame_revision','')
         data.setdefault('source_sha256',None)
         data.setdefault('source_provenance',{'status':'unlinked','scope':'course','student_linkage':'not_asserted'})
@@ -163,6 +178,22 @@ class Demo2EvaluationStore:
         data.update(source_sha256=sha,source_provenance={'status':'linked','scope':'course',
                     'student_linkage':'not_asserted','task_id':task_id,'frame_revision':revision,
                     'source_sha256':sha,'school_context':context,'course_id':task['course_id']})
+
+    def for_task(self, token, task_id):
+        """Return only active evaluations linked to one owned video task."""
+        account=self._account(token)
+        if not isinstance(task_id,str) or re.fullmatch(r'[A-Za-z0-9_-]{1,120}',task_id) is None:
+            raise MeasurementError(400,'invalid_task','课堂任务编号无效')
+        with self.records._connect() as db:
+            task=Demo2IdentityStore._task(db,account,task_id)
+            context=Demo2IdentityStore._context(task.get('school_context_json'))
+            scope=Demo2IdentityStore._scope(account['account_id'],context)
+            rows=db.execute('''SELECT payload_json FROM demo2_classroom_evaluations
+                WHERE owner_account_id=? AND scope_key=? AND status='active'
+                AND json_extract(payload_json,'$.task_id')=?
+                ORDER BY updated_at DESC''',
+                (account['account_id'],scope,task_id)).fetchall()
+        return [self._public(json.loads(row['payload_json'])) for row in rows]
 
     def _existing(self,db,account,scope,data):
         row=db.execute('SELECT * FROM demo2_classroom_evaluations WHERE record_id=?',(data['record_id'],)).fetchone()

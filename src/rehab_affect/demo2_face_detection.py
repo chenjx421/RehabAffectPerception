@@ -39,6 +39,11 @@ MAX_DETECTION_VIEWS = 5
 TILE_FRACTION = 0.6
 SCORE_THRESHOLD = 0.8
 NMS_THRESHOLD = 0.3
+# The public single-frame endpoint keeps its conservative threshold.  The
+# classroom tracker gets a separate small-face budget because its candidates
+# are still constrained by a fixed seat lane and are never treated as names.
+TRACKING_TILE_FRACTION = 0.45
+TRACKING_SCORE_THRESHOLD = 0.62
 LOCK_TIMEOUT_SEC = 0.25
 # Leave room for validation/response handling inside the 10-second gateway.
 WORKER_TIMEOUT_SEC = 6.0
@@ -95,6 +100,7 @@ def _collect_candidates(
     raw: Any, original_width: int, original_height: int,
     resized_width: int, resized_height: int, pad_x: int, pad_y: int,
     *, region: tuple[int, int, int, int] | None = None,
+    score_threshold: float = SCORE_THRESHOLD,
 ) -> set[tuple[float, float, float, float, float]]:
     """Map bounded view predictions to the ORIGINAL image before global NMS.
 
@@ -130,7 +136,7 @@ def _collect_candidates(
                 continue
             x, y, width, height = values[:4]
             score = values[14]
-            if width <= 0 or height <= 0 or not SCORE_THRESHOLD <= score <= 1.0:
+            if width <= 0 or height <= 0 or not score_threshold <= score <= 1.0:
                 continue
             # Keep precision; clipping rather than rounding preserves 0 < w/h
             # and x+w/y+h <= 1, including boxes exactly on the image boundary.
@@ -175,21 +181,28 @@ def _normalize_faces(
     return _format_candidates(ordered)
 
 
-def _view_regions(width: int, height: int) -> list[tuple[int, int, int, int]]:
+def _view_regions(
+    width: int, height: int, *, fraction: float = TILE_FRACTION,
+    max_views: int = MAX_DETECTION_VIEWS,
+) -> list[tuple[int, int, int, int]]:
     """Full frame plus four overlapping crops; at most five finite-size views."""
     if width <= 0 or height <= 0:
         return []
-    tile_width, tile_height = math.ceil(width * TILE_FRACTION), math.ceil(height * TILE_FRACTION)
+    if not math.isfinite(fraction) or not 0 < fraction <= 1:
+        return []
+    tile_width, tile_height = math.ceil(width * fraction), math.ceil(height * fraction)
     regions = [(0, 0, width, height)]
     for y in (0, height - tile_height):
         for x in (0, width - tile_width):
             region = (x, y, tile_width, tile_height)
             if region not in regions:
                 regions.append(region)
-    return regions[:MAX_DETECTION_VIEWS]
+    return regions[:max(1, min(MAX_DETECTION_VIEWS, int(max_views)))]
 
 
-def _merge_candidates(candidates: Any) -> list[dict[str, Any]]:
+def _merge_candidates(
+    candidates: Any, *, score_threshold: float = SCORE_THRESHOLD,
+) -> list[dict[str, Any]]:
     """Deterministic greedy NMS, suppressing IoU > 0.3; then assign local IDs."""
     bounded = set()
     for index, row in enumerate(candidates):
@@ -198,7 +211,7 @@ def _merge_candidates(candidates: Any) -> list[dict[str, Any]]:
         if len(row) != 5 or not all(math.isfinite(value) for value in row):
             continue
         score, x, y, width, height = row
-        if (not SCORE_THRESHOLD <= score <= 1 or x < 0 or y < 0 or width <= 0 or height <= 0
+        if (not score_threshold <= score <= 1 or x < 0 or y < 0 or width <= 0 or height <= 0
                 or x + width > 1 or y + height > 1):
             continue
         bounded.add(tuple(row))

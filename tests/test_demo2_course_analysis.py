@@ -3,10 +3,12 @@ import json
 import pytest
 
 from rehab_affect.demo2_measurement_store import Demo2MeasurementStore, MeasurementError
+from rehab_affect.demo2_evaluation_store import Demo2EvaluationStore
 from rehab_affect.demo2_identity_store import IdentityError
 from test_demo2_identity_store import (env, make_task, student, binding_payload, login,
                                        OTHER, ADMIN, persist_result)
 from test_demo2_measurement_store import _payload
+from test_demo2_evaluation_store import payload as evaluation_payload
 
 
 def ready(env, **changes):
@@ -39,6 +41,49 @@ def test_report_is_task_scoped_and_tracks_teacher_evidence(env):
     assert result['people'][0]['student_id']==pupil['student_id']
     store.save(task.token,_payload(pupil['student_id'],record_id='elsewhere',lesson_id='other'))
     assert len(store.course_workspace(task.token,task.task_id)['records'])==1
+
+
+def test_task_report_joins_dual_track_evaluation_by_task_id(env):
+    store, task, pupil, binding, measurement = ready(env)
+    store.save(task.token, measurement)
+    evaluation = Demo2EvaluationStore(env.record)
+    saved = evaluation.save(task.token, evaluation_payload(
+        record_id='task-linked-evaluation', lesson_id=task.task_id,
+        task_id=task.task_id, frame_revision=task.revision,
+    ))
+
+    work = store.course_workspace(task.token, task.task_id)
+    assert work['report']['identifiers']['task_id'] == task.task_id
+    assert work['report']['identifiers']['evaluation_id'] == saved['evaluation_id']
+    assert work['report']['identifiers']['report_id'].startswith('report-')
+    dual = next(section for section in work['report']['sections'] if section['title']=='双轨评价对照')
+    assert '学校分 8.0' in dual['text']
+    assert '系统增强分 7.0' in dual['text']
+    assert work['identifiers']['report_id'] == work['report']['report_id']
+
+
+def test_course_report_download_uses_current_task_report(env):
+    store, task, _, _, measurement = ready(env)
+    store.save(task.token, measurement)
+    report = store.course_report(task.token, task.task_id)
+    assert report['task_id'] == task.task_id
+    assert report['report_download_url'].endswith('task_id='+task.task_id)
+    assert report['full_text']
+    assert '双轨评价对照' in report['full_text']
+
+
+def test_evaluation_accepts_stable_linkage_ids_without_client_evaluation_id(env):
+    _, task, _, _, _ = ready(env)
+    evaluation = Demo2EvaluationStore(env.record)
+    saved = evaluation.save(task.token, evaluation_payload(
+        record_id='linked-evaluation', course_id='course-1',
+        iep_summary_id='iep-1', report_id='report-placeholder',
+        task_id=task.task_id, frame_revision=task.revision,
+    ))
+    assert saved['course_id'] == 'course-1'
+    assert saved['iep_summary_id'] == 'iep-1'
+    assert saved['report_id'] == 'report-placeholder'
+    assert saved['evaluation_id'] == 'evaluation-linked-evaluation'
 
 
 @pytest.mark.parametrize('username',[OTHER,ADMIN])

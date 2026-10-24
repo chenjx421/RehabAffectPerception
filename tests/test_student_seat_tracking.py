@@ -65,7 +65,7 @@ def test_full_timeline_keeps_every_window_and_same_time_image(scene):
 def test_person_reports_are_independent_and_motion_is_not_attention(scene):
     request = scene(65, moving=True)
     result = tracking.analyze(request, lambda _: [face(.18), face(.68)])
-    assert result['analysis_version'] == 'simple_student_seats_v3_2'
+    assert result['analysis_version'] == tracking.VERSION
     assert result['network_used'] is False
     left, right = result['persons']
     assert left['average_score'] > right['average_score']
