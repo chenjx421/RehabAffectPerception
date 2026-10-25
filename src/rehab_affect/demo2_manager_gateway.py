@@ -449,6 +449,17 @@ catch(e){secret='';document.getElementById('status').textContent='邀请无效�
         return http.client.HTTPConnection("127.0.0.1", self.server.config.upstream_port,
                                           timeout=min(timeout, remaining))
 
+    def _open_connection(self, timeout: float) -> Any:
+        """Open the upstream connection while keeping test doubles compatible."""
+        try:
+            return self._connection(timeout=timeout)
+        except TypeError as exc:
+            # A few embedded callers provide a zero-argument connection
+            # factory.  Do not hide unrelated TypeErrors from the real factory.
+            if "unexpected keyword argument 'timeout'" not in str(exc):
+                raise
+            return self._connection()
+
     def _authenticated(self, cookies: dict[str, str]) -> bool:
         if not cookies.get(SESSION_COOKIE_NAME):
             return False
@@ -480,7 +491,7 @@ catch(e){secret='';document.getElementById('status').textContent='邀请无效�
         path = target.split("?", 1)[0]
         upload = self.command == "POST" and (path in _UPLOAD_CHUNK_PATHS or path == _UPLOAD_RESUME_PATH)
         upstream_timeout = UPLOAD_UPSTREAM_TIMEOUT_SECONDS if upload else TIMEOUT_SECONDS
-        connection = self._connection(timeout=upstream_timeout)
+        connection = self._open_connection(upstream_timeout)
         started = False
         try:
             headers = self._upstream_headers(cookies)

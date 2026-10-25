@@ -309,7 +309,6 @@ def _workspace_nav(active: str, *, compact: bool = False) -> str:
         ("students", "学生名册", ' id="studentRosterLink"'),
         ("school", "学校信息", ""),
         ("membership", "会员中心", ' id="membershipLink"'),
-        ("help", "使用帮助", ""),
     )
     links = "".join(
         f'<a href="/demo2/{route}"{element_id}'
@@ -319,7 +318,7 @@ def _workspace_nav(active: str, *, compact: bool = False) -> str:
     # Keep the primary workflow compact; the new measurement and recording
     # tools remain directly reachable beside it without changing legacy nav
     # contracts used by embedded school pages.
-    tools = '<span class="workspace-tool-links"><a href="/demo2/evaluation">课堂双轨评价</a><a href="/demo2/measurement">测量与报告</a><a href="/demo2/capture">录制课堂</a></span>'
+    tools = '<span class="workspace-tool-links"><a href="/demo2/help">使用帮助</a><a href="/demo2/evaluation">课堂双轨评价</a><a href="/demo2/measurement">测量与报告</a><a href="/demo2/capture">录制课堂</a></span>'
     return f'<nav class="workspace-nav" aria-label="账号工作台">{links}</nav>{tools}'
 
 
@@ -329,6 +328,7 @@ def render_demo2_upload_html(account: Any | None = None) -> str:
 .page-shell { padding-top:20px; }
 .advanced-only { display:none !important; }
 body.advanced-mode .advanced-only { display:block !important; }
+body:not(.advanced-mode) .task-section { display:block !important; }
 .compact-workspace-nav { gap:18px; }
 .compact-workspace-nav a { min-height:40px; }
 .simple-workflow { margin-bottom:20px; }
@@ -454,7 +454,7 @@ body.advanced-mode .advanced-only { display:block !important; }
 <header class="site-header">
   <div class="header-inner">
     <a class="brand" href="/demo2/upload">{_BOOK_ICON}<span class="brand-copy"><strong>RehabAffect</strong><span>学校视频上传工作台</span></span></a>
-    {_workspace_nav("upload", compact=True)}
+    {_workspace_nav("upload")}
     <div class="header-actions">
       <div class="account-chip"><span>登录账号</span><strong id="accountName">读取中</strong></div>
       <div class="account-chip"><span>当前通道</span><strong id="channelName">读取中</strong></div>
@@ -463,7 +463,7 @@ body.advanced-mode .advanced-only { display:block !important; }
   </div>
 </header>
 <main class="page-shell" id="mainContent">
-  <div class="page-heading"><div><span class="eyebrow">教师上传入口</span><h1>上传课堂视频</h1><p class="lead">选一个视频，点击开始分析。上传和后台处理会连续进行。</p></div><a class="button quiet advanced-only" id="analysisLink" href="/demo2/analysis" aria-label="课堂复核与图文报告">课堂复核与报告</a></div>
+  <div class="page-heading"><div><span class="eyebrow">教师上传入口</span><h1>提交课堂视频</h1><p class="lead">上传课堂视频，后台完成分析后查看学生状态结果。</p></div><a class="button quiet advanced-only" id="analysisLink" href="/demo2/analysis" aria-label="课堂复核与图文报告">课堂复核与报告</a></div>
   <div class="page-message" id="pageMessage" role="alert" aria-live="assertive" tabindex="-1"></div>
   <div class="school-location"><span id="schoolLocation" role="status">正在读取学校信息</span><a class="button quiet" id="completeSchoolLink" href="/demo2/school" target="_blank" rel="noopener noreferrer">补全学校信息</a><button class="button quiet" id="reloadSchoolButton" type="button">重新读取学校信息</button></div>
   <ol class="workflow simple-workflow" aria-label="视频分析流程"><li><b>1</b> 选择视频</li><li><b>2</b> 上传并分析</li><li><b>3</b> 查看学生状态</li></ol>
@@ -591,9 +591,16 @@ async function loadSchoolContext() {{
 function setAccount(value) {{
   account=value||{{}};
   byId('accountName').textContent=account.login_alias||account.username||'未识别账号';
+  const boundChannel=String(account.bound_channel_id||'').trim();
+  const channelSelect=byId('channelSelect');
+  if(boundChannel&&channelSelect&&!channelSelect.value) {{
+    channelSelect.innerHTML=`<option value="${{esc(boundChannel)}}">${{esc(channelLabel(boundChannel))}}</option>`;
+    channelSelect.value=boundChannel;
+  }}
   const channel=workspace?.channel?.channel_name||channelLabel(byId('channelSelect')?.value)||channelLabel(account.bound_channel_id)||'未配置';
   byId('channelName').textContent=channel;
   byId('boundChannel').textContent=channel;
+  updateUploadEnabled();
 }}
 function updateUploadEnabled() {{
   const maximum=newVideoLimit();
@@ -741,6 +748,7 @@ function syncProcessingProgress() {{
     byId('transferDetails').textContent=typeof task.processing_error==='object'?String(task.processing_error?.message||'请打开任务查看原因。'):'请打开任务查看原因。';
     return;
   }}
+  if(task.upload_status==='completed' && !['queued','processing','uploaded_pending_worker','precheck_complete'].includes(status)) return;
   const backend=Number(task.processing_progress);
   const combined=90+(Number.isFinite(backend)?Math.max(0,Math.min(100,backend))*0.1:0);
   setProgress(combined,`上传完成，正在后台分析${{Number.isFinite(backend)?` · ${{Math.round(backend)}}%`:''}}`);
@@ -921,8 +929,6 @@ async function runUpload(s) {{
       byId('videoFile').value='';byId('selectedFileName').textContent='尚未选择视频';byId('allowCompanyArchive').value='no';
       byId('filePreview').textContent='如需继续上传，请重新选择视频并确认授权。';
       const finishedTaskId=s.taskId;activeProcessingTaskId=finishedTaskId;processingRedirected=false;
-      setProgress(90,'上传完成，正在后台分析');
-      byId('transferDetails').textContent='后台会继续处理，当前页面无需重复点击。';
       await loadWorkspace({{silent:true}});message('视频已上传，正在后台分析；分析完成后会自动打开学生状态结果。','success');
       syncProcessingProgress();scheduleTaskPoll(1500,false);
     }}
@@ -1033,9 +1039,10 @@ document.addEventListener('visibilitychange',()=>{{clearTimeout(taskPollTimer);i
 const initialCourse=new URLSearchParams(location.search).get('course_id')||`demo2-${{new Date().toISOString().slice(0,10)}}`; byId('courseId').value=initialCourse;
 setAccount(account); renderSlots();
 let automaticWorkspaceStarted=false;
-function loadAutomaticWorkspace() {{ if(automaticWorkspaceStarted||schoolState!=='ready')return; automaticWorkspaceStarted=true; loadWorkspace(); }}
+let identityReady=!!account?.role;
+function loadAutomaticWorkspace() {{ if(automaticWorkspaceStarted||!identityReady||schoolState!=='ready')return; automaticWorkspaceStarted=true; loadWorkspace(); }}
 loadSchoolContext().then(loadAutomaticWorkspace);
-api(API_ROUTES.me).then(payload=>{{ setAccount(payload.account); loadAutomaticWorkspace(); }}).catch(error=>message(error.message));
+api(API_ROUTES.me).then(payload=>{{ setAccount(payload.account); identityReady=!!payload.account?.role; loadAutomaticWorkspace(); }}).catch(error=>message(error.message));
 """
     return _document(title="视频上传 · RehabAffect 学校内测平台", body=body, page_style=page_style, script=script)
 

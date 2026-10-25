@@ -1026,11 +1026,19 @@ class Demo2StudentRecordStore:
             raise ValueError("该账号没有学校视频上传权限")
         if not normalized_course_id:
             raise ValueError("course_id 不能为空")
+        if not str(account.get("bound_channel_id") or "").strip():
+            raise ValueError("该账号尚未绑定视频上传通道")
         with self._connect() as connection:
-            channels = connection.execute(
-                "SELECT * FROM video_upload_channels WHERE status = 'active' ORDER BY channel_no"
-            ).fetchall()
             preferred_channel_id = str(account.get("bound_channel_id") or "").strip()
+            # Keep the account's channel visible when an administrator pauses
+            # it.  A paused channel must be shown as paused so the teacher can
+            # understand why a new upload is blocked and resume later without
+            # being silently switched to another channel.
+            channels = connection.execute(
+                "SELECT * FROM video_upload_channels "
+                "WHERE status = 'active' OR channel_id = ? ORDER BY channel_no",
+                (preferred_channel_id,),
+            ).fetchall()
             selected_channel = next(
                 (row for row in channels if row["channel_id"] == preferred_channel_id),
                 channels[0] if channels else None,
@@ -1828,6 +1836,7 @@ class Demo2StudentRecordStore:
         ).fetchone()
         if (account is None or account["status"] != "active" or account["role"] != "school_uploader"
                 or account_id != task.get("account_id")
+                or account["bound_channel_id"] != task.get("channel_id")
                 or (course_id is not None and course_id != task["course_id"])):
             raise VideoUploadError(403, "task_forbidden", "当前账号或课程无权续传此任务，请返回自己的课程确认")
         snapshot = json.loads(task.get("school_context_json") or "{}")

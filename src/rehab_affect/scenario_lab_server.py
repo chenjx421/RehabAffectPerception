@@ -967,7 +967,10 @@ def create_handler(
                     self._send_text_payload(renderer.render_batch_review().encode('utf-8'), content_type='text/html; charset=utf-8',
                                             extra_headers={'Cache-Control':'no-store, private'})
                 elif path == "/demo2/analysis":
-                    self._require_role(account, 'school_uploader')
+                    # The company backend may open the legacy classroom
+                    # analysis page for inspection; only teachers can create
+                    # or change classroom data through the newer routes.
+                    self._require_role(account, 'school_uploader', 'company_admin')
                     if urlparse(self.path).query:
                         task_id, = self._identity_query(urlparse(self.path), ('task_id',))
                         self._measurement_call('course_workspace', self._session_cookie_token(), task_id)

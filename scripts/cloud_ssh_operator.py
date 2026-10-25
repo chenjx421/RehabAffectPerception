@@ -14,7 +14,9 @@ import time
 
 import paramiko
 
-HOST = "YOUR_SERVER_IP"
+# This is the already-approved Tencent Cloud pilot host.  The host key below
+# remains the authoritative identity check before any authentication is sent.
+HOST = "124.220.179.213"
 HOST_KEY = "SHA256:bmsTXtCIUMC+E09eymKVsTdxMXld4Nj0YwI+JtMjP90"
 ROOT = Path(__file__).resolve().parents[1]
 KEY = ROOT / ".runtime/cloud_deploy_20261020/rehab_cloud_ed25519"
