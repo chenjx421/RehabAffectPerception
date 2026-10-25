@@ -123,7 +123,7 @@ def test_withdrawn_record_cannot_be_reused_or_withdrawn_twice(env):
 
 def test_uuid_and_date_contract_validation_is_strict_and_transactional(env):
     invalid_payloads = [
-        evaluation_payload(record_id="fixture-1"),
+        evaluation_payload(record_id="fixture id"),
         evaluation_payload(record_id=str(uuid4()), lesson_date="2026-1-1"),
         evaluation_payload(record_id=str(uuid4()), lesson_date="2026-02-30"),
         evaluation_payload(record_id=str(uuid4()), lesson_date=(date.today() + timedelta(days=1)).isoformat()),

@@ -134,7 +134,7 @@ def test_preview_is_read_only_and_conflicts_preserve_the_form_contract(api_env):
     assert request(api)[2]["workspace"]["records"] == []
 
     request(api, "POST", payload())
-    conflict = request(api, "POST", payload(expected_version=1, course_name="并发旧版本"))
+    conflict = request(api, "POST", payload(expected_version=0, course_name="并发旧版本"))
     assert_error(conflict, 409, "version_conflict")
     workspace = request(api)[2]["workspace"]
     assert len(workspace["records"]) == 1

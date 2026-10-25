@@ -972,7 +972,16 @@ def create_handler(
                     # or change classroom data through the newer routes.
                     parsed_analysis = urlparse(self.path)
                     if _account_role(account) == 'company_admin' and not parsed_analysis.query:
-                        self.send_error(403, "A task id is required for company analysis access")
+                        self._require_role(account, 'company_admin')
+                        self._send_text_payload(
+                            "<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>"
+                            "<title>请选择课堂任务</title></head><body>"
+                            "<main><h1>请选择课堂任务</h1>"
+                            "<p>公司后台需要从任务记录进入分析页面，未指定任务时不读取任何课堂数据。</p>"
+                            "<p><a href='/demo2/admin'>返回公司后台</a></p></main></body></html>".encode('utf-8'),
+                            content_type="text/html; charset=utf-8",
+                            extra_headers={"Cache-Control": "no-store, private"},
+                        )
                         return
                     self._require_role(account, 'school_uploader', 'company_admin')
                     if parsed_analysis.query:

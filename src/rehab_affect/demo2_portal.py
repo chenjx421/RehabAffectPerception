@@ -304,12 +304,15 @@ def _workspace_nav(active: str, *, compact: bool = False) -> str:
                 f'<a href="/demo2/upload" aria-current="page">上传视频</a>'
                 '<a href="/demo2/upload?advanced=1">更多功能</a>'
                 '<a href="/demo2/help">使用帮助</a></nav>')
-    items = (
-        ("upload", "上传任务", ""),
-        ("students", "学生名册", ' id="studentRosterLink"'),
+    # Keep the upload screen focused on the teacher's main path. The roster
+    # route remains available from its own page and direct links.
+    items = [("upload", "上传任务", "")]
+    if active != "upload":
+        items.append(("students", "学生名册", ' id="studentRosterLink"'))
+    items.extend((
         ("school", "学校信息", ""),
         ("membership", "会员中心", ' id="membershipLink"'),
-    )
+    ))
     links = "".join(
         f'<a href="/demo2/{route}"{element_id}'
         f'{" aria-current=page" if route == active else ""}>{label}</a>'
