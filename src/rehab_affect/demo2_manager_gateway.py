@@ -47,6 +47,7 @@ UPLOAD_UPSTREAM_TIMEOUT_SECONDS = 120.0
 _UPLOAD_CHUNK_PATHS = frozenset({"/api/v1/demo2/upload/chunks", "/api/seewo_demo2/video_chunk"})
 _UPLOAD_RESUME_PATH = "/api/v1/demo2/upload/resume"
 RESUME_MAX_BODY_BYTES = 128 * 1024
+REJECT_BODY_DRAIN_MAX_BYTES = 64 * 1024
 AUTH_PATH = "/api/v1/demo2/auth/me"
 _PAGES = frozenset({
     "/demo2/safety",
@@ -357,6 +358,20 @@ class _GatewayHandler(BaseHTTPRequestHandler):
             raise _InvalidFraming("Body not allowed")
         return length
 
+    def _drain_rejected_body(self, path: str, length: int) -> None:
+        """Consume only small non-upload bodies before sending a rejection.
+
+        Closing a connection with unread request bytes can surface as a client
+        reset on Windows. Upload and resume routes deliberately remain
+        unread until their invitation/account gates pass.
+        """
+        if self.command != "POST" or not 0 < length <= REJECT_BODY_DRAIN_MAX_BYTES:
+            return
+        if (path.startswith("/api/v1/demo2/upload/")
+                or path.startswith("/api/seewo_demo2/video_")):
+            return
+        self._read_body(length)
+
     def handle_expect_100(self) -> bool:
         self._error(400, "invalid_framing", "Expect and chunked requests are not supported")
         return False
@@ -617,6 +632,7 @@ catch(e){secret='';document.getElementById('status').textContent='邀请无效�
                 self._gate_failure()
                 return
             if not self._invited(cookies):
+                self._drain_rejected_body(path, length)
                 self._gate_failure()
                 return
             if path == "/favicon.ico" and self.command == "GET":
@@ -624,6 +640,7 @@ catch(e){secret='';document.getElementById('status').textContent='邀请无效�
                 return
             legacy_return = self.command == "GET" and path == "/seewo_student_demo"
             if not _allowed(self.command, path) and not legacy_return:
+                self._drain_rejected_body(path, length)
                 self._error(404, "route_not_allowed", "Not found")
                 return
             if path == "/api/v1/demo2/auth/login" and self.server.login_attempts.blocked("global", failure=True):
@@ -632,6 +649,7 @@ catch(e){secret='';document.getElementById('status').textContent='邀请无效�
                 }}, ensure_ascii=False).encode(), headers=[("Retry-After", "300")])
                 return
             if path not in _PUBLIC_UPSTREAM and not self._authenticated(cookies):
+                self._drain_rejected_body(path, length)
                 if path in _PAGES or legacy_return:
                     self._respond(303, headers=[("Location", "/demo2/login")])
                 else:

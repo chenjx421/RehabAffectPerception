@@ -6,7 +6,7 @@
 
 ```text
 .runtime/cloud_candidate_20261025_final/source.tar.gz
-SHA256 2B1FFB46A8983363746BF8FBDD2775E1F452EC2BA96354A96D4B2D4E40E47626
+SHA256 7E559309477A62E9114AA0FBACEF37F66C6ABDC6A88FEFF470B9959730D17B5A
 ```
 
 本次没有完成 GitHub 远程推送，也没有覆盖腾讯云正式环境。原因是当前 GitHub token 已失效，Windows Credential Manager 无法在当前会话写入凭据；云端部署私钥位于本机受保护目录，当前自动执行环境不能读取。不要把这两项描述成“已发布”。
@@ -44,15 +44,18 @@ SHA256 2B1FFB46A8983363746BF8FBDD2775E1F452EC2BA96354A96D4B2D4E40E47626
 |---|---|
 | IEP、学生关联、评分、报告闭环 | `47 passed` |
 | 媒体分析、上传处理、媒体 API、FFmpeg 调用路径 | `350 passed, 3 skipped` |
-| 门户页面、管理员 API、通道管理、后台刷新 | `339 passed, 1 skipped, 1 failed` |
+| 门户页面、管理员 API、通道管理、后台刷新 | `340 passed, 1 skipped` |
 
-门户唯一失败：
+前一轮回归曾出现的门户断言已修复，随后网关专项和完整门户组均通过：
 
 ```text
-tests/test_demo2_portal_api.py::test_portal_pages_redirect_and_enforce_roles
+`test_demo2_manager_gateway.py`：`137 passed`
+完整门户/后台整合组：`340 passed, 1 skipped`
 ```
 
-旧测试期待公司管理员访问 `/demo2/analysis`（没有 `task_id`）返回 `403`；当前代码按新的安全契约返回 `200` 安全引导页，并明确要求从公司任务记录进入。这是测试断言需要更新为 `200` 并检查引导文字，不是上传、分析或报告逻辑失败。请整合时先更新该测试，再重新跑门户组。
+旧测试曾期待公司管理员访问 `/demo2/analysis`（没有 `task_id`）返回 `403`；现已更新为检查当前安全契约：返回 `200` 安全引导页且不读取课堂数据。
+
+网关还修复了 Windows 下小型非上传 POST 被拒绝时的连接中止问题：受保护的非法方法/路由会先排空不超过 64 KiB 的非上传请求体，再返回 401/404；上传分片和续传仍保持鉴权前不读取请求体的安全门槛。
 
 补充检查：
 
@@ -72,7 +75,7 @@ tests/test_demo2_portal_api.py::test_portal_pages_redirect_and_enforce_roles
    3b355be Fix Demo2 upload processing and cloud deployment integration
    ```
 
-2. 更新 `tests/test_demo2_portal_api.py` 中管理员无任务分析地址的旧断言，按当前安全引导行为验收。
+2. 保留已更新的管理员无任务分析断言和网关拒绝请求修复，按当前安全引导行为验收。
 3. 重新跑本说明的三组相关测试；不要把历史全量媒体/浏览器/恢复套件的耗时结果混写成 1-10 整合结果。
 4. 重点人工验收以下字段是否贯通：
 
@@ -140,7 +143,7 @@ python scripts\cloud_ssh_operator.py --command `
 上面第 3 步的路径和 SHA 必须与实际上传文件一致；本次候选包 SHA 的小写形式是：
 
 ```text
-2b1ffb46a8983363746bf8fbdd2775e1f452ec2ba96354a96d4b2d4e40e47626
+7e559309477a62e9114aa0fbacef37f66c6abdc6a88feff470b9959730d17b5a
 ```
 
 正式重启服务前，先备份数据库、WAL/SHM、上传目录和当前代码，并确认没有学校正在上传或分析。随后再执行云端整条验收：
@@ -169,7 +172,7 @@ python scripts\cloud_ssh_operator.py --command `
 ## 当前需要程序员完成的事项
 
 - 拉取并检查本分支 4 个提交。
-- 修正门户旧测试断言并重新跑三组整合测试。
+- 网关拒绝请求的连接处理已修复；门户旧测试断言已更新，相关整合测试已重新通过。
 - 在有 GitHub 写权限的环境推送 `integration/demo2-1-10`。
 - 在有云端 SSH 私钥的环境上传候选包，确认 FFmpeg/ffprobe，执行预检和完整合成 E2E。
 - 将云端验收日志、提交 SHA、候选包 SHA 和失败项回传；不要回传任何密码、API Key、邀请密钥、真实学生资料或人脸截图。

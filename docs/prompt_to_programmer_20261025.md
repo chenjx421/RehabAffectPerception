@@ -19,7 +19,7 @@
 
 ```text
 .runtime/cloud_candidate_20261025_final/source.tar.gz
-2B1FFB46A8983363746BF8FBDD2775E1F452EC2BA96354A96D4B2D4E40E47626
+7E559309477A62E9114AA0FBACEF37F66C6ABDC6A88FEFF470B9959730D17B5A
 ```
 
 ## 已验证结果
@@ -28,14 +28,16 @@
 
 - 数据闭环：`47 passed`；
 - 上传/媒体/FFmpeg 调用路径：`350 passed, 3 skipped`；
-- 门户和后台：`339 passed, 1 skipped, 1 failed`。
+- 门户和后台：`340 passed, 1 skipped`。
 
-唯一失败是 `tests/test_demo2_portal_api.py::test_portal_pages_redirect_and_enforce_roles`：旧测试期待管理员访问无任务 ID 的 `/demo2/analysis` 返回 403；当前安全设计返回 200 引导页，要求从后台任务记录进入。请更新该断言和引导页检查，再重新跑相关测试。
+之前的门户失败已修复：旧测试期待管理员访问无任务 ID 的 `/demo2/analysis` 返回 403，现已更新为检查 200 安全引导页。网关专项 `137 passed`，完整门户/后台组 `340 passed, 1 skipped`。
+
+另外已修复 Windows 下小型非上传 POST 被拒绝时的连接中止问题。非上传且不超过 64 KiB 的拒绝请求会先排空请求体；上传分片和续传仍保持鉴权前不读请求体。
 
 ## 请完成的工作
 
 1. 拉取 `integration/demo2-1-10`，检查上述提交和文件没有丢失。
-2. 更新唯一过时的门户测试，并重新运行数据、媒体、门户三组测试。
+2. 保留已更新的门户测试和网关拒绝请求修复，重新运行数据、媒体、门户三组测试。
 3. 检查接口字段是否贯通：
 
    ```text
