@@ -52,8 +52,12 @@ def test_live_iep_join_uses_fixed_ids_without_plaintext_in_snapshot(env):
         for fmt in ('json', 'md'):
             downloaded, _, _ = reports.download(env.tokens[user], snapshot['report_id'], fmt=fmt)
             assert SECRET not in downloaded
+    teacher_stored = reports.get(env.tokens['a'], snapshot['report_id'])
+    assert teacher_stored['payload']['report']['iep_links'][0]['reference_id'] == ref['reference_id']
     stored = reports.get(env.tokens['admin'], snapshot['report_id'])
-    assert stored['payload']['report']['iep_links'][0]['reference_id'] == ref['reference_id']
+    assert 'iep_links' not in stored['payload']['report']
+    admin_download, _, _ = reports.download(env.tokens['admin'], snapshot['report_id'], fmt='json')
+    assert 'iep_links' not in json.loads(admin_download)['report']
     assert stored['evaluation_count'] == 1
     with env.records._connect() as db:
         raw = db.execute('SELECT payload_json FROM demo2_reports').fetchone()[0]

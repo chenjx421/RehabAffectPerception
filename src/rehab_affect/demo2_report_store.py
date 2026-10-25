@@ -140,6 +140,17 @@ class Demo2ReportStore:
             "updated_at": row["updated_at"],
         }
 
+    @staticmethod
+    def _payload_for_role(payload, *, admin):
+        """Keep dossier linkage out of company-admin report responses."""
+        if not admin:
+            return payload
+        result = dict(payload)
+        report = dict(result.get("report") or {})
+        report.pop("iep_links", None)
+        result["report"] = report
+        return result
+
     # -- persistence -----------------------------------------------------------
 
     def save_from_workspace(self, token, workspace) -> dict[str, Any]:
@@ -307,7 +318,9 @@ class Demo2ReportStore:
             row = self._report(connection, account, report_id, admin=admin)
             self._require_current(connection, row)
             meta = self._public_meta(row)
-            meta["payload"] = json.loads(row["payload_json"] or "{}")
+            meta["payload"] = self._payload_for_role(
+                json.loads(row["payload_json"] or "{}"), admin=admin
+            )
             return meta
 
     def download(self, token, report_id, *, fmt: str = "md") -> tuple[str, str, str]:
@@ -319,7 +332,7 @@ class Demo2ReportStore:
             row = self._report(connection, account, report_id, admin=admin)
             self._require_current(connection, row)
             payload = json.loads(row["payload_json"] or "{}")
-            report = payload.get("report", {})
+            report = self._payload_for_role(payload, admin=admin).get("report", {})
             if fmt == "json":
                 text = json.dumps(
                     {
