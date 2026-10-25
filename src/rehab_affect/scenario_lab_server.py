@@ -970,9 +970,13 @@ def create_handler(
                     # The company backend may open the legacy classroom
                     # analysis page for inspection; only teachers can create
                     # or change classroom data through the newer routes.
+                    parsed_analysis = urlparse(self.path)
+                    if _account_role(account) == 'company_admin' and not parsed_analysis.query:
+                        self.send_error(403, "A task id is required for company analysis access")
+                        return
                     self._require_role(account, 'school_uploader', 'company_admin')
-                    if urlparse(self.path).query:
-                        task_id, = self._identity_query(urlparse(self.path), ('task_id',))
+                    if parsed_analysis.query:
+                        task_id, = self._identity_query(parsed_analysis, ('task_id',))
                         self._measurement_call('course_workspace', self._session_cookie_token(), task_id)
                     renderer = importlib.import_module('.demo2_course_page', package=__package__)
                     self._send_text_payload(renderer.render_course_analysis(account).encode("utf-8"), content_type="text/html; charset=utf-8",
