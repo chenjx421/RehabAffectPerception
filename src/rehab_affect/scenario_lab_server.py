@@ -539,6 +539,8 @@ def create_handler(
     evaluation_store = None
     summary_lock = Lock()
     summary_store = None
+    report_lock = Lock()
+    report_store = None
     identity_detect_lock = Lock()
     identity_detect_slots = BoundedSemaphore(1)
     identity_detect_attempts: OrderedDict[str, deque[float]] = OrderedDict()
@@ -1058,8 +1060,16 @@ def create_handler(
                 elif parsed.path == f"{DEMO2_API_PREFIX}/course-analysis":
                     self._require_role(account, 'school_uploader')
                     task_id, = self._identity_query(parsed, ('task_id',))
-                    self._send_demo2_json({'ok':True, 'workspace':self._measurement_call(
-                        'course_workspace', self._session_cookie_token(), task_id)})
+                    token = self._session_cookie_token()
+                    workspace = self._measurement_call('course_workspace', token, task_id)
+                    # Persist an idempotent report snapshot so the company
+                    # backend can list/download reports by stable report_id.
+                    report_saved = None
+                    try:
+                        report_saved = self._report_call('save_from_workspace', token, workspace)
+                    except Demo2APIError as exc:
+                        report_saved = {'saved': False, 'code': exc.code, 'message': exc.message}
+                    self._send_demo2_json({'ok': True, 'workspace': workspace, 'report_saved': report_saved})
                 elif parsed.path == f"{DEMO2_API_PREFIX}/course-analysis/report":
                     self._require_role(account, 'school_uploader')
                     task_id, = self._identity_query(parsed, ('task_id',))
@@ -1210,6 +1220,52 @@ def create_handler(
                     else:
                         summary = student_store.admin_platform_summary(self._session_cookie_token())
                     self._send_demo2_json({"ok": True, "summary": summary})
+                elif parsed.path == f"{DEMO2_API_PREFIX}/reports":
+                    token = self._session_cookie_token()
+                    try:
+                        query = parse_qs(parsed.query, keep_blank_values=True, max_num_fields=4, strict_parsing=True)
+                    except ValueError:
+                        raise Demo2APIError(400, "invalid_request", "报告查询参数无效") from None
+                    if set(query) == {"task_id"}:
+                        task_id = query["task_id"][0]
+                        if not re.fullmatch(r"[A-Za-z0-9_-]{1,120}", task_id):
+                            raise Demo2APIError(400, "invalid_request", "任务编号格式无效")
+                        self._send_demo2_json({"ok": True, **self._report_call("list_for_task", token, task_id)})
+                    elif set(query) == {"report_id"}:
+                        report_id = query["report_id"][0]
+                        if not re.fullmatch(r"[0-9a-f]{32}", report_id):
+                            raise Demo2APIError(400, "invalid_request", "报告编号格式无效")
+                        self._send_demo2_json({"ok": True, "report": self._report_call("get", token, report_id)})
+                    else:
+                        raise Demo2APIError(400, "invalid_request", "请仅提供 task_id 或 report_id 查询参数")
+                elif parsed.path == f"{DEMO2_API_PREFIX}/reports/download":
+                    token = self._session_cookie_token()
+                    try:
+                        query = parse_qs(parsed.query, keep_blank_values=True, max_num_fields=4, strict_parsing=True)
+                    except ValueError:
+                        raise Demo2APIError(400, "invalid_request", "报告下载参数无效") from None
+                    if set(query) not in ({"report_id"}, {"report_id", "fmt"}):
+                        raise Demo2APIError(400, "invalid_request", "请提供 report_id 及可选下载格式")
+                    report_id = query["report_id"][0]
+                    fmt = query.get("fmt", ["md"])[0]
+                    if not re.fullmatch(r"[0-9a-f]{32}", report_id):
+                        raise Demo2APIError(400, "invalid_request", "报告编号格式无效")
+                    text, filename, content_type = self._report_call("download", token, report_id, fmt=fmt)
+                    self._send_text_payload(text.encode("utf-8"), content_type=content_type, extra_headers={
+                        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+                        "Cache-Control": "no-store",
+                    })
+                elif parsed.path == f"{DEMO2_API_PREFIX}/admin/reports":
+                    self._require_role(account, "company_admin")
+                    query = parse_qs(parsed.query, keep_blank_values=True)
+                    if set(query) - {"page"}:
+                        raise Demo2APIError(400, "invalid_request", "不支持的后台报告参数")
+                    page = 1
+                    if "page" in query:
+                        if len(query["page"]) != 1 or not re.fullmatch(r"[1-9][0-9]{0,6}", query["page"][0]):
+                            raise Demo2APIError(400, "invalid_request", "报告页码须为正整数")
+                        page = int(query["page"][0])
+                    self._send_demo2_json({"ok": True, **self._report_call("list_admin", self._session_cookie_token(), page=page)})
                 else:
                     raise Demo2APIError(404, "not_found", "API route not found")
             except Demo2APIError as exc:
@@ -1600,6 +1656,18 @@ def create_handler(
                     page = "admin-dossiers"
                 else:
                     student_page = path == "/demo2/dossier"
+                    if student_page and not parsed.query:
+                        # No student chosen yet: send the teacher back to the
+                        # roster instead of failing with a 400 JSON response.
+                        self._send_text_payload(b"", status=302, content_type="text/html; charset=utf-8",
+                                                extra_headers={"Location": "/demo2/students",
+                                                               "Cache-Control": "no-store, private"})
+                        return
+                    if not student_page and not parsed.query:
+                        self._send_text_payload(b"", status=302, content_type="text/html; charset=utf-8",
+                                                extra_headers={"Location": "/demo2/upload",
+                                                               "Cache-Control": "no-store, private"})
+                        return
                     identifier, = self._dossier_query(parsed, ("student_id" if student_page else "task_id",))
                     dossier_call("student_workspace" if student_page else "task_workspace", self._session_cookie_token(), identifier)
                     page = "dossier" if student_page else "course-dossier"
@@ -2087,6 +2155,17 @@ def create_handler(
                         measurement_store = backend.Demo2MeasurementStore(student_store)
                 return getattr(measurement_store, method)(*args)
             except (backend.MeasurementError, backend.IdentityError) as exc:
+                raise Demo2APIError(exc.status, exc.code, exc.message) from None
+
+        def _report_call(self, method: str, *args: Any, **kwargs: Any) -> Any:
+            nonlocal report_store
+            backend = importlib.import_module('.demo2_report_store', package=__package__)
+            try:
+                with report_lock:
+                    if report_store is None:
+                        report_store = backend.Demo2ReportStore(student_store)
+                return getattr(report_store, method)(*args, **kwargs)
+            except backend.ReportError as exc:
                 raise Demo2APIError(exc.status, exc.code, exc.message) from None
 
         @staticmethod

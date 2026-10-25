@@ -411,7 +411,7 @@ def test_admin_memberships_preserve_legacy_sections_and_empty_records():
     assert "历史学校开通申请" in html
     assert "/api/v1/demo2/admin/memberships" in html
     _run_page_js(html,
-        "replies.push({account:{role:'company_admin'}},{summary:{}},{summary:{members:[],orders:[],sms_available:false,payment_available:false}});",
+        "replies.push({account:{role:'company_admin'}},{summary:{}},{summary:{members:[],orders:[],sms_available:false,payment_available:false}},{reports:[]});",
         """
         assert.ok(byId('membershipSummary').innerHTML.includes('暂未配置，不可付款'));
         assert.ok(byId('membershipAccounts').innerHTML.includes('暂无注册会员'));
@@ -424,7 +424,7 @@ def test_admin_memberships_preserve_legacy_sections_and_empty_records():
 
 def test_admin_membership_failure_does_not_hide_legacy_summary_or_fake_zero():
     _run_page_js(render_demo2_admin_html({"role": "company_admin"}),
-        "replies.push({account:{role:'company_admin'}},{summary:{upload_accounts:[{username:'t1'}]}},{status:503,body:{error:{message:'会员服务暂不可用'}}});",
+        "replies.push({account:{role:'company_admin'}},{summary:{upload_accounts:[{username:'t1'}]}},{status:503,body:{error:{message:'会员服务暂不可用'}}},{reports:[]});",
         """
         assert.ok(byId('accountList').innerHTML.includes('t1'));
         assert.ok(byId('membershipSummary').textContent.includes('会员服务暂不可用'));
@@ -436,7 +436,7 @@ def test_admin_membership_failure_does_not_hide_legacy_summary_or_fake_zero():
 
 def test_admin_memberships_render_only_returned_escaped_records_and_prices():
     _run_page_js(render_demo2_admin_html({"role": "company_admin"}),
-        "replies.push({account:{role:'company_admin'}},{summary:{}},{summary:{members:[{account_id:'member-1',phone_masked:'138****0000',status:'inactive'}],orders:[{order_id:'order-1',account_id:'member-1',plan_name:'<img src=x>',price_cents:1500,status:'pending'}],sms_available:true,payment_available:false}});",
+        "replies.push({account:{role:'company_admin'}},{summary:{}},{summary:{members:[{account_id:'member-1',phone_masked:'138****0000',status:'inactive'}],orders:[{order_id:'order-1',account_id:'member-1',plan_name:'<img src=x>',price_cents:1500,status:'pending'}],sms_available:true,payment_available:false}},{reports:[]});",
         """
         assert.ok(byId('membershipAccounts').innerHTML.includes('138****0000'));
         assert.ok(byId('membershipAccounts').innerHTML.includes('未开通'));
@@ -465,7 +465,7 @@ def test_admin_summaries_render_independently_and_recover_after_timeout(slow_pan
         const slow=(_url,options)=>new Promise((resolve,reject)=>{
             options.signal.addEventListener('abort',()=>reject(Object.assign(new Error('aborted'),{name:'AbortError'})),{once:true});
         });
-        """ + f"replies.push({{account:{{role:'company_admin'}}}},{replies});",
+        """ + f"replies.push({{account:{{role:'company_admin'}}}},{replies},{{reports:[]}});",
         early_assertion + """
         assert.equal(byId('refreshButton').disabled,true);
         const pending=[...timers.values()];assert.equal(pending.length,1);
@@ -474,7 +474,7 @@ def test_admin_summaries_render_independently_and_recover_after_timeout(slow_pan
         assert.ok(byId('pageMessage').textContent.includes('请求超时'));
         assert.ok(byId('pageMessage').textContent.includes('重试'));
         assert.equal(timers.size,0);
-        replies.push({account:{role:'company_admin'}},{summary:{}},{summary:{members:[],orders:[]}});
+        replies.push({account:{role:'company_admin'}},{summary:{}},{summary:{members:[],orders:[]}},{reports:[]});
         await byId('refreshButton').fire('click');
         assert.equal(byId('refreshButton').disabled,false);
         assert.equal(byId('pageMessage').textContent,'后台数据已刷新。');
@@ -488,7 +488,7 @@ def test_admin_timeout_while_reading_body_is_not_swallowed():
         const slowBody=(_url,options)=>({status:200,ok:true,json:()=>new Promise((resolve,reject)=>{
             options.signal.addEventListener('abort',()=>reject(Object.assign(new Error('aborted'),{name:'AbortError'})),{once:true});
         })});
-        replies.push({account:{role:'company_admin'}},{summary:{upload_accounts:[{username:'t1'}]}},slowBody);
+        replies.push({account:{role:'company_admin'}},{summary:{upload_accounts:[{username:'t1'}]}},slowBody,{reports:[]});
         """,
         """
         assert.ok(byId('accountList').innerHTML.includes('t1'));

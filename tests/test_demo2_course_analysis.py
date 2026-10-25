@@ -72,18 +72,23 @@ def test_course_report_download_uses_current_task_report(env):
     assert '双轨评价对照' in report['full_text']
 
 
-def test_evaluation_accepts_stable_linkage_ids_without_client_evaluation_id(env):
+def test_evaluation_derives_course_id_and_rejects_unverified_iep_link(env):
     _, task, _, _, _ = ready(env)
     evaluation = Demo2EvaluationStore(env.record)
     saved = evaluation.save(task.token, evaluation_payload(
-        record_id='linked-evaluation', course_id='course-1',
-        iep_summary_id='iep-1', report_id='report-placeholder',
+        record_id='linked-evaluation', report_id='report-placeholder',
         task_id=task.task_id, frame_revision=task.revision,
     ))
-    assert saved['course_id'] == 'course-1'
-    assert saved['iep_summary_id'] == 'iep-1'
+    with env.record._connect() as db:
+        actual = db.execute('SELECT course_id FROM video_analysis_tasks WHERE task_id=?',(task.task_id,)).fetchone()[0]
+    assert saved['course_id'] == actual
+    assert saved['iep_summary_id'] == ''
     assert saved['report_id'] == 'report-placeholder'
     assert saved['evaluation_id'] == 'evaluation-linked-evaluation'
+    with pytest.raises(MeasurementError) as exc:
+        evaluation.preview(task.token, evaluation_payload(record_id='forged-iep', lesson_id='other',
+            iep_summary_id='iep-1', task_id=task.task_id, frame_revision=task.revision))
+    assert exc.value.code == 'iep_link_unavailable'
 
 
 @pytest.mark.parametrize('username',[OTHER,ADMIN])

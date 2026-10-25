@@ -216,6 +216,10 @@ def build_task_report(
         "course_id": course_id,
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "identifiers": linkage,
+        "evaluation_ids": [str(item.get("evaluation_id") or item.get("record_id", "")) for item in evaluations],
+        "evaluation_versions": [{"evaluation_id": str(item.get("evaluation_id") or item.get("record_id", "")),
+                                 "record_id": item.get("record_id", ""), "version": item.get("version", 0)}
+                                for item in evaluations],
         "sections": sections,
         "full_text": text,
         "character_count": len(text),

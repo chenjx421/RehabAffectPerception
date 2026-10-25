@@ -294,6 +294,8 @@ class Demo2MeasurementStore:
         # immutable task id so the course page sees the same source video.
         evaluations=Demo2EvaluationStore(self.records).for_task(token,task_id)
         result=build_workspace(identity, task, values, evaluations=evaluations)
+        from .demo2_iep_context import attach_iep_context
+        attach_iep_context(self.records, token, result)
         result['applicability']=suitability
         if not suitability['confirmed_for_source']:
             explanation=suitability['label']+'。请先确认内容适用性；可保留通用观察，但不据此推断学生能力或教师教学质量。'

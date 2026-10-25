@@ -152,6 +152,8 @@ class Demo2EvaluationStore:
             raise MeasurementError(409,'source_locked','评价来源已锁定，不能改为另一任务或版本；请新建记录')
         data.update(task_id=task_id,frame_revision=revision)
         if not task_id:
+            if data.get('iep_summary_id'):
+                raise MeasurementError(409,'iep_task_required','关联 IEP 摘要前请先选择课堂视频任务')
             data.update(source_sha256=None,source_provenance={'status':'unlinked','scope':'course','student_linkage':'not_asserted'})
             return
         try:
@@ -175,6 +177,13 @@ class Demo2EvaluationStore:
             raise
         except (ValueError,TypeError,AttributeError):
             raise MeasurementError(409,'invalid_source_manifest','课堂来源信息无效，请重新处理视频') from None
+        if data.get('course_id') and data['course_id'] != task['course_id']:
+            raise MeasurementError(409,'course_mismatch','课程编号与视频任务不一致')
+        data['course_id'] = task['course_id']
+        if data.get('iep_summary_id'):
+            from .demo2_iep_context import iep_link_is_current
+            if not iep_link_is_current(db,account,task,scope,data['iep_summary_id'],self.identities):
+                raise MeasurementError(409,'iep_link_unavailable','IEP 摘要未关联本课，或授权与身份引用已失效')
         data.update(source_sha256=sha,source_provenance={'status':'linked','scope':'course',
                     'student_linkage':'not_asserted','task_id':task_id,'frame_revision':revision,
                     'source_sha256':sha,'school_context':context,'course_id':task['course_id']})
@@ -193,7 +202,17 @@ class Demo2EvaluationStore:
                 AND json_extract(payload_json,'$.task_id')=?
                 ORDER BY updated_at DESC''',
                 (account['account_id'],scope,task_id)).fetchall()
-        return [self._public(json.loads(row['payload_json'])) for row in rows]
+            values=[]
+            for row in rows:
+                value=self._public(json.loads(row['payload_json']))
+                try:
+                    self._source(db,account,scope,dict(value),value)
+                except (MeasurementError,IdentityError,ValueError):
+                    # Historical evaluations stay in their workspace, but a
+                    # changed source must not contribute to the current report.
+                    continue
+                values.append(value)
+        return values
 
     def _existing(self,db,account,scope,data):
         row=db.execute('SELECT * FROM demo2_classroom_evaluations WHERE record_id=?',(data['record_id'],)).fetchone()

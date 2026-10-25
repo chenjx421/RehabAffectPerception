@@ -22,7 +22,7 @@ const summary=(page=1,total=43)=>({
   upload_pagination:{page,page_size:20,total,total_pages:Math.ceil(total/20)}
 });
 const fullReplies=(page=1,total=43)=>replies.push({account:{role:'company_admin'}},{summary:summary(page,total)},
-  {summary:{members:[],orders:[]}});
+  {summary:{members:[],orders:[]}},{reports:[],pagination:{page:1,page_size:20,total:0,total_pages:1}});
 const tick=async()=>{
   const timer=timers.get(adminPollTimer);assert.ok(timer,'Expected a scheduled poll');
   clockNow+=timer.delay;await timer.fn();await flush();
@@ -88,8 +88,8 @@ def test_pagination_timer_manual_refresh_and_backend_clamp():
     replies.push({summary:summary(2)});await tick();
     assert.equal(requests.at(-1).url,'/api/v1/demo2/admin/summary?upload_page=2');
     const before=requests.length;fullReplies(2);await byId('refreshButton').fire('click');
-    assert.equal(requests.length,before+3);assert.equal(adminUploadPage,2);
-    assert.equal(requests.at(-2).url,'/api/v1/demo2/admin/summary?upload_page=2');
+    assert.equal(requests.length,before+4);assert.equal(adminUploadPage,2);
+    assert.ok(requests.slice(-4).some(item=>item.url==='/api/v1/demo2/admin/summary?upload_page=2'));
     replies.push({summary:summary(3)});await byId('nextUploads').fire('click');
     assert.equal(byId('nextUploads').disabled,true);
     replies.push({summary:summary(2)});await byId('previousUploads').fire('click');
@@ -124,7 +124,7 @@ def test_request_guard_covers_timer_page_navigation_and_manual_refresh():
     listeners.get('visibilitychange')();
     assert.equal(requests.length,before);
     finish();await pending;assert.equal(adminRefreshing,false);assertPoll(30000);
-    fullReplies();await byId('refreshButton').fire('click');assert.equal(requests.length,before+3);
+    fullReplies();await byId('refreshButton').fire('click');assert.equal(requests.length,before+4);
     """)
 
 
@@ -155,7 +155,7 @@ def test_initially_hidden_page_waits_until_visible():
     check(r"""
     assert.equal(requests.length,0);assert.equal(timers.size,0);
     fullReplies();document.hidden=false;listeners.get('visibilitychange')();await flush();
-    assert.equal(requests.length,3);assertPoll(30000);
+    assert.equal(requests.length,4);assertPoll(30000);
     """, "document.hidden=true;")
 
 
@@ -202,4 +202,29 @@ def test_empty_and_legacy_pagination_are_not_fabricated():
     const legacy=summary();delete legacy.upload_pagination;replies.push({summary:legacy});await tick();
     assert.equal(byId('uploadPageStatus').textContent,'分页信息暂不可用');
     assert.equal(byId('nextUploads').disabled,true);
+    """)
+
+
+def test_report_failure_is_partial_failure_and_manual_refresh_recovers():
+    check(r"""
+    assert.ok(byId('pageMessage').textContent.includes('部分后台数据未能刷新'));
+    assert.match(byId('recentReports').innerHTML,/Reports offline/);
+    assert.ok(byId('accountList').innerHTML.includes('synthetic-school'));
+    fullReplies();await byId('refreshButton').fire('click');
+    assert.equal(byId('pageMessage').textContent,'后台数据已刷新。');
+    """, "replies.push({account:{role:'company_admin'}},{summary:summary()},{summary:{members:[],orders:[]}},{status:503,body:{error:{message:'Reports offline'}}});")
+
+
+def test_report_pagination_failure_and_retry_use_shared_request_guard():
+    check(r"""
+    adminReportPages=3;updateAdminControls();
+    replies.push(new TypeError('offline'));await byId('nextReports').fire('click');
+    assert.equal(adminReportPage,1);assert.equal(adminRefreshing,false);
+    replies.push({reports:[],pagination:{page:2,total_pages:3,total:41}});
+    await byId('nextReports').fire('click');assert.equal(adminReportPage,2);
+    assert.equal(requests.at(-1).url,'/api/v1/demo2/admin/reports?page=2');
+    let finish;replies.push(()=>new Promise(resolve=>finish=()=>resolve({status:200,ok:true,json:async()=>({reports:[],pagination:{page:3,total_pages:3,total:41}})})));
+    const pending=byId('nextReports').fire('click');await flush();const before=requests.length;
+    await refresh();await reportPage(-1);assert.equal(requests.length,before);
+    finish();await pending;assert.equal(adminReportPage,3);assertPoll(30000);
     """)

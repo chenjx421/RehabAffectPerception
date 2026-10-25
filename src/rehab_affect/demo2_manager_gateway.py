@@ -65,6 +65,8 @@ _GET_API = frozenset({
     "/api/v1/demo2/safety", "/api/v1/demo2/safety/media",
     "/api/v1/demo2/course-analysis", "/api/v1/demo2/course-analysis/tasks",
     "/api/v1/demo2/course-analysis/report",
+    "/api/v1/demo2/reports", "/api/v1/demo2/reports/download",
+    "/api/v1/demo2/admin/reports",
     "/api/v1/demo2/course-batch", "/api/v1/demo2/teaching-support",
     AUTH_PATH, "/api/v1/demo2/school/context", "/api/v1/demo2/upload/workspace",
     "/api/v1/demo2/upload/task", "/api/v1/demo2/upload/media",
