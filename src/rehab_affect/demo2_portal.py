@@ -1110,16 +1110,17 @@ def render_demo2_admin_html(account: Any | None = None) -> str:
     <section class="card" aria-labelledby="retentionTitle"><div class="card-head"><h2 id="retentionTitle">保存与到期提醒</h2><p>展示接口返回的保存、提醒与自动清理策略；原视频删除后保留结构化结果和审计记录。</p></div><div class="card-body"><div class="retention-band"><div class="retention-item"><span>保存周期</span><strong id="retentionDays">-- 天</strong></div><div class="retention-item"><span>提前提醒</span><strong id="reminderDays">-- 天</strong></div><div class="retention-item"><span>近期到期</span><strong id="dueSoonCount">--</strong></div><div class="retention-item"><span>到期处理</span><strong id="autoDeleteState">--</strong></div></div></div></section>
     <section class="card wide" aria-labelledby="acceptanceTitle"><div class="card-head"><h2 id="acceptanceTitle">近期安全授权确认</h2><p>显示接口返回的课程、确认人、确认时间与脱敏结果长期归档选择。</p></div><div class="card-body"><div class="table-wrap"><table><thead><tr><th>课程</th><th>确认人</th><th>确认时间</th><th>脱敏结果归档</th></tr></thead><tbody id="recentSecurityAcceptances"><tr><td colspan="4">正在读取安全授权记录…</td></tr></tbody></table></div></div></section>
     <section class="card wide" aria-labelledby="recentTitle"><div class="card-head"><h2 id="recentTitle">近期上传</h2><p>只列出后台接口返回的近期任务，不补造统计。</p><p class="admin-refresh-status" id="adminRefreshStatus" role="status" aria-live="polite">尚未更新</p></div><div class="card-body"><div class="table-wrap"><table><thead><tr><th>文件</th><th>账号 / 通道</th><th>课程</th><th>上传</th><th>处理</th><th>时间</th></tr></thead><tbody id="recentUploads"><tr><td colspan="6">正在读取近期上传…</td></tr></tbody></table></div><nav class="upload-pagination" aria-label="近期上传分页"><button class="button" id="previousUploads" type="button" aria-label="上一页" title="上一页" disabled>&larr;</button><span id="uploadPageStatus" role="status" aria-live="polite">正在读取分页信息</span><button class="button" id="nextUploads" type="button" aria-label="下一页" title="下一页" disabled>&rarr;</button></nav></div></section>
+    <section class="card wide" aria-labelledby="reportsTitle"><div class="card-head"><h2 id="reportsTitle">课程报告</h2><p>教师课堂复核时自动留存的报告快照，按课程、任务与稳定报告ID关联；可下载 Markdown 或 JSON 留档。</p><p class="admin-refresh-status" id="reportsRefreshStatus" role="status" aria-live="polite">尚未更新</p></div><div class="card-body"><div class="table-wrap"><table><thead><tr><th>报告标题</th><th>课程</th><th>任务</th><th>所属账号</th><th>学生/记录/评价</th><th>生成时间</th><th>操作</th></tr></thead><tbody id="recentReports"><tr><td colspan="7">正在读取课程报告…</td></tr></tbody></table></div><nav class="upload-pagination" aria-label="课程报告分页"><button class="button" id="previousReports" type="button" aria-label="上一页" title="上一页" disabled>&larr;</button><span id="reportPageStatus" role="status" aria-live="polite">正在读取分页信息</span><button class="button" id="nextReports" type="button" aria-label="下一页" title="下一页" disabled>&rarr;</button></nav></div></section>
   </div>
 </main>"""
     script = f"""
 const API_PREFIX='{_API_PREFIX}';
-const API_ROUTES={{me:'{_API_PREFIX}/auth/me',summary:'{_API_PREFIX}/admin/summary',memberships:'{_API_PREFIX}/admin/memberships',logout:'{_API_PREFIX}/auth/logout'}};
+const API_ROUTES={{me:'{_API_PREFIX}/auth/me',summary:'{_API_PREFIX}/admin/summary',memberships:'{_API_PREFIX}/admin/memberships',reports:'{_API_PREFIX}/admin/reports',reportDownload:'{_API_PREFIX}/reports/download',logout:'{_API_PREFIX}/auth/logout'}};
 const SERVER_ACCOUNT={account_json};
 const byId=id=>document.getElementById(id);
 const ADMIN_REFRESH_MS=30000,ADMIN_MAX_BACKOFF_MS=300000;
 let adminPollTimer=null,adminRefreshing=false,adminPollFailures=0,adminPollStopped=false;
-let adminLastUpdated='',adminNextRefreshAt=0,adminInitialLoaded=false,adminUploadPage=1,adminUploadPages=1;
+let adminLastUpdated='',adminNextRefreshAt=0,adminInitialLoaded=false,adminUploadPage=1,adminUploadPages=1,adminReportPage=1,adminReportPages=1;
 const adminPageVisible=()=>document.visibilityState==='visible';
 const esc=value=>String(value??'').replace(/[&<>\"']/g,char=>({{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}}[char]));
 const formatBytes=value=>{{const bytes=Number(value||0);if(bytes<1024)return `${{bytes}} B`;if(bytes<1048576)return `${{(bytes/1024).toFixed(1)}} KB`;if(bytes<1073741824)return `${{(bytes/1048576).toFixed(1)}} MB`;return `${{(bytes/1073741824).toFixed(2)}} GB`;}};
@@ -1169,6 +1170,37 @@ function renderActivitySummary(summary){{
   }}else{{adminUploadPages=adminUploadPage;byId('uploadPageStatus').textContent='分页信息暂不可用';}}
   updateAdminControls();
 }}
+async function downloadReport(reportId,fmt){{
+  const response=await fetch(`${{API_ROUTES.reportDownload}}?report_id=${{encodeURIComponent(reportId)}}&fmt=${{fmt}}`,{{credentials:'same-origin',cache:'no-store'}});
+  if(response.status===401){{window.location.assign('/demo2/login');throw new Error('登录已过期，正在返回登录页。');}}
+  if(!response.ok){{const payload=await response.json().catch(()=>null);throw new Error(payload?.error?.message||'报告下载失败。');}}
+  const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');
+  link.href=url;link.download=fmt==='json'?`report_${{reportId}}.json`:`report_${{reportId}}.md`;
+  document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}}
+function renderReports(){{
+  return api(`${{API_ROUTES.reports}}?page=${{adminReportPage}}`,{{cache:'no-store'}}).then(payload=>{{
+    const reports=Array.isArray(payload.reports)?payload.reports:[];
+    byId('recentReports').innerHTML=reports.length?reports.map(item=>{{
+      const counts=[item.student_count==null?'-':item.student_count+' 生',item.record_count==null?'-':item.record_count+' 条',item.evaluation_count==null?'-':item.evaluation_count+' 评'].join(' / ');
+      return `<tr><td><strong>${{esc(item.title||'课堂观察与学习支持报告')}}</strong><br><span class="mono">${{esc(item.report_id||'')}}</span></td><td>${{esc(item.course_name||item.course_id||'未返回')}}</td><td><a href="/demo2/video?id=${{encodeURIComponent(item.task_id||'')}}">${{esc(item.task_id||'未返回')}}</a></td><td>${{esc(item.owner_username||'未返回')}}</td><td>${{esc(counts)}}</td><td>${{esc(formatTime(item.generated_at))}}</td><td><button class="button quiet" type="button" data-report-download="${{esc(item.report_id)}}" data-fmt="md">下载 MD</button> <button class="button quiet" type="button" data-report-download="${{esc(item.report_id)}}" data-fmt="json">下载 JSON</button></td></tr>`;
+    }}).join(''):'<tr><td colspan="7">还没有已保存的课程报告。教师完成课堂复核后会自动留存报告快照。</td></tr>';
+    const pagination=payload.pagination;
+    if(pagination&&Number.isInteger(pagination.page)&&pagination.page>=1&&Number.isInteger(pagination.total_pages)){{
+      adminReportPage=pagination.page;adminReportPages=Math.max(1,pagination.total_pages);
+      byId('reportPageStatus').textContent=`共 ${{pagination.total}} 份 · 第 ${{adminReportPage}} / ${{adminReportPages}} 页`;
+    }}else{{adminReportPages=adminReportPage;byId('reportPageStatus').textContent='分页信息暂不可用';}}
+    byId('reportsRefreshStatus').textContent=`最近更新：${{formatTime(new Date().toISOString())}}`;
+    updateAdminControls();
+  }}).catch(error=>{{
+    byId('recentReports').innerHTML='<tr><td colspan="7">报告读取失败：'+esc(error.message)+'</td></tr>';
+    byId('reportsRefreshStatus').textContent='报告读取失败，请点击“刷新数据”重试。';
+  }});
+}}
+document.addEventListener('click',event=>{{
+  const button=event.target.closest('[data-report-download]');
+  if(button){{downloadReport(button.dataset.reportDownload,button.dataset.fmt||'md').catch(error=>message(error.message));}}
+}});
 const membershipMoney=cents=>typeof cents==='number'&&Number.isInteger(cents)&&cents>=0?`¥${{(cents/100).toFixed(2)}}`:'待公布';
 const memberLabel=item=>item.status_label||({{inactive:'未开通',active:'已开通',expired:'已到期',suspended:'已暂停',internal_trial:'内测账号'}}[item.status]||'状态待确认');
 const orderLabel=item=>item.status_label||({{pending:'待支付',pending_payment:'待支付',paid:'已支付',completed:'已完成',cancelled:'已取消',expired:'已关闭',closed:'已关闭',failed:'支付未完成',refunded:'已退款'}}[item.status]||'状态待确认');
@@ -1185,6 +1217,8 @@ function updateAdminControls(){{
   byId('refreshButton').disabled=adminRefreshing;
   byId('previousUploads').disabled=adminRefreshing||adminPollStopped||adminUploadPage<=1;
   byId('nextUploads').disabled=adminRefreshing||adminPollStopped||adminUploadPage>=adminUploadPages;
+  byId('previousReports').disabled=adminRefreshing||adminPollStopped||adminReportPage<=1;
+  byId('nextReports').disabled=adminRefreshing||adminPollStopped||adminReportPage>=adminReportPages;
 }}
 function stopAdminPolling(){{adminPollStopped=true;clearTimeout(adminPollTimer);adminPollTimer=null;}}
 function adminRefreshStatus(failed=false){{
@@ -1215,7 +1249,8 @@ async function refresh({{partial=false,automatic=false,page=adminUploadPage}}={{
     // Each panel renders as soon as its own request resolves, including partial success.
     const schoolRequest=loadSummary().catch(error=>{{summaryFailed();errors.push(`学校汇总：${{error.message}}`);message(errors.join('；'));}});
     const membershipRequest=api(API_ROUTES.memberships).then(payload=>renderMembershipSummary(payload.summary||{{}})).catch(error=>{{membershipUnavailable(error);errors.push(`会员汇总：${{error.message}}`);message(errors.join('；'));}});
-    await Promise.all([schoolRequest,membershipRequest]);
+    const reportsRequest=renderReports().catch(error=>{{errors.push(`课程报告：${{error.message}}`);byId('recentReports').innerHTML=`<tr><td colspan="7">报告读取失败：${{esc(error.message)}}</td></tr>`;}});
+    await Promise.all([schoolRequest,membershipRequest,reportsRequest]);
     if(errors.length)message(`部分后台数据未能刷新：${{errors.join('；')}}`);else message('后台数据已刷新。','success');
   }}catch(error){{summaryFailed();if(!partial){{membershipUnavailable(error);message(error.message);}}}}finally{{
     adminRefreshing=false;updateAdminControls();
@@ -1225,6 +1260,8 @@ async function refresh({{partial=false,automatic=false,page=adminUploadPage}}={{
 byId('refreshButton').addEventListener('click',()=>refresh());
 byId('previousUploads').addEventListener('click',()=>{{if(!byId('previousUploads').disabled)return refresh({{partial:true,page:adminUploadPage-1}});}});
 byId('nextUploads').addEventListener('click',()=>{{if(!byId('nextUploads').disabled)return refresh({{partial:true,page:adminUploadPage+1}});}});
+byId('previousReports').addEventListener('click',()=>{{if(byId('previousReports').disabled)return;adminReportPage=Math.max(1,adminReportPage-1);renderReports();}});
+byId('nextReports').addEventListener('click',()=>{{if(byId('nextReports').disabled)return;adminReportPage=Math.min(adminReportPages,adminReportPage+1);renderReports();}});
 document.addEventListener('visibilitychange',()=>{{if(!adminInitialLoaded&&adminPageVisible())refresh();else scheduleAdminRefresh();}});
 window.addEventListener('pagehide',stopAdminPolling);
 window.addEventListener('pageshow',event=>{{if(event.persisted){{adminPollStopped=false;if(!adminInitialLoaded&&adminPageVisible())refresh();else scheduleAdminRefresh();}}}});
