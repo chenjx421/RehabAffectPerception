@@ -621,8 +621,11 @@ def test_portal_pages_redirect_and_enforce_roles(portal_server) -> None:
     admin_cookie = _login(port, "admin", "admin-pass")
     assert _request(port, "GET", "/demo2/admin", cookie=admin_cookie)[0] == 200
     assert _request(port, "GET", "/demo2/upload", cookie=admin_cookie)[0] == 403
-    # Individual teacher records replace the retired global demo notice.
-    assert _request(port, "GET", "/demo2/analysis", cookie=admin_cookie)[0] == 403
+    # An administrator may open the legacy route only to receive a safe
+    # task-selection guide; it must not read an unscoped classroom task.
+    status, _, body = _request(port, "GET", "/demo2/analysis", cookie=admin_cookie)
+    assert status == 200
+    assert "请选择课堂任务" in body
 
 
 @pytest.mark.parametrize("confirmed_by", ["uploader_a", "uploader_b"])
