@@ -1,0 +1,86 @@
+{
+  "knowledge_id": "autism_spectrum_support_principles_zh",
+  "name": "孤独症谱系障碍/自闭症课堂支持原则",
+  "version": "0.1",
+  "scope": "special_education_classroom_support",
+  "use_boundary": {
+    "not_for_diagnosis": true,
+    "not_for_medical_decision": true,
+    "use_for": [
+      "个体化支持策略背景",
+      "机器人动作安全约束",
+      "老师复核提示",
+      "课堂互动方式选择"
+    ],
+    "teacher_or_caregiver_final_decision": true
+  },
+  "general_characteristics": [
+    {
+      "topic": "社会沟通与互动差异",
+      "system_implication": "学生没有立即回应时，不直接判断为拒绝或不配合；优先输出等待、一步提示、老师复核。"
+    },
+    {
+      "topic": "重复行为、固定兴趣或适应转换困难",
+      "system_implication": "任务切换前给出明确、短句、可视化提示，避免突然改变屏幕和语音节奏。"
+    },
+    {
+      "topic": "感觉敏感或感觉寻求差异",
+      "system_implication": "机器人动作和声音默认低刺激，不使用突然大声、闪烁、快速靠近等反馈。"
+    },
+    {
+      "topic": "注意、语言理解和学习节奏差异",
+      "system_implication": "把复杂指令拆成一步；屏幕只突出当前目标；必要时等待老师确认。"
+    }
+  ],
+  "robot_policy_constraints": {
+    "speech": [
+      "短句",
+      "低音量",
+      "慢语速",
+      "一次只给一个要求",
+      "避免反复催促"
+    ],
+    "screen": [
+      "当前步骤弱高亮",
+      "减少无关视觉元素",
+      "可使用视觉日程或图标提示",
+      "避免强闪烁"
+    ],
+    "motion": [
+      "慢速转向",
+      "轻微点头",
+      "保持距离",
+      "不突然靠近",
+      "不主动触碰学生"
+    ],
+    "teacher_alert": [
+      "连续低参与",
+      "困惑/停滞",
+      "成人遮挡下不确定",
+      "疑似情绪升级",
+      "疑似不适或安全风险"
+    ]
+  },
+  "recommended_action_mapping": {
+    "engaged": {
+      "default": "保持当前任务节奏，给予低刺激正反馈。"
+    },
+    "low_attention": {
+      "default": "弱高亮当前步骤，使用一句短提示拉回注意。"
+    },
+    "confused_or_stuck": {
+      "default": "降阶为一步任务，重复当前目标，并提醒老师可复核。"
+    },
+    "refusing": {
+      "default": "暂停推进，提供选择，不强迫继续。"
+    },
+    "uncertain": {
+      "default": "不触发强干预，记录片段并交给老师确认。"
+    }
+  },
+  "source_urls": [
+    "https://www.who.int/news-room/fact-sheets/detail/autism-spectrum-disorders",
+    "https://www.cdc.gov/autism/signs-symptoms/index.html",
+    "https://www.nimh.nih.gov/health/topics/autism-spectrum-disorders-asd"
+  ]
+}

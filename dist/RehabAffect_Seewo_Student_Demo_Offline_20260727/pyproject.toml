@@ -1,0 +1,30 @@
+[project]
+name = "rehab-affect-perception"
+version = "0.1.0"
+description = "Embodied student-state perception and action decision benchmark for assistive robots in special education schools."
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+input = [
+    "opencv-python>=4.8",
+    "sounddevice>=0.4",
+]
+websocket = [
+    "websockets>=12.0",
+]
+simulation = [
+    "mujoco>=3.2",
+]
+training = [
+    "scikit-learn>=1.4",
+]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]

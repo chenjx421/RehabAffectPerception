@@ -1,0 +1,85 @@
+{
+  "scenario_id": "task_load_fatigue",
+  "task": "card_matching",
+  "description": "Student slows down and reports fatigue during repeated classroom practice.",
+  "steps": [
+    {
+      "step": 0,
+      "ground_truth_state": "engaged",
+      "observable_cues": {
+        "speech_text": "我可以继续",
+        "voice_amplitude": 0.06,
+        "face_state_hint": "engaged",
+        "attention_score": 0.82,
+        "movement_speed": 0.32,
+        "instruction_repeated": 0,
+        "response_delay_sec": 1.0,
+        "recent_failure_count": 0,
+        "task_success": true,
+        "task_stage": "task_attempt"
+      },
+      "robot_context": {
+        "task_id": "card_matching",
+        "task_stage": "task_attempt",
+        "robot_distance_m": 1.3,
+        "obstacle_distance_m": 1.1,
+        "is_robot_moving": false,
+        "task_difficulty": "normal",
+        "visible_objects": ["student", "desk", "teaching_aid"]
+      },
+      "expected_action_id": "continue_and_encourage"
+    },
+    {
+      "step": 1,
+      "ground_truth_state": "fatigued",
+      "observable_cues": {
+        "speech_text": "有点累",
+        "voice_amplitude": 0.025,
+        "face_state_hint": "fatigued",
+        "attention_score": 0.48,
+        "movement_speed": 0.10,
+        "instruction_repeated": 1,
+        "response_delay_sec": 3.5,
+        "recent_failure_count": 1,
+        "task_success": false,
+        "task_stage": "task_attempt"
+      },
+      "robot_context": {
+        "task_id": "card_matching",
+        "task_stage": "task_attempt",
+        "robot_distance_m": 1.2,
+        "obstacle_distance_m": 1.1,
+        "is_robot_moving": false,
+        "task_difficulty": "normal",
+        "visible_objects": ["student", "desk", "teaching_aid", "quiet_corner"]
+      },
+      "expected_action_id": "reduce_task_load_and_offer_break"
+    },
+    {
+      "step": 2,
+      "ground_truth_state": "fatigued",
+      "observable_cues": {
+        "speech_text": "我想休息一下",
+        "voice_amplitude": 0.02,
+        "face_state_hint": "fatigued",
+        "attention_score": 0.42,
+        "movement_speed": 0.07,
+        "instruction_repeated": 1,
+        "response_delay_sec": 4.0,
+        "recent_failure_count": 1,
+        "task_success": false,
+        "task_stage": "task_attempt"
+      },
+      "robot_context": {
+        "task_id": "card_matching",
+        "task_stage": "task_attempt",
+        "robot_distance_m": 1.2,
+        "obstacle_distance_m": 1.1,
+        "is_robot_moving": false,
+        "task_difficulty": "normal",
+        "visible_objects": ["student", "desk", "teaching_aid", "quiet_corner"]
+      },
+      "expected_action_id": "reduce_task_load_and_offer_break"
+    }
+  ]
+}

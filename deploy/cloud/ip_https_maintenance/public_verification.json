@@ -1,0 +1,67 @@
+{
+  "checked_at_utc": "2026-10-20T13:44:25.694238+00:00",
+  "target": "YOUR_SERVER_IP",
+  "direct_connection": true,
+  "tls_verification_bypassed": false,
+  "checks": [
+    {
+      "scheme": "http",
+      "path": "/",
+      "status": 404
+    },
+    {
+      "scheme": "http",
+      "path": "/app",
+      "status": 404
+    },
+    {
+      "scheme": "http",
+      "path": "/api/",
+      "status": 404
+    },
+    {
+      "scheme": "http",
+      "path": "/login",
+      "status": 404
+    },
+    {
+      "scheme": "http",
+      "path": "/.env",
+      "status": 404
+    },
+    {
+      "scheme": "http",
+      "path": "/.git/config",
+      "status": 404
+    },
+    {
+      "scheme": "http",
+      "path": "/__maintenance.html",
+      "status": 404
+    },
+    {
+      "scheme": "http",
+      "path": "/video_tasks/",
+      "status": 404
+    },
+    {
+      "scheme": "http",
+      "path": "/student_documents/",
+      "status": 404
+    },
+    {
+      "scheme": "http",
+      "path": "/etc/passwd",
+      "status": 404
+    },
+    {
+      "scheme": "http",
+      "path": "/.well-known/acme-challenge/not-a-real-token",
+      "status": 404
+    }
+  ],
+  "public_verified": false,
+  "result": "FAIL",
+  "failure_type": "TimeoutError",
+  "failure_summary": "timed out"
+}

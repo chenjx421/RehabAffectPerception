@@ -1,0 +1,11 @@
+[Unit]
+Description=Check maintenance IP certificate renewal every six hours
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:00:00 UTC
+RandomizedDelaySec=5min
+Persistent=true
+Unit=rehab-ip-cert-renew.service
+
+[Install]
+WantedBy=timers.target

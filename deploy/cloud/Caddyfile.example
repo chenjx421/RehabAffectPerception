@@ -1,0 +1,15 @@
+# NOT PUBLIC-READY. Replace the reserved host only after domain/ICP/TLS approval.
+# Loopback bind is intentional. Public bind requires a separate reviewed change.
+https://replace-before-use.invalid {
+    bind 127.0.0.1
+    reverse_proxy 127.0.0.1:8796 {
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 5m
+            read_timeout 5m
+            write_timeout 5m
+        }
+    }
+    # No access log and no file_server over uploads, databases or private config.
+    # Do not bypass the invitation gateway by proxying directly to port 8793.
+}

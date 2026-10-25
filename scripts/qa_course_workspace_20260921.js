@@ -1,0 +1,57 @@
+const fs=require('fs'),path=require('path'),assert=require('assert/strict');
+const {chromium}=require('playwright');
+async function main(){let input='';for await(const chunk of process.stdin)input+=chunk;const c=JSON.parse(input);
+fs.mkdirSync(c.output,{recursive:true});const browser=await chromium.launch({channel:'msedge',headless:true});
+try{const context=await browser.newContext({viewport:{width:1440,height:1020},deviceScaleFactor:1.5,acceptDownloads:true});
+await context.addCookies([{name:'rehab_demo2_session',value:c.teacher,url:c.base}]);const page=await context.newPage(),errors=[],shots=[];
+page.on('pageerror',e=>errors.push(e.message));
+const snap=async name=>{await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:path.join(c.output,name+'.png'),fullPage:true});shots.push(name)};
+await page.goto(c.base+'/demo2/analysis');await page.locator('#taskList a').first().waitFor();
+assert(await page.locator('#taskList').textContent().then(t=>t.includes('合成课堂')));await snap('01_task_picker');
+await page.fill('#taskSearch','不存在的课程');assert.match(await page.locator('#taskList').textContent(),/没有匹配/);await page.fill('#taskSearch','');
+await page.goto(c.base+'/demo2/analysis?task_id='+c.task_id);await page.locator('#groupStats .stat').first().waitFor();
+assert.equal(await page.locator('#groupTable tbody tr').count(),2);await snap('02_group_empty');
+await page.click('#tab-review');await page.locator('#editPanel summary').first().click();
+await page.selectOption('#student',c.student_id);await page.fill('#lessonDate',new Date().toISOString().slice(0,10));
+await page.fill('#goal','物品分类');await page.fill('#context','三种实物、一步指令');
+await page.fill('#start','0');await page.fill('#end','6');await page.fill('#criterion','三次机会至少两次按约定支持完成');
+await page.fill('#prompt','合成示例：请将同类物品放在一起。');await page.fill('#response','合成示例：完成两次，第三次使用图卡后完成。');
+await page.selectOption('#support','visual');await page.selectOption('#state','participating');
+await page.fill('#opportunities','3');await page.fill('#observed','3');
+await page.fill('#evidence','合成验收记录：已核对本片段的任务、回应和视觉提示。不是实际学生评估。');
+await page.getByText('四维目标测量（可留空）',{exact:true}).click();
+for(const [k,v]of Object.entries({accuracy:8,independence:6,consistency:6,transfer:4}))await page.fill('#score-'+k,String(v));
+await page.check('#reviewed');await page.click('#save');await page.waitForFunction(()=>document.querySelector('#message').textContent.includes('已保存'));
+await page.fill('#response','合成示例：第二版补充回应证据。');await page.click('#save');await page.waitForFunction(()=>document.querySelector('#version').value==='2');
+await snap('03_teacher_review');
+assert.equal(await page.locator('#reviewPlayer video').count(),1);
+await page.selectOption('#reviewFilter','pending');assert.equal(await page.locator('#recordTable [data-edit]').count(),0);
+await snap('03a_pending_filter');
+await page.selectOption('#reviewFilter','reviewed');assert.equal(await page.locator('#recordTable [data-edit]').count(),1);
+await page.click('#reuseGoal');assert.equal(await page.inputValue('#goal'),'物品分类');assert.equal(await page.inputValue('#evidence'),'');assert.equal(await page.inputValue('#score-accuracy'),'');assert.equal(await page.isChecked('#reviewed'),false);
+await snap('03b_reuse_goal');
+page.once('dialog',d=>d.dismiss());await page.click('#clearForm');assert.equal(await page.inputValue('#goal'),'物品分类');
+page.once('dialog',d=>d.accept());await page.click('#clearForm');assert.equal(await page.inputValue('#goal'),'');
+await page.evaluate(()=>{document.querySelector('#video').currentTime=1;});await page.click('#markStart');assert.equal(await page.inputValue('#start'),'1.00');
+await page.evaluate(()=>{document.querySelector('#video').currentTime=2;});await page.click('#markEnd');assert.equal(await page.inputValue('#end'),'2.00');
+await page.click('#playSelection');await page.waitForFunction(()=>{const v=document.querySelector('#video');return v.paused&&v.currentTime>=2;},{},{timeout:10000});
+page.once('dialog',d=>d.accept());await page.click('#clearForm');await page.selectOption('#reviewFilter','all');
+await page.click('#tab-group');await snap('04_group_reviewed');
+await page.click('#tab-person');await page.selectOption('#personSelect',c.student_id);await snap('05_individual');
+await page.click('#tab-report');await snap('06_illustrated_report');
+const api=await context.request.get(c.base+'/api/v1/demo2/course-analysis?task_id='+c.task_id);assert.equal(api.status(),200);assert.match(api.headers()['cache-control'],/no-store/);
+const work=(await api.json()).workspace;assert.equal(work.records.length,1);assert.equal(work.records[0].version,2);assert.equal(work.summary.scored,1);
+assert(work.report.character_count>=900&&work.report.character_count<=1500);
+for(const [selector,filename]of [['#downloadHtml','review_report.html'],['#downloadJson','review_report.json']]){const pending=page.waitForEvent('download');await page.click(selector);const d=await pending;await d.saveAs(path.join(c.output,filename))}
+const exported=JSON.parse(fs.readFileSync(path.join(c.output,'review_report.json'),'utf8'));assert.equal(exported.records[0].version,2);
+await page.pdf({path:path.join(c.output,'课堂图文报告_合成验收.pdf'),format:'A4',printBackground:true,margin:{top:'16mm',bottom:'16mm',left:'14mm',right:'14mm'}});
+await page.reload();await page.locator('#groupStats .stat').first().waitFor();
+await page.click('#tab-review');assert.match(await page.locator('#recordTable').textContent(),/版本 2/);
+const overflow=[];for(const width of [390,320]){await page.setViewportSize({width,height:844});for(const t of ['group','person','review','report']){await page.click('#tab-'+t);const x=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth}));if(x.scroll>x.width+1)overflow.push({width,t,...x});if(t==='group'||t==='report')await snap('mobile_'+width+'_'+t)}}
+assert.deepEqual(overflow,[]);assert.deepEqual(errors,[]);
+for(const [role,token,status]of [['other',c.other,404],['admin',c.admin,403]]){const denied=await browser.newContext();await denied.addCookies([{name:'rehab_demo2_session',value:token,url:c.base}]);const response=await denied.request.get(c.base+'/api/v1/demo2/course-analysis?task_id='+c.task_id);assert.equal(response.status(),status,role);await denied.close()}
+await page.setViewportSize({width:1440,height:1020});await page.click('#tab-review');page.once('dialog',d=>d.accept('合成验收撤销'));await page.locator('[data-withdraw]').first().click();await page.waitForFunction(()=>document.querySelector('#message').textContent.includes('已撤销'));
+const after=await context.request.get(c.base+'/api/v1/demo2/course-analysis?task_id='+c.task_id);assert.equal((await after.json()).workspace.summary.scored,0);
+const result={screenshots:shots,errors,overflow,teacher_save:true,version_reload:true,withdraw:true,download:true,isolation:true,search:true,review_filter:true,goal_reuse_without_evidence:true,dirty_guard:true,inline_video:true,clip_boundaries:true,report_characters:work.report.character_count,synthetic:true};fs.writeFileSync(path.join(c.output,'acceptance.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+}finally{await browser.close()}}
+main().catch(e=>{console.error(e);process.exitCode=1});
