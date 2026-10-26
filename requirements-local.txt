@@ -1,0 +1,22 @@
+# Local development and pilot-server dependencies.
+#
+# Installed by `python3 scripts/setup_local_dev.py`. Binary dependencies that
+# cannot come from PyPI (ffmpeg, ffprobe, the YuNet ONNX model) are fetched by
+# the same script into .tools/ and models/.
+#
+# Keep this list in sync with what src/rehab_affect/* actually imports:
+#   numpy            -> tracking, media analysis, benchmark scripts
+#   opencv-headless  -> tracking, face detection, frame preview (no GUI needed)
+#   cryptography     -> demo2_dossier_vault (Fernet-sealed IEP material)
+#   pillow           -> legacy demo pages, frame helpers
+#   requests/psutil  -> cloud acceptance and maintenance scripts
+#   reportlab        -> PDF builders in scripts/
+#   pytest           -> test suite
+numpy>=1.24,<3
+opencv-python-headless>=4.8,<5
+cryptography>=42
+pillow>=10
+requests>=2.31
+psutil>=5.9
+reportlab>=4
+pytest>=8
