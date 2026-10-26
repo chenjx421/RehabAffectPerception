@@ -303,8 +303,8 @@ def test_gateway_preserves_safe_provider_unavailable_codes_without_internal_text
     results = []
     handler = object.__new__(gateway._GatewayHandler)
     handler.command = "POST"
-    handler._connection = lambda: SimpleNamespace(request=lambda *args, **kwargs: None,
-                                                  getresponse=Response, close=lambda: None)
+    handler._connection = lambda **kwargs: SimpleNamespace(request=lambda *args, **kwargs: None,
+                                                           getresponse=Response, close=lambda: None)
     handler._upstream_headers = lambda cookies: {}
     handler._expired = lambda: False
     handler._error = lambda status, code, message: results.append((status, code, message))

@@ -54,19 +54,19 @@ PATH="$PWD/.tools:$PATH" PYTHONPATH=src REHAB_DEMO2_DOSSIER_KEY="$(cat .runtime/
   --ignore=tests/test_student_insights.py
 ```
 
-结果：`3375 passed, 74 failed, 48 skipped, 488 errors`（约 5 分钟）。归类：
+结果：`3381 passed, 68 failed, 48 skipped, 488 errors`（约 5 分钟）。归类：
 
 | 类别 | 数量 | 说明 |
 | --- | ---: | --- |
-| 488 errors | 488 | 全部因 `.runtime/cloud_*` 私有产物缺失（416 个 `FileNotFoundError` + 72 个夹具路径断言） |
+| 环境错误 | 488 | 全部因 `.runtime/cloud_*` 私有产物缺失（416 个 `FileNotFoundError` + 72 个夹具路径断言） |
 | Windows Edge 浏览器用例 | 63 | 写死 `msedge.exe` 路径，macOS 无法通过 |
 | 仅 Windows 可测 | 1 | `test_windows_process_probe_uses_tasklist_without_command_line` |
 | 需要私有真实视频 | 1 | `test_four_first_use_schools_real_media_named_binding_reload_report` |
-| 已知契约互相矛盾 | 2 | v3.6 发布说明已记录的 `version_conflict` / `fixture-1` 两条 |
-| 测试自身缺陷 | 1 | `test_storage_marker...` 在临时目录里 `mkdir("unused/..")` |
-| 代码与测试漂移 | 6 | `demo2_manager_gateway` 的 `_connection(timeout=...)` 未被测试桩接受（5 条）；通道暂停后工作区仍返回 `active`（1 条） |
+| 仓库内互相矛盾的契约 | 3 | v3.6 已知的 `version_conflict` / `fixture-1` 两条；另加 `company_admin` 能否进入 `/demo2/analysis`（一条要求 200，一条要求 403） |
 
-最后 6 条与平台无关，是仓库里本来就存在的漂移/缺陷，适合作为接手后的第一批修复项。
+与平台无关的 6 条漂移已在 2026-10-27 修复：`demo2_manager_gateway._connection(timeout=...)` 的测试桩接受关键字参数（4 条）；`account_upload_workspace` 不再把已暂停的绑定通道静默换成另一条（1 条，改动 `student_record_store.py`）；`test_storage_marker...` 的临时目录创建（1 条）。
+
+`company_admin` 进分析页这条没有改代码：仓库里两条断言互斥，当前保留更严格的 403，等产品口径确认后再统一。
 
 ## 环境差异说明
 

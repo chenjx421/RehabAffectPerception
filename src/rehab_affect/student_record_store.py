@@ -1028,13 +1028,20 @@ class Demo2StudentRecordStore:
             raise ValueError("course_id 不能为空")
         with self._connect() as connection:
             channels = connection.execute(
-                "SELECT * FROM video_upload_channels WHERE status = 'active' ORDER BY channel_no"
+                "SELECT * FROM video_upload_channels ORDER BY channel_no"
             ).fetchall()
+            active_channels = [row for row in channels if row["status"] == "active"]
             preferred_channel_id = str(account.get("bound_channel_id") or "").strip()
             selected_channel = next(
-                (row for row in channels if row["channel_id"] == preferred_channel_id),
-                channels[0] if channels else None,
-            )
+                (row for row in channels if row["channel_id"] == preferred_channel_id), None
+            ) or (active_channels[0] if active_channels else None)
+            # A paused bound channel stays visible so the school can see why
+            # uploads stop. It is never silently swapped for another channel.
+            visible_channels = list(active_channels)
+            if selected_channel is not None and not any(
+                row["channel_id"] == selected_channel["channel_id"] for row in visible_channels
+            ):
+                visible_channels.insert(0, selected_channel)
             students = connection.execute(
                 """
                 SELECT student_id, display_name FROM students
@@ -1069,7 +1076,7 @@ class Demo2StudentRecordStore:
         return {
             "account": account,
             "channel": dict(selected_channel) if selected_channel else None,
-            "channels": [dict(row) for row in channels],
+            "channels": [dict(row) for row in visible_channels],
             "selected_channel_id": selected_channel["channel_id"] if selected_channel else "",
             "students": [dict(row) for row in students],
             "security_acceptance": (
