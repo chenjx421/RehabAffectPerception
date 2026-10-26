@@ -688,7 +688,10 @@ class ChainVerifier:
                 info["status"] = "ok"
             else:
                 info["status"] = "broken"
-        first_break = next((level for level in LEVELS if chain["levels"][level]["status"] == "broken"), None)
+        # Point at a level with a real defect, not one that was merely unreachable after it.
+        root_levels = {error["level"] for error in chain["errors"] if error.get("code") != "level_not_reached"}
+        first_break = next((level for level in LEVELS if level in root_levels), None) \
+            or next((level for level in LEVELS if chain["levels"][level]["status"] == "broken"), None)
         if chain["errors"]:
             final = "broken"
         elif ambiguous:

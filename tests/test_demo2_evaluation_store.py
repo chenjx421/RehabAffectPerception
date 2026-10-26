@@ -126,3 +126,17 @@ def test_school_change_hides_prior_scope_and_denies_edit(env):
     assert env.store.workspace(env.tokens['t1'])['records']==[]
     with pytest.raises(MeasurementError) as exc:env.store.save(env.tokens['t1'],payload(expected_version=1))
     assert exc.value.status==404
+
+
+def test_goal_with_roster_student_name_is_rejected(env):
+    from rehab_affect.demo2_identity_store import Demo2IdentityStore
+    Demo2IdentityStore(env.records).create_student(env.tokens['t1'],{'display_name':'合成学生甲','student_code':'S-1'})
+    goal='合成学生甲在约定支持下完成三次实物分类'
+    for call in (env.store.preview,env.store.save):
+        with pytest.raises(MeasurementError) as caught:
+            call(env.tokens['t1'],payload(goal_context=goal))
+        assert caught.value.status==400 and caught.value.code=='goal_contains_student_name'
+    assert not env.store.workspace(env.tokens['t1'])['records']
+    # Another account's roster does not leak into this check.
+    assert env.store.save(env.tokens['t2'],payload(record_id='fixture-t2',goal_context=goal))['version']==1
+    assert env.store.save(env.tokens['t1'],payload())['version']==1

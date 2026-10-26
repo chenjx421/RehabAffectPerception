@@ -62,8 +62,8 @@ def test_company_admin_can_list_and_download_but_other_school_cannot(env):
     try:
         store.get(env.tokens["t2"], report["report_id"])
     except ReportError as exc:
-        assert exc.status == 404
-        assert exc.code == "report_unavailable"
+        assert exc.status == 403
+        assert exc.code == "report_forbidden"
     else:
         raise AssertionError("a different school account must not read the report")
 

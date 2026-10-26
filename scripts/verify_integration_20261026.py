@@ -187,7 +187,7 @@ def check_python(log: CheckLog, with_pytest: bool) -> None:
                      "rehab_affect.demo2_manager_gateway, rehab_affect.demo2_report_store; "
                      "print(rehab_affect.__file__)"], env=env)
     log.record("import", "PASS" if code == 0 else "FAIL", python=sys.version.split()[0], output=out[-300:])
-    code, out = run([sys.executable, "-m", "compileall", "-q", "src"], env=env)
+    code, out = run([sys.executable, "-m", "compileall", "-f", "-q", "src"], env=env)
     log.record("compileall", "PASS" if code == 0 else "FAIL", target="src", warnings=out.count("Warning"),
                output=out[-300:])
     if not with_pytest:

@@ -410,7 +410,7 @@ def test_real_sqlite_api_lifecycle(tmp_path):
         did = document["document_id"]
         assert call("GET", f"/document?document_id={did}")[1] == FAKE_TEXT + b" V1"
         assert call("GET", f"/document?document_id={did}", user="admin")[0] == 403
-        assert call("GET", f"/document?document_id={did}", user="t2")[0] == 404
+        assert call("GET", f"/document?document_id={did}", user="t2")[0] == 403
         env.bind()
         reference_payload = {"task_id": env.task_ids["t1"], "student_id": sid,
             "frame_revision": env.binding_payload["frame_revision"], "document_ids": [did], "confirmed": True}

@@ -256,6 +256,19 @@ class Demo2EvaluationStore:
                 values.append(value)
         return values
 
+    @staticmethod
+    def _reject_student_names(db,account,scope,goal):
+        """The lesson goal is class-level text; a roster name there would leak identity."""
+        if not scope:
+            return
+        folded=unicodedata.normalize('NFKC',goal).casefold()
+        rows=db.execute('SELECT display_name FROM demo2_identity_students WHERE owner_account_id=? AND scope_key=?',
+                        (account['account_id'],scope)).fetchall()
+        for row in rows:
+            name=unicodedata.normalize('NFKC',str(row['display_name'] or '')).strip().casefold()
+            if len(name)>=2 and name in folded:
+                raise MeasurementError(400,'goal_contains_student_name','本课目标不应填写学生姓名，请改用能力分层或支持方式描述')
+
     def _existing(self,db,account,scope,data):
         row=db.execute('SELECT * FROM demo2_classroom_evaluations WHERE record_id=?',(data['record_id'],)).fetchone()
         if row is None:
@@ -288,6 +301,7 @@ class Demo2EvaluationStore:
             data,result=self._normalize(payload)
             with self.records._connect() as db:
                 _,scope=self._scope(db,account)
+                self._reject_student_names(db,account,scope,data['goal_context'])
                 old=self._existing(db,account,scope,data)
                 self._source(db,account,scope,data,old)
         except MeasurementError as exc:
@@ -312,12 +326,16 @@ class Demo2EvaluationStore:
         with self.records._connect() as db:
             db.execute('BEGIN IMMEDIATE')
             _,scope=self._scope(db,account)
+            self._reject_student_names(db,account,scope,data['goal_context'])
             old=self._existing(db,account,scope,data)
             self._source(db,account,scope,data,old)
             duplicate=db.execute('SELECT record_id FROM demo2_classroom_evaluations WHERE owner_account_id=? AND scope_key=? AND lesson_id=? AND template_id=? AND status=? AND record_id<>?',(account['account_id'],scope,data['lesson_id'],data['template_id'],'active',data['record_id'])).fetchone()
             if duplicate:
                 raise MeasurementError(409,'duplicate_lesson','本课该模板已有评价，请编辑已有记录')
-            data.update(video_task_id=data.get('task_id',''),evaluation_scope='classroom')
+            # Persist the chain aliases _public() derives so the stored payload equals the returned record.
+            data.update(video_task_id=data.get('task_id',''),evaluation_scope='classroom',
+                        school_id=school_id_from_context(data['source_provenance'].get('school_context')),
+                        iep_document_id=data.get('iep_summary_id',''))
             now=_iso();version=data.pop('expected_version')+1
             data.update(version=version,status='active',created_at=old['created_at'] if old else now,updated_at=now,saved_by=account['username'],result=result,
                 rule_snapshot={**catalog(),'selected_template_id':data['template_id'],'selected_subject_id':data['subject_id']})

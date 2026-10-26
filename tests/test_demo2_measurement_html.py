@@ -17,3 +17,13 @@ def test_company_admin_page_contains_aggregate_only_copy():
     assert "仅显示聚合数量" in html
     assert "不含学生姓名、分数或原文" in html
     assert "studentList" not in html
+
+
+def test_record_row_inline_handlers_escape_json_quotes():
+    html = render_measurement({"role": "school_uploader", "username": "synthetic-teacher"})
+    # JSON.stringify emits double quotes; inside a double-quoted onclick attribute
+    # they must be HTML-escaped or the handler is cut off ("Unexpected end of input").
+    assert 'onclick="editRecord(${JSON.stringify(' not in html
+    assert 'onclick="promptWithdraw(${JSON.stringify(' not in html
+    assert 'onclick="editRecord(${esc(JSON.stringify(r.record_id))})"' in html
+    assert 'onclick="promptWithdraw(${esc(JSON.stringify(r.record_id))},${Number(r.version)})"' in html

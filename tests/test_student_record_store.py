@@ -133,6 +133,37 @@ def test_video_channel_queues_upload_and_exposes_worker_result(store: Demo2Stude
     assert store.video_channels()["channels"][0]["tasks"][0]["task_id"] == task["task_id"]
 
 
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"course_name": "长" * 201}, "课程名称不能超过 200 个字符"),
+        ({"course_id": "c" * 121}, "课程批次号不能超过 120 个字符"),
+    ],
+)
+def test_video_task_rejects_overlong_course_fields_instead_of_truncating(
+    store: Demo2StudentRecordStore, overrides: dict[str, str], message: str
+) -> None:
+    payload = {
+        "channel_id": "channel_1",
+        "session_id": "lesson-20260826",
+        "uploader_name": "一号上传主体",
+        "course_id": "course_1",
+        "course_name": "生活语文",
+        "filename": "classroom.mp4",
+        "mime_type": "video/mp4",
+        "byte_size": 16,
+        "total_chunks": 1,
+        **overrides,
+    }
+    with pytest.raises(ValueError, match=message):
+        store.create_video_task(payload)
+    with pytest.raises(ValueError, match=message):
+        store.record_security_acceptance({**payload, "security_confirmed": True, "confirmed_by": "测试教师"})
+    assert store.video_channels()["channels"][0]["tasks"] == []
+    boundary = store.create_video_task({**payload, "course_name": "课" * 200, "course_id": "c" * 120})
+    assert len(boundary["course_name"]) == 200 and len(boundary["course_id"]) == 120
+
+
 def test_security_acceptance_allows_deidentified_result_archive(
     store: Demo2StudentRecordStore,
 ) -> None:

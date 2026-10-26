@@ -173,7 +173,8 @@ def test_sensitive_operations_reject_other_owners_admin_and_members(env, identit
     video = task(env)
     ref = reference(env, video, [doc])
     token = env.tokens.get(identity, "")
-    expected = 404 if identity == "b" else 401 if identity == "anonymous" else 403
+    # Another school's teacher is refused with 403 (acceptance contract); anonymous stays 401.
+    expected = 401 if identity == "anonymous" else 403
     calls = [(env.store.student_workspace, (doc["student_id"],)), (env.store.document_download, (doc["document_id"],)),
              (env.store.task_workspace, (video.task_id,)), (env.store.reference_export, (ref["reference_id"],)),
              (env.store.save_authorization, (auth_payload(env),)),
@@ -207,8 +208,8 @@ def test_current_school_scope_change_blocks_previous_school_dossier(env):
     # Independently verify access checks after an operator-side scope migration.
     with env.records._connect() as db:
         db.execute("UPDATE school_contexts SET school_name=? WHERE school_name=?", ("另一虚构学校", SCHOOL['school_name']))
-    assert_error(404, "student_unavailable", env.store.student_workspace, env.tokens["a"], doc["student_id"])
-    assert_error(404, "document_unavailable", env.store.document_download, env.tokens["a"], doc["document_id"])
+    assert_error(403, "student_forbidden", env.store.student_workspace, env.tokens["a"], doc["student_id"])
+    assert_error(403, "document_forbidden", env.store.document_download, env.tokens["a"], doc["document_id"])
     with env.records._connect() as db:
         db.execute("UPDATE school_contexts SET school_name=? WHERE school_name=?", (SCHOOL['school_name'], "另一虚构学校"))
     assert env.store.student_workspace(env.tokens["a"], doc["student_id"])["documents"][0]["available"] is True

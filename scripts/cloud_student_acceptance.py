@@ -239,7 +239,7 @@ def run_checks(clients, accounts, database, references, *, channel=1):
             # not an authorized original-file download or fabricated authorization.
             deny(admin, '/dossier/document?' + urlencode({'document_id': '0' * 32}), 403)
             for other in other_clients:
-                deny(other, '/dossier/student' + query, 404)
+                deny(other, '/dossier/student' + query, 403)
                 deny(other, '/student-summaries/student' + query, 404)
                 require(sid not in {row['student_id'] for row in get(other, '/identity/roster')['roster']['students']},
                         'roster_tenant_leak')

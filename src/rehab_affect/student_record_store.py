@@ -38,6 +38,8 @@ MAX_NEW_VIDEO_BYTES = 1024 * 1024 * 1024
 MAX_VIDEO_CHUNK_BYTES = 4 * 1024 * 1024
 VIDEO_CREATE_RESERVE_BYTES = 1024 * 1024 * 1024
 VIDEO_APPEND_RESERVE_BYTES = 64 * 1024 * 1024
+MAX_COURSE_ID_CHARS = 120
+MAX_COURSE_NAME_CHARS = 200
 PASSWORD_HASH_ITERATIONS = 210_000
 PASSWORD_SALT_BYTES = 16
 SESSION_TOKEN_BYTES = 32
@@ -206,6 +208,14 @@ def _password_hash(password: str, salt: bytes, iterations: int = PASSWORD_HASH_I
 def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
+
+
+def _check_course_lengths(course_id: str, course_name: str) -> None:
+    """Reject over-long course fields instead of silently truncating them."""
+    if len(course_id) > MAX_COURSE_ID_CHARS:
+        raise ValueError(f"课程批次号不能超过 {MAX_COURSE_ID_CHARS} 个字符")
+    if len(course_name) > MAX_COURSE_NAME_CHARS:
+        raise ValueError(f"课程名称不能超过 {MAX_COURSE_NAME_CHARS} 个字符")
 
 def _processing_json(value: Any, *, max_bytes: int) -> str:
     if not isinstance(value, dict):
@@ -1589,6 +1599,7 @@ class Demo2StudentRecordStore:
         confirmed_by = str(payload.get("confirmed_by", "")).strip()
         if not course_id or not course_name or not confirmed_by:
             raise ValueError("课程、课程名称和确认人不能为空")
+        _check_course_lengths(course_id, course_name)
         acceptance = {
             "acceptance_id": uuid4().hex,
             "course_id": course_id[:120],
@@ -1755,7 +1766,7 @@ class Demo2StudentRecordStore:
         channel_id = str(payload.get("channel_id", "")).strip()
         uploader_name = str(payload.get("uploader_name", "")).strip()
         course_name = str(payload.get("course_name", "")).strip()
-        course_id = str(payload.get("course_id", "")).strip()[:120]
+        course_id = str(payload.get("course_id", "")).strip()
         session_id = str(payload.get("session_id", "")).strip()
         account_id = str(payload.get("account_id", "")).strip()
         account_session_token = str(
@@ -1776,6 +1787,7 @@ class Demo2StudentRecordStore:
             raise ValueError("请填写上传主体")
         if not course_name:
             raise ValueError("请填写课程名称")
+        _check_course_lengths(course_id, course_name)
         if not session_id:
             raise ValueError("请填写课堂批次号")
         if not 0 < byte_size <= MAX_NEW_VIDEO_BYTES:

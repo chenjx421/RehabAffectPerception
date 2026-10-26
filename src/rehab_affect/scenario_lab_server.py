@@ -1382,6 +1382,7 @@ def create_handler(
                             report = self._report_call("get", token, report_id)
                         except Demo2APIError as exc:
                             self._admin_log(account, "admin_report_view", "denied", report_id=report_id,
+                                            task_id=self._report_task_id(account, report_id),
                                             code=exc.code, http_status=exc.status)
                             raise
                         self._admin_log(account, "admin_report_view", "ok", report_id=report_id,
@@ -1405,6 +1406,7 @@ def create_handler(
                         text, filename, content_type = self._report_call("download", token, report_id, fmt=fmt)
                     except Demo2APIError as exc:
                         self._admin_log(account, "admin_report_download", "denied", report_id=report_id,
+                                        task_id=self._report_task_id(account, report_id),
                                         fmt=fmt, code=exc.code, http_status=exc.status)
                         raise
                     self._admin_log(account, "admin_report_download", "ok", report_id=report_id, fmt=fmt,

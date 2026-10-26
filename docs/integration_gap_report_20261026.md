@@ -11,7 +11,7 @@
 | 4 个提交之后的新增提交 | `da8b5ba` 交接文档、`d94717f` 管理员分析路由断言、`d804a6b` 网关拒绝请求排空处理 |
 | Demo1/Demo2 原有上传、时间轴、报告、下载入口 | 20 项入口文件与函数/路由全部存在，未丢失 |
 | `PYTHONPATH=src` 导入主包 | 通过（Python 3.12.11，uv venv `.venv`） |
-| `python -m compileall src` | 通过（`demo2_portal.py:1288` 有一处 `SyntaxWarning: invalid escape sequence '\/'`，不影响编译，原样保留） |
+| `python -m compileall src` | 通过；原 `demo2_portal.py` 管理员页 JS 正则里的 `SyntaxWarning: invalid escape sequence '\/'` 已于 2026-10-26 修正为 `\\/`（渲染出的 HTML 前后 SHA256 一致），`compileall -f` 现为 0 警告；核对脚本改为 `compileall -f` 以免 .pyc 缓存掩盖警告 |
 | 聚焦数据闭环冒烟 | `25 passed, 1 skipped`（4 个文件，见第 6 节；不是交接文档里的 47 项全组，全组在后续子任务重跑） |
 | `.runtime` 与敏感文件 | 未被 git 跟踪；`.gitignore` 已补充私钥/证书/邀请配置规则 |
 

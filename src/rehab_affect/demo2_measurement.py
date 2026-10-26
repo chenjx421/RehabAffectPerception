@@ -335,7 +335,7 @@ function renderOverview(){
     const sc=formalScore(r.assessment);
     const reasons=(r.assessment?.evidence_reasons||[]).join('；');
     const badge=sc!=null?`<span class="status-badge success">得分 ${fmtScore(sc)}</span>`:`<span class="status-badge warning" title="${esc(reasons)}">${esc(EVIDENCE_INSUFFICIENT)}</span>`;
-    return `<div class="rec-row"><div class="rec-row-meta"><strong>${esc(fmtDate(r.lesson_date))} · ${esc(r.course_name||r.lesson_id)}</strong><span>${esc(r.goal_id)} / ${esc(r.measurement_context)}</span></div>${badge}<div class="rec-row-actions"><button class="button" style="font-size:12px;min-height:36px;padding:6px 10px" onclick="editRecord(${JSON.stringify(r.record_id)})">编辑</button><button class="button" style="font-size:12px;min-height:36px;padding:6px 10px;color:var(--danger)" onclick="promptWithdraw(${JSON.stringify(r.record_id)},${r.version})">撤销</button></div></div>`;
+    return `<div class="rec-row"><div class="rec-row-meta"><strong>${esc(fmtDate(r.lesson_date))} · ${esc(r.course_name||r.lesson_id)}</strong><span>${esc(r.goal_id)} / ${esc(r.measurement_context)}</span></div>${badge}<div class="rec-row-actions"><button class="button" style="font-size:12px;min-height:36px;padding:6px 10px" onclick="editRecord(${esc(JSON.stringify(r.record_id))})">编辑</button><button class="button" style="font-size:12px;min-height:36px;padding:6px 10px;color:var(--danger)" onclick="promptWithdraw(${esc(JSON.stringify(r.record_id))},${Number(r.version)})">撤销</button></div></div>`;
   }).join('');
 }
 

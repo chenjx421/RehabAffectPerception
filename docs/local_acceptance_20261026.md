@@ -10,13 +10,13 @@
 
 | 项目 | 值 |
 |---|---|
-| 执行时间 | 2026-10-26T20:03:14+08:00 ~ 2026-10-26T20:05:56+08:00 |
-| 分支 / HEAD | `integration/demo2-1-10` / `d804a6b`（工作区含 44 个未提交改动或新增文件，来自本轮 1-10 整合子任务） |
+| 执行时间 | 2026-10-26T21:16:33+08:00 ~ 2026-10-26T21:19:17+08:00 |
+| 分支 / HEAD | `integration/demo2-1-10` / `d875333`（工作区含 19 个未提交改动或新增文件，来自本轮 1-10 整合子任务） |
 | 平台 | Darwin 24.6.0 arm64（macOS 开发机，非云端） |
 | Python | 3.12.11（仓库 `.venv`，uv 管理） |
 | FFmpeg | `/opt/homebrew/bin/ffmpeg`（ffmpeg version 8.1.2） |
-| 运行方式 | `PYTHONPATH=src`；每组独立可写 `--basetemp`（`../.runtime/pytest-tmp/local_acceptance_20261026_200314/<组名>`） |
-| 原始日志 | `../.runtime/logs/local_acceptance_20261026_200314.jsonl`（.runtime 不入库） |
+| 运行方式 | `PYTHONPATH=src`；每组独立可写 `--basetemp`（`../.runtime/pytest-tmp/local_acceptance_20261026_211633/<组名>`） |
+| 原始日志 | `../.runtime/logs/local_acceptance_20261026_211633.jsonl`（.runtime 不入库） |
 
 本机 FFmpeg 状态不能代替云端 `/usr/bin/ffmpeg`、`/usr/bin/ffprobe` 的确认。
 
@@ -24,21 +24,21 @@
 
 | 测试组 | 文件数 | passed | failed | errors | skipped | 基线 | 结论 | 耗时 |
 |---|---|---|---|---|---|---|---|---|
-| 数据闭环（IEP、学生关联、评分、报告） | 13 | 101 | 0 | 0 | 1 | ≥47 passed | 通过 | 20.0s |
-| 上传 / 媒体 / FFmpeg 调用路径 | 13 | 389 | 0 | 0 | 1 | ≥350 passed，skipped ≤3 | 通过 | 83.6s |
-| 门户与后台（含网关、通道管理、后台刷新） | 9 | 372 | 0 | 0 | 1 | ≥340 passed，skipped ≤1 | 通过 | 47.7s |
-| 网关专项（门户组子集，单独复核） | 1 | 137 | 0 | 0 | 0 | ≥137 passed，skipped ≤0 | 通过 | 6.4s |
-| 管理员无 task_id 访问 /demo2/analysis 断言（门户组子集） | 2 | 2 | 0 | 0 | 0 | ≥2 passed，skipped ≤0 | 通过 | 1.7s |
+| 数据闭环（IEP、学生关联、评分、报告） | 13 | 102 | 0 | 0 | 1 | ≥47 passed | 通过 | 20.7s |
+| 上传 / 媒体 / FFmpeg 调用路径 | 13 | 391 | 0 | 0 | 1 | ≥350 passed，skipped ≤3 | 通过 | 84.1s |
+| 门户与后台（含网关、通道管理、后台刷新） | 9 | 372 | 0 | 0 | 1 | ≥340 passed，skipped ≤1 | 通过 | 48.2s |
+| 网关专项（门户组子集，单独复核） | 1 | 137 | 0 | 0 | 0 | ≥137 passed，skipped ≤0 | 通过 | 6.9s |
+| 管理员无 task_id 访问 /demo2/analysis 断言（门户组子集） | 2 | 2 | 0 | 0 | 0 | ≥2 passed，skipped ≤0 | 通过 | 1.8s |
 
 基线来源：2026-10-25 交接说明（数据闭环 47 passed；媒体 350 passed, 3 skipped；门户 340 passed, 1 skipped；网关专项 137 passed）。本次按同一范围选取文件，并补入后续子任务新增的相关测试，因此数量高于基线。历史全量媒体 / 浏览器 / 恢复套件未在本次运行，也不与本表混写。
 
 ### 数据闭环（IEP、学生关联、评分、报告）
 
 ```bash
-PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_200314/data tests/test_demo2_iep_report_integration.py tests/test_demo2_report_store.py tests/test_demo2_course_analysis.py tests/test_demo2_evaluation_provenance.py tests/test_demo2_evaluation_store.py tests/test_demo2_dossier_iep_access.py tests/test_demo2_measurement_store.py tests/test_demo2_dual_track_evaluation.py tests/test_demo2_evaluation_api.py tests/test_demo2_classroom_report.py tests/test_demo2_classroom_report_http.py tests/test_verify_id_chain.py tests/test_measurement_scoring_standard.py
+PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_211633/data tests/test_demo2_iep_report_integration.py tests/test_demo2_report_store.py tests/test_demo2_course_analysis.py tests/test_demo2_evaluation_provenance.py tests/test_demo2_evaluation_store.py tests/test_demo2_dossier_iep_access.py tests/test_demo2_measurement_store.py tests/test_demo2_dual_track_evaluation.py tests/test_demo2_evaluation_api.py tests/test_demo2_classroom_report.py tests/test_demo2_classroom_report_http.py tests/test_verify_id_chain.py tests/test_measurement_scoring_standard.py
 ```
 
-- pytest 汇总：`101 passed, 1 skipped in 19.84s`
+- pytest 汇总：`102 passed, 1 skipped in 20.45s`
 - 退出码：0
 - 失败用例：无
 - 跳过原因：
@@ -47,10 +47,10 @@ PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetem
 ### 上传 / 媒体 / FFmpeg 调用路径
 
 ```bash
-PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_200314/media tests/test_demo2_media_analysis.py tests/test_demo2_media_api.py tests/test_demo2_media_cache.py tests/test_demo2_media_store.py tests/test_demo2_media_worker.py tests/test_demo2_upload_analysis_flow.py tests/test_demo2_upload_repair.py tests/test_demo2_upload_recovery_frontend.py tests/test_prepare_upload_video.py tests/test_cloud_media_smoke.py tests/test_demo2_frame_preview.py tests/test_video_applicability.py tests/test_student_record_store.py
+PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_211633/media tests/test_demo2_media_analysis.py tests/test_demo2_media_api.py tests/test_demo2_media_cache.py tests/test_demo2_media_store.py tests/test_demo2_media_worker.py tests/test_demo2_upload_analysis_flow.py tests/test_demo2_upload_repair.py tests/test_demo2_upload_recovery_frontend.py tests/test_prepare_upload_video.py tests/test_cloud_media_smoke.py tests/test_demo2_frame_preview.py tests/test_video_applicability.py tests/test_student_record_store.py
 ```
 
-- pytest 汇总：`389 passed, 1 skipped in 83.36s (0:01:23)`
+- pytest 汇总：`391 passed, 1 skipped in 83.83s (0:01:23)`
 - 退出码：0
 - 失败用例：无
 - 跳过原因：
@@ -59,10 +59,10 @@ PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetem
 ### 门户与后台（含网关、通道管理、后台刷新）
 
 ```bash
-PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_200314/portal tests/test_demo2_manager_gateway.py tests/test_demo2_gateway_reject_drain.py tests/test_demo2_portal_html.py tests/test_demo2_portal_api.py tests/test_demo2_admin_refresh.py tests/test_demo2_admin_overview_tasks.py tests/test_demo2_channel_admin_html.py tests/test_demo2_channel_admin_store.py tests/test_scenario_lab_server.py
+PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_211633/portal tests/test_demo2_manager_gateway.py tests/test_demo2_gateway_reject_drain.py tests/test_demo2_portal_html.py tests/test_demo2_portal_api.py tests/test_demo2_admin_refresh.py tests/test_demo2_admin_overview_tasks.py tests/test_demo2_channel_admin_html.py tests/test_demo2_channel_admin_store.py tests/test_scenario_lab_server.py
 ```
 
-- pytest 汇总：`372 passed, 1 skipped in 47.41s`
+- pytest 汇总：`372 passed, 1 skipped in 47.97s`
 - 退出码：0
 - 失败用例：无
 - 跳过原因：
@@ -71,17 +71,17 @@ PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetem
 ### 网关专项（门户组子集，单独复核）
 
 ```bash
-PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_200314/gateway tests/test_demo2_manager_gateway.py
+PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_211633/gateway tests/test_demo2_manager_gateway.py
 ```
 
-- pytest 汇总：`137 passed in 6.22s`
+- pytest 汇总：`137 passed in 6.65s`
 - 退出码：0
 - 失败用例：无
 
 ### 管理员无 task_id 访问 /demo2/analysis 断言（门户组子集）
 
 ```bash
-PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_200314/admin_analysis_guide tests/test_demo2_admin_overview_tasks.py tests/test_demo2_portal_api.py -k "test_analysis_guide_reads_no_classroom_data or test_portal_pages_redirect_and_enforce_roles"
+PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_211633/admin_analysis_guide tests/test_demo2_admin_overview_tasks.py tests/test_demo2_portal_api.py -k "test_analysis_guide_reads_no_classroom_data or test_portal_pages_redirect_and_enforce_roles"
 ```
 
 - pytest 汇总：`2 passed, 47 deselected in 1.51s`
@@ -96,7 +96,7 @@ PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetem
 |---|---|---|---|
 | compileall | `PYTHONPATH=src .venv/bin/python -m compileall -q src tests scripts` | 通过 | 无输出 |
 | git diff --check | `git diff --check` | 通过 | 无输出 |
-| 新增未跟踪文件空白检查 | `git ls-files --others --exclude-standard（逐行检查行尾空白 / 冲突标记）` | 通过 | 检查 22 个新增文本文件，无问题 |
+| 新增未跟踪文件空白检查 | `git ls-files --others --exclude-standard（逐行检查行尾空白 / 冲突标记）` | 通过 | 检查 0 个新增文本文件，无问题 |
 
 ## 4. 合成视频端到端流程
 
@@ -108,13 +108,13 @@ PYTHONPATH=src .venv/bin/python scripts/local_synthetic_e2e_20261026.py --port 9
 
 | # | 步骤 | 结果 | 关键记录 |
 |---|---|---|---|
-| 1 | 登录（学校上传账号 + 公司管理员） | 通过 | {"admin_account_id": "4888dd154dbf42d7ba83383b7124204c", "bound_channel_id": "channel_1", "school_account_id": "66127ab0a4994658b65adbf97a250992"} |
-| 2 | 上传合成视频（分片上传 + SHA256 校验） | 通过 | {"bytes": 123642, "channel_id": "channel_1", "course_id": "synthetic-course-20261026", "video_task_id": "e9f3ca9dbead48edb92890204bb0095f"} |
-| 3 | 后台处理（真实 FFmpeg + 分析 worker） | 通过 | {"analysis_status": "evidence_ready", "seconds": 1.0} |
-| 4 | 学生状态结果（任务范围内） | 通过 | {"binding_id": "8ccad66f-2abf-417a-8012-d6c7690c3e12", "frame_revision": "1e244b724eab20decf39719c000791edd932a517d74eec8600b2a16102609423", "frames": 4, "measurement_overall_score": 6.85, "measurement_record_id": "synthetic-measurement-1", "simple_analysis_available": false, "simple_analysis_reason": "no_face_candidates", "student_id": "6a0144a8-9e54-495f-b937-c8fe50403a07"} |
+| 1 | 登录（学校上传账号 + 公司管理员） | 通过 | {"admin_account_id": "ecca51ff1a6e45b78e58b4692b856f19", "bound_channel_id": "channel_1", "school_account_id": "0f13141fca8a420bb27a81069d06da3f"} |
+| 2 | 上传合成视频（分片上传 + SHA256 校验） | 通过 | {"bytes": 123642, "channel_id": "channel_1", "course_id": "synthetic-course-20261026", "video_task_id": "b7c7106ded8848dca011febf43df89c7"} |
+| 3 | 后台处理（真实 FFmpeg + 分析 worker） | 通过 | {"analysis_status": "evidence_ready", "seconds": 1.1} |
+| 4 | 学生状态结果（任务范围内） | 通过 | {"binding_id": "436a2003-f192-4e31-a772-f6ed2dc00058", "frame_revision": "a0e0d2fc93ad2d0b2bae2127f24677e609e92b8f27fb30dea2c09e42cfb10312", "frames": 4, "measurement_overall_score": 6.85, "measurement_record_id": "synthetic-measurement-1", "simple_analysis_available": false, "simple_analysis_reason": "no_face_candidates", "student_id": "879bc846-6dd3-4c56-9c20-59b58a2fd61b"} |
 | 5 | 学校评分 / 系统评分 | 通过 | {"evaluation_id": "evaluation-synthetic-evaluation-1", "school_raw_score": 80.0, "school_teaching_score_70": 56.0, "system_score_10": 7.54, "version": 1} |
 | 6 | 分差说明 | 通过 | {"evidence_delta": -0.5, "total_delta": -0.46, "weight_delta": 0.04} |
-| 7 | 报告生成（课程报告快照） | 通过 | {"content_report_id": "report-37dfd8d6904b10b7e32f482f", "evaluation_count": 1, "report_id": "833d8a91a9204c7889d13fffbe113c0d"} |
+| 7 | 报告生成（课程报告快照） | 通过 | {"content_report_id": "report-74699a6c9239023ba610fe65", "evaluation_count": 1, "report_id": "9b340ae65d824b849a3fbef07676d6ae"} |
 | 8 | 教师报告下载（md/json） | 通过 | {"json_bytes": 12406, "md_bytes": 5231, "teacher_iep_links": 1} |
 | 9 | 公司后台查询（任务 + 报告） | 通过 | {"admin_report_rows": 1, "admin_task_status": "evidence_ready", "analysis_without_task_id_status": 200, "recent_uploads": 1} |
 | 10 | 公司后台视频 / 报告下载 | 通过 | {"report_json_bytes": 12031, "report_md_bytes": 5231, "result_bytes": 3576, "video_bytes": 123642, "video_sha256_match": true} |
@@ -132,47 +132,47 @@ PYTHONPATH=src .venv/bin/python scripts/local_synthetic_e2e_20261026.py --port 9
 | 层级 | 实际值 | 流程中接口返回值 |
 |---|---|---|
 | `school_id` | `school-49ecc873ba0703af03ba5581` | `（由学校快照派生，接口不直接返回）` |
-| `student_id` | `6a0144a8-9e54-495f-b937-c8fe50403a07` | `6a0144a8-9e54-495f-b937-c8fe50403a07` |
-| `iep_document_id` | `e58ede59dc7947f0821eba0bdffd338a` | `e58ede59dc7947f0821eba0bdffd338a` |
+| `student_id` | `879bc846-6dd3-4c56-9c20-59b58a2fd61b` | `879bc846-6dd3-4c56-9c20-59b58a2fd61b` |
+| `iep_document_id` | `44f948766bfa49f593af12476089bcbc` | `44f948766bfa49f593af12476089bcbc` |
 | `course_id` | `synthetic-course-20261026` | `synthetic-course-20261026` |
-| `video_task_id` | `e9f3ca9dbead48edb92890204bb0095f` | `e9f3ca9dbead48edb92890204bb0095f` |
+| `video_task_id` | `b7c7106ded8848dca011febf43df89c7` | `b7c7106ded8848dca011febf43df89c7` |
 | `evaluation_id` | `evaluation-synthetic-evaluation-1` | `evaluation-synthetic-evaluation-1` |
-| `report_id` | `833d8a91a9204c7889d13fffbe113c0d` | `833d8a91a9204c7889d13fffbe113c0d` |
+| `report_id` | `9b340ae65d824b849a3fbef07676d6ae` | `9b340ae65d824b849a3fbef07676d6ae` |
 
-报告内容编号 `content_report_id` = `report-37dfd8d6904b10b7e32f482f`（与快照 `report_id` 按设计不同）。以上 ID 均来自本次临时库，测试结束后临时库随目录删除。
+报告内容编号 `content_report_id` = `report-74699a6c9239023ba610fe65`（与快照 `report_id` 按设计不同）。以上 ID 均来自本次临时库，测试结束后临时库随目录删除。
 
 ## 5. 执行日志
 
 | 时间 | 测试组 | 步骤 | 结果 | 命令 | passed | failed | skipped | 失败用例 |
 |---|---|---|---|---|---|---|---|---|
-| 2026-10-26T20:03:34+08:00 | data | finish | PASS | `PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_200314/data tests/test_demo2_iep_report_integration.py tests/test_demo2_report_store.py tests/test_demo2_course_analysis.py tests/test_demo2_evaluation_provenance.py tests/test_demo2_evaluation_store.py tests/test_demo2_dossier_iep_access.py tests/test_demo2_measurement_store.py tests/test_demo2_dual_track_evaluation.py tests/test_demo2_evaluation_api.py tests/test_demo2_classroom_report.py tests/test_demo2_classroom_report_http.py tests/test_verify_id_chain.py tests/test_measurement_scoring_standard.py` |101 | 0 | 1 | 无 |
-| 2026-10-26T20:04:57+08:00 | media | finish | PASS | `PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_200314/media tests/test_demo2_media_analysis.py tests/test_demo2_media_api.py tests/test_demo2_media_cache.py tests/test_demo2_media_store.py tests/test_demo2_media_worker.py tests/test_demo2_upload_analysis_flow.py tests/test_demo2_upload_repair.py tests/test_demo2_upload_recovery_frontend.py tests/test_prepare_upload_video.py tests/test_cloud_media_smoke.py tests/test_demo2_frame_preview.py tests/test_video_applicability.py tests/test_student_record_store.py` |389 | 0 | 1 | 无 |
-| 2026-10-26T20:05:45+08:00 | portal | finish | PASS | `PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_200314/portal tests/test_demo2_manager_gateway.py tests/test_demo2_gateway_reject_drain.py tests/test_demo2_portal_html.py tests/test_demo2_portal_api.py tests/test_demo2_admin_refresh.py tests/test_demo2_admin_overview_tasks.py tests/test_demo2_channel_admin_html.py tests/test_demo2_channel_admin_store.py tests/test_scenario_lab_server.py` |372 | 0 | 1 | 无 |
-| 2026-10-26T20:05:52+08:00 | gateway | finish | PASS | `PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_200314/gateway tests/test_demo2_manager_gateway.py` |137 | 0 | 0 | 无 |
-| 2026-10-26T20:05:53+08:00 | admin_analysis_guide | finish | PASS | `PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_200314/admin_analysis_guide tests/test_demo2_admin_overview_tasks.py tests/test_demo2_portal_api.py -k "test_analysis_guide_reads_no_classroom_data or test_portal_pages_redirect_and_enforce_roles"` |2 | 0 | 0 | 无 |
-| 2026-10-26T20:05:54+08:00 | compileall | finish | PASS | `PYTHONPATH=src .venv/bin/python -m compileall -q src tests scripts` |- | - | - | 无 |
-| 2026-10-26T20:05:54+08:00 | git_diff_check | finish | PASS | `git diff --check` |- | - | - | 无 |
-| 2026-10-26T20:05:54+08:00 | untracked_whitespace | finish | PASS | `git ls-files --others --exclude-standard（逐行检查行尾空白 / 冲突标记）` |- | - | - | 无 |
-| 2026-10-26T20:05:56+08:00 | synthetic_e2e | finish | PASS | `PYTHONPATH=src .venv/bin/python scripts/local_synthetic_e2e_20261026.py --port 9185` |10 | 0 | 0 | 无 |
-| 2026-10-26T20:05:56+08:00 | finish | summary | PASS | `-` |- | - | - | 无 |
+| 2026-10-26T21:16:53+08:00 | data | finish | PASS | `PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_211633/data tests/test_demo2_iep_report_integration.py tests/test_demo2_report_store.py tests/test_demo2_course_analysis.py tests/test_demo2_evaluation_provenance.py tests/test_demo2_evaluation_store.py tests/test_demo2_dossier_iep_access.py tests/test_demo2_measurement_store.py tests/test_demo2_dual_track_evaluation.py tests/test_demo2_evaluation_api.py tests/test_demo2_classroom_report.py tests/test_demo2_classroom_report_http.py tests/test_verify_id_chain.py tests/test_measurement_scoring_standard.py` |102 | 0 | 1 | 无 |
+| 2026-10-26T21:18:17+08:00 | media | finish | PASS | `PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_211633/media tests/test_demo2_media_analysis.py tests/test_demo2_media_api.py tests/test_demo2_media_cache.py tests/test_demo2_media_store.py tests/test_demo2_media_worker.py tests/test_demo2_upload_analysis_flow.py tests/test_demo2_upload_repair.py tests/test_demo2_upload_recovery_frontend.py tests/test_prepare_upload_video.py tests/test_cloud_media_smoke.py tests/test_demo2_frame_preview.py tests/test_video_applicability.py tests/test_student_record_store.py` |391 | 0 | 1 | 无 |
+| 2026-10-26T21:19:06+08:00 | portal | finish | PASS | `PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_211633/portal tests/test_demo2_manager_gateway.py tests/test_demo2_gateway_reject_drain.py tests/test_demo2_portal_html.py tests/test_demo2_portal_api.py tests/test_demo2_admin_refresh.py tests/test_demo2_admin_overview_tasks.py tests/test_demo2_channel_admin_html.py tests/test_demo2_channel_admin_store.py tests/test_scenario_lab_server.py` |372 | 0 | 1 | 无 |
+| 2026-10-26T21:19:13+08:00 | gateway | finish | PASS | `PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_211633/gateway tests/test_demo2_manager_gateway.py` |137 | 0 | 0 | 无 |
+| 2026-10-26T21:19:14+08:00 | admin_analysis_guide | finish | PASS | `PYTHONPATH=src .venv/bin/python -m pytest -q -rfEs -p no:cacheprovider --basetemp=../.runtime/pytest-tmp/local_acceptance_20261026_211633/admin_analysis_guide tests/test_demo2_admin_overview_tasks.py tests/test_demo2_portal_api.py -k "test_analysis_guide_reads_no_classroom_data or test_portal_pages_redirect_and_enforce_roles"` |2 | 0 | 0 | 无 |
+| 2026-10-26T21:19:15+08:00 | compileall | finish | PASS | `PYTHONPATH=src .venv/bin/python -m compileall -q src tests scripts` |- | - | - | 无 |
+| 2026-10-26T21:19:15+08:00 | git_diff_check | finish | PASS | `git diff --check` |- | - | - | 无 |
+| 2026-10-26T21:19:15+08:00 | untracked_whitespace | finish | PASS | `git ls-files --others --exclude-standard（逐行检查行尾空白 / 冲突标记）` |- | - | - | 无 |
+| 2026-10-26T21:19:17+08:00 | synthetic_e2e | finish | PASS | `PYTHONPATH=src .venv/bin/python scripts/local_synthetic_e2e_20261026.py --port 9185` |10 | 0 | 0 | 无 |
+| 2026-10-26T21:19:17+08:00 | finish | summary | PASS | `-` |- | - | - | 无 |
 
 端到端逐步日志：
 
 | 时间 | 步骤 | 结果 |
 |---|---|---|
-| 2026-10-26T20:05:54.389+08:00 | generate_video | PASS |
-| 2026-10-26T20:05:54.726+08:00 | login | PASS |
-| 2026-10-26T20:05:54.748+08:00 | upload | PASS |
-| 2026-10-26T20:05:55.766+08:00 | processing | PASS |
-| 2026-10-26T20:05:55.816+08:00 | student_state | PASS |
-| 2026-10-26T20:05:55.848+08:00 | iep_link | PASS |
-| 2026-10-26T20:05:55.862+08:00 | school_system_scoring | PASS |
-| 2026-10-26T20:05:55.864+08:00 | score_gap | PASS |
-| 2026-10-26T20:05:55.889+08:00 | report_generation | PASS |
-| 2026-10-26T20:05:55.935+08:00 | report_download | PASS |
-| 2026-10-26T20:05:55.956+08:00 | admin_query | PASS |
-| 2026-10-26T20:05:55.983+08:00 | admin_downloads | PASS |
-| 2026-10-26T20:05:56.024+08:00 | id_chain | PASS |
+| 2026-10-26T21:19:15.361+08:00 | generate_video | PASS |
+| 2026-10-26T21:19:15.680+08:00 | login | PASS |
+| 2026-10-26T21:19:15.705+08:00 | upload | PASS |
+| 2026-10-26T21:19:16.759+08:00 | processing | PASS |
+| 2026-10-26T21:19:16.808+08:00 | student_state | PASS |
+| 2026-10-26T21:19:16.845+08:00 | iep_link | PASS |
+| 2026-10-26T21:19:16.860+08:00 | school_system_scoring | PASS |
+| 2026-10-26T21:19:16.863+08:00 | score_gap | PASS |
+| 2026-10-26T21:19:16.888+08:00 | report_generation | PASS |
+| 2026-10-26T21:19:16.938+08:00 | report_download | PASS |
+| 2026-10-26T21:19:16.960+08:00 | admin_query | PASS |
+| 2026-10-26T21:19:16.985+08:00 | admin_downloads | PASS |
+| 2026-10-26T21:19:17.050+08:00 | id_chain | PASS |
 
 ## 6. 结论与仍存在的限制
 

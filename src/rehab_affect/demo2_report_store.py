@@ -14,6 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 from .demo2_identity_store import Demo2IdentityStore, IdentityError
+from .demo2_dossier_store import material_access_state
 from .demo2_iep_context import snapshot_report
 from .demo2_report_debug import report_debug_event
 from .evaluation_report_contract import generated_report_id, school_id_from_context
@@ -21,7 +22,7 @@ from .student_record_store import _iso
 
 
 REPORT_PAGE_SIZE = 20
-STALE_MESSAGE = "报告已过期：生成后评分或视频版本已变化，请重新生成课堂报告后再查看或下载"
+STALE_MESSAGE = "报告已过期：生成后评分、视频版本或引用的学生资料授权已变化，请重新生成课堂报告后再查看或下载"
 STATUS_LABELS = {"saved": "可下载", "evidence_pending": "证据待补充", "stale": "已过期"}
 ADMIN_REDACTED_KEYS = frozenset({"iep_links"})
 
@@ -102,10 +103,12 @@ class Demo2ReportStore:
         ).fetchone()
         if row is None:
             raise ReportError(404, "report_unavailable", "报告不存在或无权访问")
+        # report_id is a random 128-bit value, so an explicit 403 for another
+        # school's report does not make enumeration practical.
         if not admin and row["owner_account_id"] != account["account_id"]:
-            raise ReportError(404, "report_unavailable", "报告不存在或无权访问")
+            raise ReportError(403, "report_forbidden", "当前账号无权访问该课堂报告")
         if not admin and row["scope_key"] != self._scope(connection, account):
-            raise ReportError(404, "report_unavailable", "报告不存在或无权访问")
+            raise ReportError(403, "report_forbidden", "当前账号无权访问该课堂报告")
         return dict(row)
 
     def _stale_reasons(self, connection, row) -> list[str]:
@@ -134,6 +137,47 @@ class Demo2ReportStore:
                 ).fetchone()
                 if current is None or current["status"] != "active" or current["version"] != version.get("version"):
                     reasons.append(f"{label}:{record_id}")
+        reasons.extend(self._dossier_stale_reasons(connection, report))
+        return reasons
+
+    @staticmethod
+    def _dossier_stale_reasons(connection, report) -> list[str]:
+        """A snapshot built from authorized dossier versions expires once that
+        authorization, version or classroom reference is no longer usable."""
+        links = report.get("iep_links", []) if isinstance(report, dict) else []
+        used = [link for link in links if isinstance(link, dict) and link.get("available")]
+        if not used:
+            return []
+        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if not {"demo2_dossier_references", "demo2_dossier_documents", "demo2_dossier_authorizations"} <= tables:
+            return ["iep_source_unavailable:dossier_missing"]
+        reference_columns = {row[1] for row in connection.execute("PRAGMA table_info(demo2_dossier_references)")}
+        reasons: list[str] = []
+        for link in used:
+            reference_id = str(link.get("reference_id") or "")
+            if reference_id:
+                reference = connection.execute(
+                    "SELECT * FROM demo2_dossier_references WHERE reference_id=?", (reference_id,)
+                ).fetchone()
+                if reference is None:
+                    reasons.append(f"iep_reference_missing:{reference_id}")
+                    continue
+                if "withdrawn_at" in reference_columns and reference["withdrawn_at"]:
+                    reasons.append(f"iep_reference_withdrawn:{reference_id}")
+                    continue
+            for version in link.get("document_versions", []) or []:
+                document_id = str(version.get("document_id") or "") if isinstance(version, dict) else ""
+                if not document_id:
+                    continue
+                state = material_access_state(connection, document_id=document_id, purpose="analysis")
+                if not state["available"]:
+                    reasons.append(f"iep_source_unavailable:{document_id}:{state['reason']}")
+                    continue
+                current = connection.execute(
+                    "SELECT version FROM demo2_dossier_documents WHERE document_id=?", (document_id,)
+                ).fetchone()
+                if current is not None and version.get("version") is not None and current["version"] != version.get("version"):
+                    reasons.append(f"iep_source_changed:{document_id}")
         return reasons
 
     def _check_current(self, connection, row, *, role, operation) -> list[str]:

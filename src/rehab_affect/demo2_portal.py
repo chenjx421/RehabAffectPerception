@@ -1045,6 +1045,7 @@ async function uploadVideo() {{
   if(!channelId) return message('账号尚未绑定上传通道，请联系管理员配置。');
   if(channelId!==boundChannelId()) return message('只能使用本账号绑定的上传通道，请刷新页面后重试。');
   if(!file) return message('请选择要上传的视频。');
+  if(courseName.length>200) return message('课程名称不能超过 200 个字符，请缩短后重试。');
   const extension=file.name.includes('.')?file.name.slice(file.name.lastIndexOf('.')).toLowerCase():'';
   if(!ALLOWED_VIDEO_EXTENSIONS.includes(extension)) return message('新上传仅支持 MP4、MOV 和 WebM；建议转换为 MP4（H.264 / AAC）。已有任务仍可选择原文件继续上传。');
   if(file.size<=0) return message('所选视频为空，请重新选择。');
@@ -1253,7 +1254,7 @@ function renderSummary(summary){{
   const requests=Array.isArray(summary.registration_requests)?summary.registration_requests:[];
   byId('registrationRequests').innerHTML=requests.length?requests.map(item=>`<tr><td>${{esc(item.name)}}</td><td>${{esc(item.contact)}}</td><td>${{esc([item.city,item.district].filter(Boolean).join(' / '))}}</td><td>${{esc(item.school_name)}}</td><td>${{esc(formatTime(item.created_at))}}</td><td><span class="status-badge warning">${{item.status==='pending'?'待审核':esc(item.status)}}</span></td></tr>`).join(''):'<tr><td colspan="6">暂无历史学校开通申请。</td></tr>';
   const schools=Array.isArray(summary.school_contexts)?summary.school_contexts:[];
-  byId('schoolContexts').innerHTML=schools.length?schools.map(item=>{{const d=item.selection_details||{{}};const publicSource=d.source_status==='public_source';return `<tr><td>${{esc(item.login_alias||item.username||item.account_id)}}</td><td>${{esc(item.city)}}</td><td>${{esc(item.district)}}</td><td>${{esc(item.school_name)}}</td><td>${{esc(d.address||'未收录')}}</td><td>${{publicSource?'公开名录（非教师认证）':'待核实'}}${{d.source_url&&/^https:\/\//.test(d.source_url)?`<br><a href="${{esc(d.source_url)}}" target="_blank" rel="noopener noreferrer">公开来源</a>`:''}}</td></tr>`;}}).join(''):'<tr><td colspan="6">上传账号尚未填写学校信息。</td></tr>';
+  byId('schoolContexts').innerHTML=schools.length?schools.map(item=>{{const d=item.selection_details||{{}};const publicSource=d.source_status==='public_source';return `<tr><td>${{esc(item.login_alias||item.username||item.account_id)}}</td><td>${{esc(item.city)}}</td><td>${{esc(item.district)}}</td><td>${{esc(item.school_name)}}</td><td>${{esc(d.address||'未收录')}}</td><td>${{publicSource?'公开名录（非教师认证）':'待核实'}}${{d.source_url&&/^https:\\/\\//.test(d.source_url)?`<br><a href="${{esc(d.source_url)}}" target="_blank" rel="noopener noreferrer">公开来源</a>`:''}}</td></tr>`;}}).join(''):'<tr><td colspan="6">上传账号尚未填写学校信息。</td></tr>';
   const accounts=Array.isArray(summary.upload_accounts)?summary.upload_accounts:[];const channels=Array.isArray(summary.channels)?summary.channels:[];const usage=Array.isArray(summary.course_usage)?summary.course_usage:[];const retention=summary.retention||{{}};
   byId('accountTitle').textContent=`${{accounts.length}} 账号 / ${{channels.length}} 通道状态`;
   byId('accountList').innerHTML=accounts.length?accounts.map(item=>`<div class="entity-row"><div><strong>${{esc(item.login_alias||item.username||item.account_id)}}</strong><span>绑定 ${{esc(item.bound_channel_id||'未绑定')}} · 每课程 ${{esc(item.course_upload_limit??'--')}} 个名额</span></div>${{badge(item.status)}}</div>`).join(''):'<div class="empty-state">接口未返回学校上传账号。</div>';

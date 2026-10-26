@@ -525,12 +525,26 @@ class Demo2DossierStore:
         context = self.identities._context(self.records._school_context_for_account(connection, actor["account_id"]), required=False)
         return self.identities._scope(actor["account_id"], context)
 
+    @staticmethod
+    def _forbidden_if_foreign(connection, actor, table, column, value, scope, code, message):
+        """Records owned by another school/account answer 403; unknown or deleted ones stay 404."""
+        owner = "account_id" if table == "video_analysis_tasks" else "owner_account_id"
+        row = connection.execute(f"SELECT {owner} AS owner{', scope_key' if table != 'video_analysis_tasks' else ''} FROM {table} WHERE {column} = ?",
+                                 (value,)).fetchone()
+        if row is None:
+            return
+        foreign_scope = table != "video_analysis_tasks" and row["scope_key"] != scope
+        if row["owner"] != actor["account_id"] or foreign_scope:
+            raise DossierError(403, code, message)
+
     def _student(self, connection, actor, student_id):
         scope = self._scope(connection, actor)
         row = connection.execute("""SELECT * FROM demo2_identity_students
             WHERE student_id = ? AND owner_account_id = ? AND scope_key = ?""",
             (_text(student_id, 120, required=True), actor["account_id"], scope)).fetchone()
         if row is None or not scope:
+            self._forbidden_if_foreign(connection, actor, "demo2_identity_students", "student_id", student_id, scope,
+                                       "student_forbidden", "该学生不属于当前账号的学校，无权访问其资料")
             raise DossierError(404, "student_unavailable", "学生不存在或不在当前账号的学校范围内")
         return dict(row)
 
@@ -547,6 +561,9 @@ class Demo2DossierStore:
         row = connection.execute("""SELECT * FROM demo2_dossier_documents
             WHERE document_id = ? AND owner_account_id = ? AND scope_key = ?""",
             (_text(document_id, 120, required=True), actor["account_id"], self._scope(connection, actor))).fetchone()
+        if row is None:
+            self._forbidden_if_foreign(connection, actor, "demo2_dossier_documents", "document_id", document_id,
+                                       self._scope(connection, actor), "document_forbidden", "该资料不属于当前账号的学校，无权访问")
         if row is None or (student_id is not None and row["student_id"] != student_id):
             raise DossierError(404, "document_unavailable", "资料不存在或不可访问")
         self._student(connection, actor, row["student_id"])
@@ -908,6 +925,9 @@ class Demo2DossierStore:
                 raise ValueError
             return task
         except (ValueError, IdentityError):
+            if isinstance(task_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,120}", task_id):
+                self._forbidden_if_foreign(connection, actor, "video_analysis_tasks", "task_id", task_id,
+                                           self._scope(connection, actor), "task_forbidden", "该课堂任务不属于当前账号的学校，无权访问")
             raise DossierError(404, "task_unavailable", "任务不存在或不在当前学校范围内") from None
 
     def _live_bindings(self, connection, task):
@@ -1064,6 +1084,8 @@ class Demo2DossierStore:
         row = connection.execute("SELECT * FROM demo2_dossier_references WHERE reference_id = ? AND owner_account_id = ? AND scope_key = ?",
                                  (_text(reference_id, 120, required=True), actor["account_id"], self._scope(connection, actor))).fetchone()
         if row is None:
+            self._forbidden_if_foreign(connection, actor, "demo2_dossier_references", "reference_id", reference_id,
+                                       self._scope(connection, actor), "reference_forbidden", "该课堂引用不属于当前账号的学校，无权访问")
             raise DossierError(404, "reference_unavailable", "引用不存在或不可访问")
         self._student(connection, actor, row["student_id"])
         return dict(row)

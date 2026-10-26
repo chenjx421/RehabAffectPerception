@@ -111,9 +111,9 @@ class Demo2MeasurementStore:
             raise MeasurementError(400, 'invalid_field', exc.message) from None
 
     @staticmethod
-    def _id(value):
+    def _id(value, message='记录编号格式无效'):
         if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,120}', value):
-            raise MeasurementError(400, 'invalid_id', '记录编号格式无效')
+            raise MeasurementError(400, 'invalid_id', message)
         return value
 
     def save(self, token, payload):
@@ -178,7 +178,7 @@ class Demo2MeasurementStore:
         data['speaker_confirmed']=payload.get('speaker_confirmed',False)
         data['vocalization_scope']='student' if data['speaker_confirmed'] else 'scene_unknown_speaker'
         if source_type == 'video_review':
-            data['task_id'] = self._id(payload.get('task_id'))
+            data['task_id'] = self._id(payload.get('task_id'), '视频复核须填写有效的上传任务编号')
             for key in ('start_sec','end_sec'):
                 value=payload.get(key)
                 if type(value) not in (int,float) or not math.isfinite(value) or not 0 <= value <= 10800:
@@ -248,6 +248,7 @@ class Demo2MeasurementStore:
     def _log_saved(self, account, data, previous_reviewed, *, is_new):
         summary = data['assessment']
         common = dict(record_id=data['record_id'], student_id=data['student_id'], account_id=account['account_id'],
+                      task_id=data.get('task_id') or None, source_type=data.get('source_type'),
                       version=data['version'], scores=data['scores'], observed=data['observed'],
                       opportunities=data['opportunities'], reviewed=data['reviewed'])
         measurement_debug_event(self.records, 'measurement_create' if is_new else 'measurement_update', 'ok',
@@ -285,6 +286,7 @@ class Demo2MeasurementStore:
             self.records._audit(db,account['username'],'measurement_withdrawn','measurement',record_id,{'version':version})
         measurement_debug_event(self.records, 'measurement_withdraw', 'ok', record_id=record_id,
                                 student_id=data.get('student_id'), account_id=account['account_id'], version=version,
+                                task_id=data.get('task_id') or None, source_type=data.get('source_type'),
                                 scores=data.get('scores'), observed=data.get('observed'), reviewed=data.get('reviewed'))
         return data
 

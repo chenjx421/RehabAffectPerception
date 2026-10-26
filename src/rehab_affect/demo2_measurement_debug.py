@@ -32,7 +32,7 @@ OPERATIONS = frozenset({
     "score_compute",
 })
 _DIMENSIONS = ("accuracy", "independence", "consistency", "transfer")
-_ID_FIELDS = ("record_id", "student_id", "account_id", "task_id", "code", "rubric_version")
+_ID_FIELDS = ("record_id", "student_id", "account_id", "task_id", "source_type", "code", "rubric_version")
 _INT_FIELDS = ("version", "observed", "opportunities")
 _LOCK = threading.Lock()
 

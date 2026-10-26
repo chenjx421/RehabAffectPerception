@@ -116,3 +116,28 @@ def test_snapshot_download_rejects_changed_scoring_versions(env):
     assert updated['report_id'] == snapshot['report_id']
     assert updated['content_report_id'] != snapshot['content_report_id']
     reports.download(env.tokens['admin'], updated['report_id'])
+
+
+@pytest.mark.parametrize('change', ['authorization', 'reference'])
+def test_snapshot_built_from_iep_expires_after_withdrawal(env, change):
+    video, auth, doc, ref, measurements, _, _, _, _ = prepared(env)
+    reports = Demo2ReportStore(env.records)
+    snapshot = reports.save_from_workspace(env.tokens['a'], measurements.course_workspace(env.tokens['a'], video.task_id))
+    reports.download(env.tokens['a'], snapshot['report_id'])
+    if change == 'authorization':
+        env.store.withdraw_authorization(env.tokens['a'], {'student_id': env.pupils['a1']['student_id'],
+            'authorization_id': auth['authorization_id'], 'confirmed': True})
+    else:
+        env.store.withdraw_reference(env.tokens['a'], {'reference_id': ref['reference_id'], 'confirmed': True})
+    for user in ('a', 'admin'):
+        with pytest.raises(ReportError) as exc:
+            reports.download(env.tokens[user], snapshot['report_id'])
+        assert exc.value.code == 'report_stale'
+    with env.records._connect() as db:
+        assert db.execute('SELECT status FROM demo2_reports WHERE report_id=?', (snapshot['report_id'],)).fetchone()[0] == 'stale'
+    # Regenerating without the withdrawn material restores a downloadable snapshot.
+    regenerated = reports.save_from_workspace(env.tokens['a'], measurements.course_workspace(env.tokens['a'], video.task_id))
+    assert regenerated['report_id'] == snapshot['report_id'] and regenerated['status'] == 'saved'
+    downloaded, _, _ = reports.download(env.tokens['a'], regenerated['report_id'], fmt='json')
+    assert SECRET not in downloaded
+    assert all(not link['available'] for link in json.loads(downloaded)['report'].get('iep_links', []))
