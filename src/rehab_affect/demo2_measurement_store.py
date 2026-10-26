@@ -11,7 +11,15 @@ import re
 from datetime import date, datetime, timedelta
 from uuid import uuid4
 
-from .assessment_rubric import RUBRIC_VERSION, build_assessment_summary, build_longitudinal_series
+from .assessment_rubric import (
+    DIMENSION_WEIGHTS,
+    EVIDENCE_INSUFFICIENT,
+    RUBRIC_VERSION,
+    build_assessment_summary,
+    build_longitudinal_series,
+    rubric_contract,
+)
+from .demo2_measurement_debug import measurement_debug_event, score_formula
 from .demo2_identity_store import Demo2IdentityStore, IdentityError, _field
 from .student_record_store import _iso
 
@@ -134,9 +142,18 @@ class Demo2MeasurementStore:
             raise MeasurementError(400, 'invalid_review', '请明确教师是否已复核')
         if not isinstance(payload.get('scores'), dict):
             raise MeasurementError(400, 'invalid_scores', '请填写四维测量结果')
-        summary = build_assessment_summary(payload['scores'], opportunities=payload.get('opportunities'),
-                                           observed=payload.get('observed'), reviewed=payload['reviewed'],
-                                           source='教师逐课观察记录')
+        try:
+            summary = build_assessment_summary(payload['scores'], opportunities=payload.get('opportunities'),
+                                               observed=payload.get('observed'), reviewed=payload['reviewed'],
+                                               source='教师逐课观察记录')
+        except ValueError as exc:
+            measurement_debug_event(self.records, 'score_compute', 'invalid_input', record_id=record_id,
+                                    account_id=account['account_id'],
+                                    student_id=payload.get('student_id') if isinstance(payload.get('student_id'), str) else None,
+                                    scores=payload['scores'], observed=payload.get('observed'),
+                                    opportunities=payload.get('opportunities'), reviewed=payload['reviewed'],
+                                    evidence_reasons=[str(exc)])
+            raise MeasurementError(400, 'invalid_scores', str(exc)) from None
         source_type = payload.get('source_type')
         if source_type not in {'classroom_observation','video_review'}:
             raise MeasurementError(400,'invalid_source','请选择现场观察或视频复核')
@@ -174,6 +191,7 @@ class Demo2MeasurementStore:
             scope=self._scope(db,account)
             self._student(db,account,scope,data['student_id'])
             previous=db.execute('SELECT * FROM demo2_measurements WHERE record_id=?',(record_id,)).fetchone()
+            previous_reviewed=None
             if previous is not None:
                 if previous['owner_account_id'] != account['account_id'] or previous['scope_key'] != scope:
                     raise MeasurementError(404,'record_unavailable','记录不存在或无权查看')
@@ -181,6 +199,7 @@ class Demo2MeasurementStore:
                     raise MeasurementError(409,'version_conflict','记录已更新或撤销，请刷新后核对')
                 if previous['student_id'] != data['student_id']:
                     raise MeasurementError(409,'student_conflict','不可将记录改给另一名学生')
+                previous_reviewed=json.loads(previous['payload_json']).get('reviewed')
             elif expected != 0:
                 raise MeasurementError(409,'version_conflict','记录版本已失效，请刷新后核对')
             duplicate=db.execute('''SELECT record_id FROM demo2_measurements WHERE owner_account_id=? AND scope_key=?
@@ -223,7 +242,25 @@ class Demo2MeasurementStore:
             db.execute('INSERT INTO demo2_measurement_versions VALUES(?,?,?,?,?)',(record_id,version,content,account['username'],now))
             self.records._audit(db,account['username'],'measurement_saved','measurement',record_id,
                                 {'version':version,'reviewed':data['reviewed']})
+        self._log_saved(account, data, previous_reviewed, is_new=previous is None)
         return data
+
+    def _log_saved(self, account, data, previous_reviewed, *, is_new):
+        summary = data['assessment']
+        common = dict(record_id=data['record_id'], student_id=data['student_id'], account_id=account['account_id'],
+                      version=data['version'], scores=data['scores'], observed=data['observed'],
+                      opportunities=data['opportunities'], reviewed=data['reviewed'])
+        measurement_debug_event(self.records, 'measurement_create' if is_new else 'measurement_update', 'ok',
+                                previous_reviewed=previous_reviewed, **common)
+        if data['reviewed'] != bool(previous_reviewed):
+            measurement_debug_event(self.records, 'measurement_review',
+                                    'reviewed' if data['reviewed'] else 'review_revoked',
+                                    previous_reviewed=previous_reviewed, **common)
+        measurement_debug_event(self.records, 'score_compute',
+                                'scored' if summary['score'] is not None else 'insufficient_evidence',
+                                score=summary['score'], evidence_status=summary['evidence_status'],
+                                evidence_reasons=summary['evidence_reasons'], rubric_version=data['rubric_version'],
+                                formula=score_formula(data['scores'], DIMENSION_WEIGHTS), **common)
 
     def withdraw(self,token,payload):
         account=self._account(token)
@@ -246,6 +283,9 @@ class Demo2MeasurementStore:
                        ('withdrawn',version,content,now,record_id))
             db.execute('INSERT INTO demo2_measurement_versions VALUES(?,?,?,?,?)',(record_id,version,content,account['username'],now))
             self.records._audit(db,account['username'],'measurement_withdrawn','measurement',record_id,{'version':version})
+        measurement_debug_event(self.records, 'measurement_withdraw', 'ok', record_id=record_id,
+                                student_id=data.get('student_id'), account_id=account['account_id'], version=version,
+                                scores=data.get('scores'), observed=data.get('observed'), reviewed=data.get('reviewed'))
         return data
 
     def _effective_record(self, db, account, data):
@@ -270,7 +310,10 @@ class Demo2MeasurementStore:
             valid = False
         if not valid:
             data['evidence_status'] = 'needs_reconfirmation'
+            reasons = [*data['assessment'].get('evidence_reasons', []), '视频身份或适用性依据已失效，需重新确认']
             data['assessment'] = {**data['assessment'], 'overall_score':None, 'provisional_score':None,
+                                  'score':None, 'score_display':None, 'evidence_status':EVIDENCE_INSUFFICIENT,
+                                  'evidence_reasons':reasons,
                                   'passed':None, 'insufficient_evidence':True,
                                   'band':{'key':'unobserved','label':'证据待重新确认','pass':None}}
         return data
@@ -499,7 +542,7 @@ class Demo2MeasurementStore:
             points=[dict(v['assessment'],date=v['lesson_date'],record_id=v['record_id'],reviewed=v['reviewed']) for v in values]
             trends.append({'student_id':student,'goal_id':goal,'measurement_context':context,'criterion':criterion,
                            'rubric_version':version,'series':build_longitudinal_series(points)})
-        return {**roster,'records':records,'trends':trends,'rubric_version':RUBRIC_VERSION,
+        return {**roster,'records':records,'trends':trends,'rubric_version':RUBRIC_VERSION,'rubric':rubric_contract(),
                 'standard_status':'试行量表；权重与6分参考线待校方确认，不是已验证官方量表',
                 'retention':{'raw_media_days':60,'structured_days':730,'report':'按需生成，不额外保存含姓名副本'}}
 

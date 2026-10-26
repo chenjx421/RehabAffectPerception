@@ -222,8 +222,8 @@ def build_task_report(
                                 for item in evaluations],
         "sections": sections,
         "full_text": text,
-        "character_count": len(text),
+        "character_count": sum(len(str(item.get("text", ""))) for item in sections),
         "report_download_url": f"/api/v1/demo2/course-analysis/report?task_id={task_id}",
-        "generation": "当前任务的课堂观察记录、学校评分和系统增强评价；证据不足不补造结论",
+        "generation": "本地规则与教师复核记录（含学校评分和系统增强评价）；未调用外部大模型",
     })
     return result

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from decimal import ROUND_HALF_UP, Decimal
 from collections.abc import Iterable, Mapping
 from datetime import date, datetime, timedelta
 from statistics import mean
@@ -43,6 +44,31 @@ SCORE_LEVELS = {
 }
 
 SCALE = {"min": 0, "max": 10, "pass_score": PASS_SCORE, "pass_label": "及格"}
+
+MIN_OBSERVED = 2
+EVIDENCE_SUFFICIENT = "证据充分"
+EVIDENCE_INSUFFICIENT = "证据不足"
+DIMENSION_LABELS: dict[str, str] = {
+    "accuracy": "准确性",
+    "independence": "独立性",
+    "consistency": "一致性",
+    "transfer": "泛化性",
+}
+# 页面“评分标准”与后端计算共用的说明，避免两处口径漂移。
+DIMENSION_DESCRIPTIONS: dict[str, str] = {
+    "accuracy": "目标行为完成正确率，0分=有机会但无成功，留空=无观察机会",
+    "independence": "完成行为所需提示级别，10分=完全独立，0分=全程辅助",
+    "consistency": "相同条件下重复出现的稳定程度，需至少2次观察机会",
+    "transfer": "在新材料或新情境中是否出现，无泛化机会时留空而非填0",
+}
+SCORING_PRINCIPLES: tuple[tuple[str, str], ...] = (
+    ("目标对齐", "所记录行为须与学习目标直接对应，不记录课堂管理或偶发行为。"),
+    ("提示层级", "同一课次内使用相同提示级别，不混合不同支持强度的观察。"),
+    ("相同难度", "一致性维度仅统计难度相当的重复试次，不将新材料与熟悉材料混合。"),
+    ("新材料独立性", "首次接触新材料或新情境的表现，记入泛化性维度而非准确性。"),
+    ("留空而非填0", "当某维度没有观察机会时，留空；0分表示有机会但未成功，含义不同。"),
+    ("可比性保证", "跨课比较须相同目标、测量条件、通过标准和量表版本；任一项不同即不可比。"),
+)
 
 _NOTE = (
     "本量表为试点校内部评分参考：35/30/20/15 维度权重与 6 分及格线均为试点设定，"
@@ -108,8 +134,50 @@ def weighted_score(scores: Mapping[str, Any] | None, observed: Iterable[str] | N
                 usable.append((name, value))
     if not usable:
         return None
-    total_weight = sum(DIMENSION_WEIGHTS[name] for name, _ in usable)
-    return round(sum(value * DIMENSION_WEIGHTS[name] for name, value in usable) / total_weight, 2)
+    # Decimal + ROUND_HALF_UP keeps the page rule "两位小数" exact (no 6.849999 drift).
+    total_weight = sum(Decimal(str(DIMENSION_WEIGHTS[name])) for name, _ in usable)
+    weighted = sum(Decimal(str(value)) * Decimal(str(DIMENSION_WEIGHTS[name])) for name, value in usable)
+    return float((weighted / total_weight).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def evidence_shortfalls(scores: Mapping[str, Any] | None, *, observed: Any, reviewed: Any) -> list[str]:
+    """Return every unmet minimum-scoring condition (empty list = 证据充分).
+
+    Order follows the page: 复核 -> 四维非空 -> observed >= 2.
+    """
+    reasons: list[str] = []
+    if reviewed is not True:
+        reasons.append("教师未勾选“已完成复核”")
+    scores = scores if isinstance(scores, Mapping) else {}
+    missing = [DIMENSION_LABELS[name] for name in DIMENSION_WEIGHTS if scores.get(name) is None]
+    if missing:
+        reasons.append("维度为空：" + "、".join(missing))
+    if isinstance(observed, bool) or not isinstance(observed, int) or observed < MIN_OBSERVED:
+        reasons.append(f"观察次数不足（observed={observed}，至少需要 {MIN_OBSERVED} 次）")
+    return reasons
+
+
+def rubric_contract() -> dict[str, Any]:
+    """Machine-readable rubric shared by the 评分标准 page and the scoring code."""
+    return {
+        "rubric_version": RUBRIC_VERSION,
+        "scale": dict(SCALE),
+        "min_observed": MIN_OBSERVED,
+        "decimals": 2,
+        "dimensions": [
+            {
+                "key": name,
+                "label": DIMENSION_LABELS[name],
+                "weight": weight,
+                "weight_percent": round(weight * 100),
+                "description": DIMENSION_DESCRIPTIONS[name],
+            }
+            for name, weight in DIMENSION_WEIGHTS.items()
+        ],
+        "principles": [{"title": title, "text": text} for title, text in SCORING_PRINCIPLES],
+        "evidence_status": {"sufficient": EVIDENCE_SUFFICIENT, "insufficient": EVIDENCE_INSUFFICIENT},
+        "confidence_substitute": False,
+    }
 
 
 def build_assessment_summary(
@@ -148,9 +216,11 @@ def build_assessment_summary(
             normalized[name] = _validate_score(scores[name])
 
     all_present = all(normalized.get(name) is not None for name in DIMENSION_WEIGHTS)
-    provisional = weighted_score(normalized) if all_present and observed >= 2 else None
+    provisional = weighted_score(normalized) if all_present and observed >= MIN_OBSERVED else None
     overall = provisional if reviewed else None
-    insufficient = observed < 2 or not all_present
+    insufficient = observed < MIN_OBSERVED or not all_present
+    shortfalls = evidence_shortfalls(normalized, observed=observed, reviewed=reviewed)
+    evidence_status = EVIDENCE_INSUFFICIENT if shortfalls else EVIDENCE_SUFFICIENT
     band = score_band(overall)
     passed = None if overall is None else overall >= PASS_SCORE
 
@@ -166,6 +236,11 @@ def build_assessment_summary(
             for name, weight in DIMENSION_WEIGHTS.items()
         },
         "overall_score": overall,
+        # score/evidence_status 是对外评分契约：证据不足时 score 恒为 None，不用置信度替代。
+        "score": overall if not shortfalls else None,
+        "score_display": f"{overall:.2f}" if overall is not None and not shortfalls else None,
+        "evidence_status": evidence_status,
+        "evidence_reasons": shortfalls,
         "provisional_score": provisional,
         "band": band,
         "passed": passed,

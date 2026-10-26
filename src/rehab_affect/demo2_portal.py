@@ -405,6 +405,17 @@ body:not(.advanced-mode) .task-section { display:block !important; }
 .file-preview { min-width:0; color:var(--muted); font-size:13px; }
 .progress-block { display:none; margin-top:18px; }
 .progress-block.visible { display:block; }
+.upload-stages { display:flex; flex-wrap:wrap; gap:6px 18px; list-style:none; padding:0; margin:0 0 8px; font-size:12px; color:var(--muted); }
+.upload-stages li { display:flex; align-items:center; gap:6px; }
+.upload-stages li::before { content:""; width:8px; height:8px; border-radius:50%; background:var(--line); }
+.upload-stages li.active { color:var(--blue); font-weight:700; }
+.upload-stages li.active::before { background:var(--blue); }
+.upload-stages li.done { color:var(--success); }
+.upload-stages li.done::before { background:var(--success); }
+.upload-stages li.failed { color:var(--danger); font-weight:700; }
+.upload-stages li.failed::before { background:var(--danger); }
+.channel-pause-alert { margin:8px 0 0; padding:10px 12px; border-left:3px solid var(--warning); background:var(--warning-soft); color:var(--warning); font-size:13px; line-height:1.6; }
+.channel-pause-alert[hidden] { display:none; }
 .progress-head { display:flex; justify-content:space-between; gap:14px; margin-bottom:7px; color:var(--muted); font-size:13px; }
 .progress-head span { min-width:0; overflow-wrap:anywhere; }
 .progress-head strong { flex-shrink:0; }
@@ -477,8 +488,9 @@ body:not(.advanced-mode) .task-section { display:block !important; }
         <div class="card-body">
           <div class="form-grid">
             <div class="field advanced-only"><label for="courseId">课程批次号</label><input id="courseId" maxlength="120" placeholder="系统自动生成" /><small>高级测试时可使用负责人提供的批次号。</small></div>
-            <div class="field"><label for="courseName">课程名称（可选）</label><input id="courseName" maxlength="200" placeholder="例如：生活语文" /></div>
-            <div class="field"><label for="channelSelect">上传通道</label><select id="channelSelect" aria-describedby="channelHelp"><option value="">正在读取可用通道</option></select><small id="channelHelp">请选择本次使用的可用通道；通道由管理员配置。</small></div>
+            <div class="field"><label for="courseName">课程名称</label><input id="courseName" maxlength="200" placeholder="例如：生活语文" /><small>不填写时记为“课堂视频分析”。</small></div>
+            <div class="field"><label for="lessonDate">上课日期</label><input id="lessonDate" type="date" /><small>默认今天，用于区分同一课程的不同课时。</small></div>
+            <div class="field wide"><label for="channelSelect">上传通道</label><select id="channelSelect" aria-describedby="channelHelp"><option value="">正在读取账号绑定通道</option></select><small id="channelHelp">只显示本账号绑定的上传通道，通道由管理员配置。</small><p class="channel-pause-alert" id="channelPauseAlert" role="alert" hidden></p></div>
             <div class="field advanced-only"><label for="studentSelect">计划关注学生</label><select id="studentSelect" aria-describedby="studentHelp"><option value="">暂不指定关注学生</option></select><small id="studentHelp">学生身份在分析结果页再确认。</small></div>
             <div class="field advanced-only"><span class="field-label">课程工作区</span><button class="button" id="loadCourseButton" type="button">读取课程工作区</button></div>
             <div class="field wide"><span class="field-label">课堂视频</span><div class="file-control"><input class="file-input-accessible" id="videoFile" type="file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" /><label class="file-picker" for="videoFile"><span class="file-picker-action"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>选择课堂视频</span><span class="file-picker-name" id="selectedFileName" aria-live="polite">尚未选择视频</span></label></div><small id="videoRequirements">测试阶段：单节课不超过 60 分钟，单文件不超过 1 GiB。支持 MP4 / MOV / WebM，推荐 MP4（H.264 / AAC）、720p 或 1080p。上传及暂停期间请勿关闭或刷新页面。</small></div>
@@ -486,7 +498,7 @@ body:not(.advanced-mode) .task-section { display:block !important; }
           <details class="authorization-details"><summary id="authorizationTitle">数据使用与保存设置</summary><p>本次资料用于课堂分析，原视频保存60天，到期前15天提醒。点击下方按钮将记录本课程、本文件的授权确认。</p><label for="allowCompanyArchive">脱敏结构化结果长期归档（需另行获得校方授权）</label><select id="allowCompanyArchive"><option value="no">不允许，仅按本次课堂用途处理</option><option value="yes">已获授权，允许脱敏结构化结果长期归档（不含原视频）</option></select><div class="security-ledger" id="latestSecurityAcceptance" role="status" aria-live="polite"><strong>最近授权确认</strong><span>读取课程工作区后显示。</span></div></details>
           <p class="upload-consent-note">点击上传即确认资料已获校方授权，并按<a href="/demo2/privacy" target="_blank" rel="noopener">数据安全与隐私说明</a>处理。</p>
           <div class="upload-command"><button class="button primary" id="uploadButton" type="button" disabled><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>开始上传并分析</button><span class="file-preview" id="filePreview">请选择课堂视频。</span></div><input id="resumeVideoFile" type="file" accept=".mp4,.mov,.avi,.mkv,.webm" hidden />
-          <div class="progress-block" id="uploadProgress"><div class="progress-head"><span id="progressLabel">准备上传</span><strong id="progressPercent">0%</strong></div><div class="progress-track" role="progressbar" aria-label="视频上传进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="progressBar"></i></div><p id="transferDetails" role="status"></p><button class="button" id="pauseUploadButton" type="button" hidden>暂停上传</button><button class="button" id="resumeUploadButton" type="button" hidden>继续上传</button></div>
+          <div class="progress-block" id="uploadProgress"><ol class="upload-stages" id="uploadStages" aria-label="上传与分析阶段"><li data-stage="upload">上传视频</li><li data-stage="processing">后台处理</li><li data-stage="done">学生状态结果</li></ol><div class="progress-head"><span id="progressLabel">准备上传</span><strong id="progressPercent">0%</strong></div><div class="progress-track" role="progressbar" aria-label="视频上传进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="progressBar"></i></div><p id="transferDetails" role="status"></p><button class="button" id="pauseUploadButton" type="button" hidden>暂停上传</button><button class="button" id="resumeUploadButton" type="button" hidden>继续上传</button></div>
         </div>
       </section>
       <section class="card task-section advanced-only" aria-labelledby="taskTitle">
@@ -548,7 +560,28 @@ let workspaceLoading = false;
 let taskRefreshError = '';
 let activeProcessingTaskId = '';
 let processingRedirected = false;
+let processingLogged = '';
+let channelBlockLogged = '';
 const byId = id => document.getElementById(id);
+function debugLog(operation,fields={{}}) {{
+  // Structured browser-side trace of the upload flow; ids, sizes and timings only.
+  const entry={{ts:new Date().toISOString(),operation,...fields}};
+  try {{ console.info('[upload-flow]',JSON.stringify(entry)); }} catch (_) {{}}
+  return entry;
+}}
+function setStage(stage,failed=false) {{
+  const order=['upload','processing','done'];const current=order.indexOf(stage);
+  byId('uploadStages').querySelectorAll('li').forEach(node=>{{
+    const index=order.indexOf(node.dataset.stage);
+    node.className=index<current?'done':index===current?(failed?'failed':'active'):'';
+    if(index===current)node.setAttribute('aria-current','step');else node.removeAttribute('aria-current');
+  }});
+}}
+function boundChannelId() {{ return String(account?.bound_channel_id||workspace?.bound_channel_id||'').trim(); }}
+function channelBlock() {{
+  const blocked=workspace?.upload_blocked;
+  return blocked&&typeof blocked==='object'&&blocked.code?blocked:null;
+}}
 const esc = value => String(value ?? '').replace(/[&<>\"']/g, char => ({{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}}[char]));
 const formatBytes = value => {{ const bytes=Number(value||0); if(bytes<1024)return `${{bytes}} B`; if(bytes<1048576)return `${{(bytes/1024).toFixed(1)}} KB`; if(bytes<1073741824)return `${{(bytes/1048576).toFixed(1)}} MB`; return `${{(bytes/1073741824).toFixed(2)}} GB`; }};
 const channelLabel = value => {{ const text=String(value||'').trim(); const match=/^channel_(\\d+)$/.exec(text); return match?`上传通道 ${{Number(match[1])}}`:text; }};
@@ -600,7 +633,8 @@ function setAccount(value) {{
     channelSelect.innerHTML=`<option value="${{esc(boundChannel)}}">${{esc(channelLabel(boundChannel))}}</option>`;
     channelSelect.value=boundChannel;
   }}
-  const channel=workspace?.channel?.channel_name||channelLabel(byId('channelSelect')?.value)||channelLabel(account.bound_channel_id)||'未配置';
+  const pausedSuffix=channelBlock()?.code==='channel_paused'?'（已暂停）':'';
+  const channel=(workspace?.channel?.channel_name||channelLabel(byId('channelSelect')?.value)||channelLabel(account.bound_channel_id)||'未配置')+pausedSuffix;
   byId('channelName').textContent=channel;
   byId('boundChannel').textContent=channel;
   updateUploadEnabled();
@@ -609,7 +643,7 @@ function updateUploadEnabled() {{
   const maximum=newVideoLimit();
   byId('videoRequirements').textContent=`测试阶段：单节课不超过 60 分钟，单文件不超过 ${{maximum===MAX_VIDEO_SIZE?'1 GiB':formatBytes(maximum)}}。支持 MP4 / MOV / WebM，推荐 MP4（H.264 / AAC）、720p 或 1080p。上传及暂停期间请勿关闭或刷新页面。`;
   const courseMatches=workspace && byId('courseId').value.trim()===String(workspace.course_id||'').trim();
-  byId('uploadButton').disabled=schoolState!=='ready'||uploadInProgress || workspaceLoading || !(courseMatches && byId('channelSelect').value && byId('videoFile').files[0] && Number(workspace.remaining_slots)>0);
+  byId('uploadButton').disabled=schoolState!=='ready'||uploadInProgress || workspaceLoading || !!channelBlock() || !(courseMatches && byId('channelSelect').value && byId('videoFile').files[0] && Number(workspace.remaining_slots)>0);
   byId('refreshTasksButton').disabled=uploadInProgress||workspaceLoading||!courseMatches;
   byId('filePreview').textContent=uploadHint();
 }}
@@ -652,13 +686,14 @@ function uploadHint() {{
   if(uploadInProgress)return uploadSession?'视频正在上传，请勿关闭或刷新页面。':'正在检查文件或准备上传，请勿关闭或刷新页面。';
   if(schoolState!=='ready')return schoolUploadHint();
   if(!workspace)return '请先读取课程名额并选择视频。';
+  if(channelBlock())return channelBlock().message||'账号绑定的上传通道已暂停，暂不能新建上传。';
   if(byId('courseId').value.trim()!==String(workspace.course_id||'').trim())return '课程批次号已修改，请重新读取课程工作区。';
   if(Number(workspace.remaining_slots)<=0)return '本课程名额已用完，请检查下方任务或联系项目方。';
   return byId('videoFile').files[0]?'文件已选择，点击“开始上传并分析”。':'请先选择课堂视频。';
 }}
 function setUploadBusy(value) {{
   uploadInProgress=value;
-  ['courseId','courseName','channelSelect','studentSelect','videoFile','allowCompanyArchive','loadCourseButton','logoutButton'].forEach(id=>byId(id).disabled=value);
+  ['courseId','courseName','lessonDate','channelSelect','studentSelect','videoFile','allowCompanyArchive','loadCourseButton','logoutButton'].forEach(id=>byId(id).disabled=value);
   updateUploadEnabled();
 }}
 function renderSlots() {{
@@ -737,25 +772,43 @@ function syncProcessingProgress() {{
   const task=(workspace?.tasks||[]).find(item=>item.task_id===activeProcessingTaskId);
   if(!task)return;
   const status=task.analysis_status;
+  const logFields={{task_id:task.task_id,channel_id:task.channel_id,byte_size:task.byte_size,analysis_status:status}};
   if(status==='evidence_ready'||status==='completed') {{
+    setStage('done');
     setProgress(100,'分析完成，正在打开学生状态结果');
     byId('transferDetails').textContent='视频与学生课堂状态分析已完成。';
     if(!processingRedirected) {{
       processingRedirected=true;
-      window.setTimeout(()=>window.location.assign('/demo2/simple-result?task_id='+encodeURIComponent(activeProcessingTaskId)),250);
+      const target='/demo2/simple-result?task_id='+encodeURIComponent(activeProcessingTaskId)+'&from=upload';
+      debugLog('processing_complete',{{...logFields,result:'evidence_ready'}});
+      debugLog('result_redirect',{{...logFields,target:'/demo2/simple-result',result:'redirecting'}});
+      window.setTimeout(()=>window.location.assign(target),250);
     }}
     return;
   }}
   if(status==='failed'||status==='cancelled') {{
+    setStage('processing',true);
+    const reason=typeof task.processing_error==='object'?String(task.processing_error?.message||'请打开任务查看原因。'):'请打开任务查看原因。';
     byId('progressLabel').textContent=status==='failed'?'后台分析失败':'任务已取消';
-    byId('transferDetails').textContent=typeof task.processing_error==='object'?String(task.processing_error?.message||'请打开任务查看原因。'):'请打开任务查看原因。';
+    byId('transferDetails').textContent=reason;
+    if(processingLogged!==task.task_id+':'+status) {{
+      processingLogged=task.task_id+':'+status;
+      debugLog('processing_failed',{{...logFields,code:task.processing_error?.code||status,result:status}});
+      if(status==='failed')message(`后台分析失败：${{reason}}`);
+    }}
     return;
   }}
   if(task.upload_status==='completed' && !['queued','processing','uploaded_pending_worker','precheck_complete'].includes(status)) return;
+  setStage('processing');
+  if(status==='processing'&&processingLogged!==task.task_id+':processing') {{
+    processingLogged=task.task_id+':processing';
+    debugLog('processing_start',{{...logFields,result:'processing'}});
+  }}
   const backend=Number(task.processing_progress);
   const combined=90+(Number.isFinite(backend)?Math.max(0,Math.min(100,backend))*0.1:0);
-  setProgress(combined,`上传完成，正在后台分析${{Number.isFinite(backend)?` · ${{Math.round(backend)}}%`:''}}`);
-  byId('transferDetails').textContent='后台会继续处理，当前页面无需重复点击。';
+  const stageLabel=status==='queued'?'后台处理：排队中':'后台处理中';
+  setProgress(combined,`上传完成 · ${{stageLabel}}${{Number.isFinite(backend)?` · ${{Math.round(backend)}}%`:''}}`);
+  byId('transferDetails').textContent='后台会继续处理，完成后自动打开本任务的学生状态结果；当前页面无需重复点击。';
 }}
 function renderStudents() {{
   const students=Array.isArray(workspace?.students)?workspace.students:[];
@@ -764,13 +817,19 @@ function renderStudents() {{
   if([...select.options].some(option=>option.value===previous)) select.value=previous;
 }}
 function renderChannels() {{
+  // Only the account's bound channel is ever offered. A paused channel stays
+  // visible with its pause notice; the page never substitutes another channel.
+  const bound=boundChannelId();
   let channels=Array.isArray(workspace?.channels)?workspace.channels:(workspace?.channel?[workspace.channel]:[]);
-  if(!channels.length&&account?.bound_channel_id) channels=[{{channel_id:account.bound_channel_id,channel_name:channelLabel(account.bound_channel_id),status:'active'}}];
+  channels=channels.filter(item=>item&&item.channel_id===bound);
+  if(!channels.length&&bound) channels=[{{channel_id:bound,channel_name:channelLabel(bound),status:workspace?.channel_status||'active'}}];
   const select=byId('channelSelect');
-  const previous=select.value;
-  select.innerHTML=channels.length?channels.map(item=>`<option value="${{esc(item.channel_id||'')}}">${{esc(item.channel_name||channelLabel(item.channel_id)||'未命名通道')}}</option>`).join(''):'<option value="">暂无可用通道</option>';
-  const preferred=channels.find(item=>item.channel_id===previous)||channels.find(item=>item.channel_id===workspace?.selected_channel_id)||channels[0];
-  if(preferred) select.value=preferred.channel_id;
+  select.innerHTML=channels.length?channels.map(item=>`<option value="${{esc(item.channel_id||'')}}">${{esc(item.channel_name||channelLabel(item.channel_id)||'未命名通道')}}${{item.status&&item.status!=='active'?'（已暂停）':''}}</option>`).join(''):'<option value="">账号尚未绑定上传通道</option>';
+  if(channels[0]) select.value=channels[0].channel_id;
+  const blocked=channelBlock(),alert=byId('channelPauseAlert');
+  alert.hidden=!blocked;alert.textContent=blocked?blocked.message||'账号绑定的上传通道已暂停，暂不能新建上传。':'';
+  if(blocked&&channelBlockLogged!==blocked.code)debugLog('upload_rejected',{{channel_id:bound,code:blocked.code,channel_status:workspace?.channel_status,result:'blocked_on_page'}});
+  channelBlockLogged=blocked?blocked.code:'';
   setAccount(account);
   updateUploadEnabled();
 }}
@@ -899,7 +958,7 @@ function sendBinaryChunk(s) {{
 }}
 function retryDelay(s,attempt) {{return new Promise(resolve=>{{const timer=setTimeout(done,Math.min(16000,1000*2**(attempt-1))*(.8+Math.random()*.4));function done(){{clearTimeout(timer);s.wake=null;resolve();}}s.wake=done;}});}}
 async function runUpload(s) {{
-  if(s.running)return;s.running=true;s.paused=false;clearMessage();transferControls(s);
+  if(s.running)return;s.running=true;s.paused=false;clearMessage();transferControls(s);setStage('upload');s.startedAt=s.startedAt||performance.now();
   s.speedBaseBytes=s.acknowledged;s.speedBaseTime=performance.now();s.speedReady=false;transferProgress(s);
   let failures=0,needsReconcile=true;
   try {{
@@ -913,12 +972,14 @@ async function runUpload(s) {{
         }}
         if(s.paused||s.completed)break;
         if(s.next>=s.total)throw new Error('所有分片已接收，正在确认完成状态。');
-        const index=s.next;
+        const index=s.next,chunkStarted=performance.now();
         acceptUploadTask(s,await sendBinaryChunk(s));
         if(s.next<=index)throw new Error('分片尚未确认接收。');
+        debugLog('upload_chunk',{{task_id:s.taskId,channel_id:s.channelId,chunk_index:index,byte_size:s.file.size,received_bytes:s.acknowledged,duration_ms:Math.round(performance.now()-chunkStarted),result:'ok'}});
         failures=0;
       }} catch(error) {{
         if(s.paused)break;
+        debugLog('upload_chunk',{{task_id:s.taskId,channel_id:s.channelId,chunk_index:s.next,byte_size:s.file.size,received_bytes:s.acknowledged,http_status:error.status||0,code:error.code||'',result:'failed',attempt:failures+1}});
         needsReconcile=true;failures+=1;
         if([400,401,403,404,409,410,413,415,422].includes(error.status)||failures>4)throw error;
         transferProgress(s,0,`连接暂时中断，正在核对进度并重试（${{failures}}/4）；请勿关闭页面`);
@@ -927,7 +988,9 @@ async function runUpload(s) {{
     }}
     if(s.paused){{try{{await reconcileUpload(s);}}catch(_){{}}if(!s.completed)transferProgress(s,0,'已暂停，已确认进度保留；请勿关闭或刷新页面');}}
     if(s.completed) {{
-      setProgress(100,'上传完成，等待后台处理');byId('transferDetails').textContent=`已确认 ${{formatBytes(s.file.size)}}`;
+      debugLog('upload_complete',{{task_id:s.taskId,channel_id:s.channelId,byte_size:s.file.size,duration_ms:Math.round(performance.now()-(s.startedAt||performance.now())),result:'uploaded'}});
+      setStage('processing');
+      setProgress(100,'上传完成 · 后台处理：等待开始');byId('transferDetails').textContent=`已确认 ${{formatBytes(s.file.size)}}，正在进入后台处理。`;
       uploadSession=null;setUploadBusy(false);transferControls(null);
       byId('videoFile').value='';byId('selectedFileName').textContent='尚未选择视频';byId('allowCompanyArchive').value='no';
       byId('filePreview').textContent='如需继续上传，请重新选择视频并确认授权。';
@@ -964,11 +1027,13 @@ async function resumeSelectedFile() {{
       const digest=await crypto.subtle.digest('SHA-256',buffer);
       hashes.push(Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join(''));
     }}
+    const resumeStarted=performance.now();
     const verified=await api(API_ROUTES.resume,{{method:'POST',timeoutMs:60000,headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{task_id:taskId,course_id:task.course_id,byte_size:file.size,filename:file.name,chunk_sha256:hashes}})}});
-    const s={{file,courseId:task.course_id,taskId,total:Math.ceil(file.size/CHUNK_SIZE),next,sentThrough:next,acknowledged:received,paused:false,running:false,completed:false}};
+    debugLog('upload_resume',{{task_id:taskId,channel_id:task.channel_id,byte_size:file.size,received_bytes:received,verified_chunks:hashes.length,duration_ms:Math.round(performance.now()-resumeStarted),result:'verified'}});
+    const s={{file,courseId:task.course_id,channelId:task.channel_id,taskId,total:Math.ceil(file.size/CHUNK_SIZE),next,sentThrough:next,acknowledged:received,paused:false,running:false,completed:false}};
     acceptUploadTask(s,verified.task);uploadSession=s;
     byId('selectedFileName').textContent=file.name;await runUpload(s);
-  }}catch(error){{message(error.message+' 原任务与已确认进度保留，未新建上传任务。');}}
+  }}catch(error){{debugLog('upload_resume',{{task_id:taskId,http_status:error.status||0,code:error.code||'',result:'failed'}});message(error.message+' 原任务与已确认进度保留，未新建上传任务。');}}
   finally{{byId('resumeVideoFile').value='';if(!uploadSession)setUploadBusy(false);scheduleTaskPoll();}}
 }}
 async function uploadVideo() {{
@@ -976,7 +1041,9 @@ async function uploadVideo() {{
   if(schoolState!=='ready')return message(schoolUploadHint());
   const file=byId('videoFile').files[0]; const courseId=byId('courseId').value.trim(); const courseName=byId('courseName').value.trim(); const channelId=byId('channelSelect').value.trim();
   if(!workspace) return message('请先读取课程工作区。');
-  if(!channelId) return message('暂无可用上传通道，请联系管理员配置。');
+  if(channelBlock()) {{ debugLog('upload_rejected',{{channel_id:channelId,code:channelBlock().code,result:'blocked_on_page'}}); return message(channelBlock().message||'账号绑定的上传通道已暂停，暂不能新建上传。'); }}
+  if(!channelId) return message('账号尚未绑定上传通道，请联系管理员配置。');
+  if(channelId!==boundChannelId()) return message('只能使用本账号绑定的上传通道，请刷新页面后重试。');
   if(!file) return message('请选择要上传的视频。');
   const extension=file.name.includes('.')?file.name.slice(file.name.lastIndexOf('.')).toLowerCase():'';
   if(!ALLOWED_VIDEO_EXTENSIONS.includes(extension)) return message('新上传仅支持 MP4、MOV 和 WebM；建议转换为 MP4（H.264 / AAC）。已有任务仍可选择原文件继续上传。');
@@ -991,15 +1058,20 @@ async function uploadVideo() {{
     if(fileSelectionVersion!==selectionVersion||byId('videoFile').files[0]!==file||byId('courseId').value.trim()!==courseId||String(workspace?.course_id||'')!==courseId)
       throw new Error('所选视频或课程已变化，请核对后重新点击上传。');
     if(file.size>newVideoLimit())throw new Error('当前课程上传大小上限已变化，请重新核对文件。');
-    setProgress(0,'正在创建上传任务');createAttempted=true;
+    setStage('upload');setProgress(0,'正在创建上传任务');createAttempted=true;
     const displayCourseName=courseName||'课堂视频分析';
-    const created=await api(API_ROUTES.tasks,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{channel_id:channelId,uploader_name:account.username||'学校上传账号',course_id:courseId,course_name:displayCourseName,session_id:`${{courseId}}-${{new Date().toISOString().slice(0,10)}}`,subject_id:byId('studentSelect').value,filename:file.name,mime_type:file.type,byte_size:file.size,total_chunks:totalChunks,security_confirmed:true,allow_company_archive:byId('allowCompanyArchive').value==='yes'}})}});
+    const lessonDate=/^\\d{{4}}-\\d{{2}}-\\d{{2}}$/.test(byId('lessonDate').value)?byId('lessonDate').value:new Date().toISOString().slice(0,10);
+    const createStarted=performance.now();
+    const created=await api(API_ROUTES.tasks,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{channel_id:channelId,uploader_name:account.username||'学校上传账号',course_id:courseId,course_name:displayCourseName,session_id:`${{courseId}}-${{lessonDate}}`,subject_id:byId('studentSelect').value,filename:file.name,mime_type:file.type,byte_size:file.size,total_chunks:totalChunks,security_confirmed:true,allow_company_archive:byId('allowCompanyArchive').value==='yes'}})}});
     if(!created.task?.task_id)throw new Error('任务创建响应未确认，请先刷新任务列表核查，勿重复提交。');
-    uploadSession={{file,courseId,taskId:created.task.task_id,total:totalChunks,next:0,sentThrough:0,acknowledged:0,paused:false,running:false,completed:false}};
+    debugLog('upload_start',{{task_id:created.task.task_id,channel_id:channelId,course_id:courseId,byte_size:file.size,total_chunks:totalChunks,duration_ms:Math.round(performance.now()-createStarted),result:'created'}});
+    uploadSession={{file,courseId,channelId,taskId:created.task.task_id,total:totalChunks,next:0,sentThrough:0,acknowledged:0,paused:false,running:false,completed:false,startedAt:performance.now()}};
     reflectUploadTask(created.task,true);
     await runUpload(uploadSession);
   }} catch(error) {{
+    debugLog('upload_start',{{channel_id:channelId,course_id:courseId,byte_size:file.size,http_status:error.status||0,code:error.code||'',result:'failed'}});
     if(error.code==='school_context_required'){{schoolRequired();message(schoolUploadHint());byId('progressLabel').textContent='学校信息待补全，未创建任务';}}
+    else if(error.code==='channel_paused'||error.code==='channel_missing'){{message(error.message);byId('progressLabel').textContent='上传通道已暂停，未创建任务';await loadWorkspace({{silent:true}});}}
     else{{message(createAttempted?`${{error.message}} 请先核对本课程任务列表，勿重复提交。`:error.message);if(createAttempted&&!uploadSession)await loadWorkspace({{silent:true}});if(!createAttempted)byId('progressLabel').textContent='上传条件检查未通过，未创建任务';}}
   }}
   finally {{if(!uploadSession)setUploadBusy(false);scheduleTaskPoll();}}
@@ -1040,6 +1112,7 @@ window.addEventListener('pagehide',()=>{{taskPollStopped=true;clearTimeout(taskP
 window.addEventListener('pageshow',event=>{{if(event.persisted){{taskPollStopped=false;if(workspace)loadWorkspace({{silent:true}});}}}});
 document.addEventListener('visibilitychange',()=>{{clearTimeout(taskPollTimer);if(!document.hidden&&!taskPollStopped&&workspace&&!uploadInProgress&&!workspaceLoading&&byId('courseId').value.trim()===String(workspace.course_id||''))loadWorkspace({{silent:true}});}});
 const initialCourse=new URLSearchParams(location.search).get('course_id')||`demo2-${{new Date().toISOString().slice(0,10)}}`; byId('courseId').value=initialCourse;
+byId('lessonDate').value=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
 setAccount(account); renderSlots();
 let automaticWorkspaceStarted=false;
 let identityReady=!!account?.role;
@@ -1060,6 +1133,24 @@ def render_demo2_admin_html(account: Any | None = None) -> str:
 .metric-card small { display:block; margin-top:5px; color:var(--muted); }
 .admin-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
 .admin-grid .wide { grid-column:1/-1; }
+.admin-shortcuts { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:20px; }
+.task-query-form { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr) auto; gap:12px; align-items:end; margin-bottom:16px; }
+.task-query-form label { display:grid; gap:6px; font-size:13px; color:var(--muted); }
+.task-actions { display:flex; flex-wrap:wrap; gap:6px; }
+#taskQueryResults .status-badge { white-space:nowrap; }
+#taskQueryResults td:nth-child(3) { min-width:120px; }
+.task-actions .button { min-height:34px; padding:5px 10px; font-size:12px; }
+.task-report-item { display:grid; gap:4px; padding:4px 0; }
+.task-report-item + .task-report-item { border-top:1px dashed var(--line); }
+.report-dialog { width:min(760px,calc(100vw - 32px)); max-height:85vh; padding:0; border:1px solid var(--line); border-radius:8px; }
+.report-dialog::backdrop { background:rgba(16,42,67,.45); }
+.report-dialog header { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:16px 20px; border-bottom:1px solid var(--line); }
+.report-dialog header .button { flex:none; white-space:nowrap; }
+.report-dialog header .mono { overflow-wrap:anywhere; font-size:12px; color:var(--muted); }
+.report-dialog .report-dialog-body { padding:16px 20px; overflow:auto; max-height:65vh; }
+.report-dialog .report-dialog-body section + section { margin-top:14px; }
+.report-dialog .report-dialog-body p { white-space:pre-wrap; line-height:1.7; }
+@media (max-width:760px) { .task-query-form { grid-template-columns:1fr; } }
 .entity-list { display:grid; gap:10px; }
 .entity-row { display:flex; align-items:center; justify-content:space-between; gap:18px; min-width:0; padding:13px 0; border-bottom:1px solid var(--line); }
 .entity-row:last-child { border-bottom:0; }
@@ -1102,7 +1193,7 @@ def render_demo2_admin_html(account: Any | None = None) -> str:
 <main class="page-shell" id="mainContent">
   <div class="page-heading"><div><span class="eyebrow">公司后台 · 只读运营总览</span><h1>学校内测运行状态</h1><p class="lead">账号、通道、课程名额、任务和存储数据全部来自后台汇总接口。</p></div><button class="button primary" id="refreshButton" type="button"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7L20 19"/><path d="M20 13v6h-6"/></svg>刷新数据</button></div>
   <div class="page-message" id="pageMessage" role="alert" aria-live="assertive"></div>
-  <p style="margin-bottom:20px"><a class="button" id="dossierAdminLink" href="/demo2/admin/dossiers">学生资料运行状态（仅元数据）</a> <a class="button" href="/demo2/admin/student-summaries">学生档案摘要库</a> <a class="button" href="/demo2/admin/measurements">测量记录与保存状态</a></p>
+  <nav class="admin-shortcuts" aria-label="后台快捷入口"><a class="button" id="dossierAdminLink" href="/demo2/admin/dossiers">学生资料运行状态（仅元数据）</a><a class="button" id="measurementAdminLink" href="/demo2/admin/measurements">测量记录与保存状态</a></nav>
   <section class="metric-grid" aria-label="平台关键指标">
     <article class="metric-card"><span>学校上传账号</span><strong id="accountCount">--</strong><small>账号状态见下方明细</small></article>
     <article class="metric-card"><span>视频通道</span><strong id="channelCount">--</strong><small>绑定关系来自接口</small></article>
@@ -1112,6 +1203,11 @@ def render_demo2_admin_html(account: Any | None = None) -> str:
   <div class="admin-grid">
     <section class="card" aria-labelledby="accountTitle"><div class="card-head"><h2 id="accountTitle">4 账号 / 4 通道状态</h2><p>实际数量与状态按接口返回展示。</p></div><div class="card-body"><div class="entity-list" id="accountList"><div class="loading-line">正在读取账号状态…</div></div></div></section>
     <section class="card" aria-labelledby="channelTitle"><div class="card-head"><h2 id="channelTitle">通道运行状态</h2><p>账号绑定、通道状态和有效任务数量。</p><a class="button" id="manageChannelsLink" href="/demo2/admin/channels">管理上传通道</a></div><div class="card-body"><div class="entity-list" id="channelList"><div class="loading-line">正在读取通道状态…</div></div></div></section>
+    <section class="card wide" aria-labelledby="taskQueryTitle"><div class="card-head"><h2 id="taskQueryTitle">任务查询</h2><p>按任务编号、课程、文件名或账号查询处理状态；报告与视频按任务授权查看和下载，管理员导出的报告不含 IEP 关联信息。</p></div><div class="card-body">
+      <form class="task-query-form" id="taskQueryForm" role="search"><label for="taskQueryInput">任务编号 / 课程 / 文件名 / 账号<input id="taskQueryInput" name="q" type="search" maxlength="80" autocomplete="off" placeholder="例如 task_xxx 或 课程名称"></label><label for="taskStatusFilter">处理状态<select id="taskStatusFilter" name="status"><option value="">全部状态</option><option value="queued">等待处理</option><option value="processing">后台处理中</option><option value="evidence_ready">证据已就绪</option><option value="completed">已完成</option><option value="failed">处理失败</option><option value="pending">待处理</option><option value="cancelled">已取消</option></select></label><button class="button primary" id="taskQueryButton" type="submit">查询任务</button></form>
+      <div class="table-wrap"><table><thead><tr><th>任务</th><th>账号 / 通道</th><th>课程</th><th>上传</th><th>处理状态</th><th>报告</th><th>视频与结果</th></tr></thead><tbody id="taskQueryResults"><tr><td colspan="7">输入条件后点击“查询任务”，或直接查询全部任务。</td></tr></tbody></table></div>
+      <nav class="upload-pagination" aria-label="任务查询分页"><button class="button" id="previousTasks" type="button" aria-label="上一页" title="上一页" disabled>&larr;</button><span id="taskPageStatus" role="status" aria-live="polite">尚未查询</span><button class="button" id="nextTasks" type="button" aria-label="下一页" title="下一页" disabled>&rarr;</button></nav>
+    </div></section>
     <section class="card wide" aria-labelledby="schoolsTitle"><div class="card-head"><h2 id="schoolsTitle">账号所属学校</h2><p>公开名录与自填资料分开标记，不代表教师身份已认证。</p></div><div class="card-body"><div class="table-wrap"><table><thead><tr><th>账号</th><th>城市</th><th>区县</th><th>学校</th><th>地址</th><th>资料来源</th></tr></thead><tbody id="schoolContexts"><tr><td colspan="6">正在读取学校信息</td></tr></tbody></table></div></div></section>
     <section class="card wide membership-admin-section" aria-labelledby="membershipSummaryTitle"><div class="card-head"><h2 id="membershipSummaryTitle">会员与订单</h2><p>手机号注册账号与既有学校内测账号分开管理；仅显示会员接口返回记录，不将内测权限计为付费成功。</p><a href="/demo2/membership">查看当前账号会员中心</a></div><div class="card-body"><div class="membership-overview" id="membershipSummary" role="status">正在读取会员与支付服务状态…</div><h3 id="membershipAccountsTitle">注册会员</h3><div class="table-wrap"><table aria-labelledby="membershipAccountsTitle"><thead><tr><th>手机号</th><th>会员状态</th><th>有效期至</th><th>注册时间</th></tr></thead><tbody id="membershipAccounts"><tr><td colspan="4">正在读取注册会员…</td></tr></tbody></table></div><h3 id="membershipOrdersTitle">近期会员订单</h3><div class="table-wrap"><table aria-labelledby="membershipOrdersTitle"><thead><tr><th>订单号</th><th>所属账号</th><th>套餐</th><th>金额</th><th>状态</th><th>创建时间</th></tr></thead><tbody id="membershipOrdersSummary"><tr><td colspan="6">正在读取会员订单…</td></tr></tbody></table></div></div></section>
     <section class="card wide" aria-labelledby="registrationTitle"><div class="card-head"><h2 id="registrationTitle">历史学校开通申请</h2><p>保留旧版学校申请记录；不属于当前手机号注册与会员开通流程。</p></div><div class="card-body"><div class="table-wrap"><table><thead><tr><th>联系人</th><th>联系方式</th><th>地区</th><th>学校</th><th>申请时间</th><th>状态</th></tr></thead><tbody id="registrationRequests"><tr><td colspan="6">正在读取历史申请记录</td></tr></tbody></table></div></div></section>
@@ -1120,12 +1216,13 @@ def render_demo2_admin_html(account: Any | None = None) -> str:
     <section class="card" aria-labelledby="retentionTitle"><div class="card-head"><h2 id="retentionTitle">保存与到期提醒</h2><p>展示接口返回的保存、提醒与自动清理策略；原视频删除后保留结构化结果和审计记录。</p></div><div class="card-body"><div class="retention-band"><div class="retention-item"><span>保存周期</span><strong id="retentionDays">-- 天</strong></div><div class="retention-item"><span>提前提醒</span><strong id="reminderDays">-- 天</strong></div><div class="retention-item"><span>近期到期</span><strong id="dueSoonCount">--</strong></div><div class="retention-item"><span>到期处理</span><strong id="autoDeleteState">--</strong></div></div></div></section>
     <section class="card wide" aria-labelledby="acceptanceTitle"><div class="card-head"><h2 id="acceptanceTitle">近期安全授权确认</h2><p>显示接口返回的课程、确认人、确认时间与脱敏结果长期归档选择。</p></div><div class="card-body"><div class="table-wrap"><table><thead><tr><th>课程</th><th>确认人</th><th>确认时间</th><th>脱敏结果归档</th></tr></thead><tbody id="recentSecurityAcceptances"><tr><td colspan="4">正在读取安全授权记录…</td></tr></tbody></table></div></div></section>
     <section class="card wide" aria-labelledby="recentTitle"><div class="card-head"><h2 id="recentTitle">近期上传</h2><p>只列出后台接口返回的近期任务，不补造统计。</p><p class="admin-refresh-status" id="adminRefreshStatus" role="status" aria-live="polite">尚未更新</p></div><div class="card-body"><div class="table-wrap"><table><thead><tr><th>文件</th><th>账号 / 通道</th><th>课程</th><th>上传</th><th>处理</th><th>时间</th></tr></thead><tbody id="recentUploads"><tr><td colspan="6">正在读取近期上传…</td></tr></tbody></table></div><nav class="upload-pagination" aria-label="近期上传分页"><button class="button" id="previousUploads" type="button" aria-label="上一页" title="上一页" disabled>&larr;</button><span id="uploadPageStatus" role="status" aria-live="polite">正在读取分页信息</span><button class="button" id="nextUploads" type="button" aria-label="下一页" title="下一页" disabled>&rarr;</button></nav></div></section>
-    <section class="card wide" aria-labelledby="reportsTitle"><div class="card-head"><h2 id="reportsTitle">课程报告</h2><p>教师课堂复核时自动留存的报告快照，按课程、任务与稳定报告ID关联；可下载 Markdown 或 JSON 留档。</p><p class="admin-refresh-status" id="reportsRefreshStatus" role="status" aria-live="polite">尚未更新</p></div><div class="card-body"><div class="table-wrap"><table><thead><tr><th>报告标题</th><th>课程</th><th>任务</th><th>所属账号</th><th>学生/记录/评价</th><th>生成时间</th><th>操作</th></tr></thead><tbody id="recentReports"><tr><td colspan="7">正在读取课程报告…</td></tr></tbody></table></div><nav class="upload-pagination" aria-label="课程报告分页"><button class="button" id="previousReports" type="button" aria-label="上一页" title="上一页" disabled>&larr;</button><span id="reportPageStatus" role="status" aria-live="polite">正在读取分页信息</span><button class="button" id="nextReports" type="button" aria-label="下一页" title="下一页" disabled>&rarr;</button></nav></div></section>
+    <section class="card wide" aria-labelledby="reportsTitle"><div class="card-head"><h2 id="reportsTitle">课程报告</h2><p>教师课堂复核时自动留存的报告快照，按课程、任务与稳定报告ID关联；可下载 Markdown 或 JSON 留档。</p><p><a href="/demo2/admin/student-summaries">学生档案摘要库</a></p><p class="admin-refresh-status" id="reportsRefreshStatus" role="status" aria-live="polite">尚未更新</p></div><div class="card-body"><div class="table-wrap"><table><thead><tr><th>报告标题</th><th>课程</th><th>任务</th><th>所属账号</th><th>学生/记录/评价</th><th>生成时间</th><th>操作</th></tr></thead><tbody id="recentReports"><tr><td colspan="7">正在读取课程报告…</td></tr></tbody></table></div><nav class="upload-pagination" aria-label="课程报告分页"><button class="button" id="previousReports" type="button" aria-label="上一页" title="上一页" disabled>&larr;</button><span id="reportPageStatus" role="status" aria-live="polite">正在读取分页信息</span><button class="button" id="nextReports" type="button" aria-label="下一页" title="下一页" disabled>&rarr;</button></nav></div></section>
   </div>
+  <dialog class="report-dialog" id="reportDialog" aria-labelledby="reportDialogTitle"><header><div><h2 id="reportDialogTitle">课程报告</h2><span class="mono" id="reportDialogMeta"></span></div><button class="button quiet" id="reportDialogClose" type="button">关闭</button></header><div class="report-dialog-body" id="reportDialogBody"></div></dialog>
 </main>"""
     script = f"""
 const API_PREFIX='{_API_PREFIX}';
-const API_ROUTES={{me:'{_API_PREFIX}/auth/me',summary:'{_API_PREFIX}/admin/summary',memberships:'{_API_PREFIX}/admin/memberships',reports:'{_API_PREFIX}/admin/reports',reportDownload:'{_API_PREFIX}/reports/download',logout:'{_API_PREFIX}/auth/logout'}};
+const API_ROUTES={{me:'{_API_PREFIX}/auth/me',summary:'{_API_PREFIX}/admin/summary',memberships:'{_API_PREFIX}/admin/memberships',reports:'{_API_PREFIX}/admin/reports',reportDownload:'{_API_PREFIX}/reports/download',reportView:'{_API_PREFIX}/reports',tasks:'{_API_PREFIX}/admin/tasks',media:'{_API_PREFIX}/upload/media',result:'{_API_PREFIX}/upload/result',logout:'{_API_PREFIX}/auth/logout'}};
 const SERVER_ACCOUNT={account_json};
 const byId=id=>document.getElementById(id);
 const ADMIN_REFRESH_MS=30000,ADMIN_MAX_BACKOFF_MS=300000;
@@ -1158,6 +1255,7 @@ function renderSummary(summary){{
   const schools=Array.isArray(summary.school_contexts)?summary.school_contexts:[];
   byId('schoolContexts').innerHTML=schools.length?schools.map(item=>{{const d=item.selection_details||{{}};const publicSource=d.source_status==='public_source';return `<tr><td>${{esc(item.login_alias||item.username||item.account_id)}}</td><td>${{esc(item.city)}}</td><td>${{esc(item.district)}}</td><td>${{esc(item.school_name)}}</td><td>${{esc(d.address||'未收录')}}</td><td>${{publicSource?'公开名录（非教师认证）':'待核实'}}${{d.source_url&&/^https:\/\//.test(d.source_url)?`<br><a href="${{esc(d.source_url)}}" target="_blank" rel="noopener noreferrer">公开来源</a>`:''}}</td></tr>`;}}).join(''):'<tr><td colspan="6">上传账号尚未填写学校信息。</td></tr>';
   const accounts=Array.isArray(summary.upload_accounts)?summary.upload_accounts:[];const channels=Array.isArray(summary.channels)?summary.channels:[];const usage=Array.isArray(summary.course_usage)?summary.course_usage:[];const retention=summary.retention||{{}};
+  byId('accountTitle').textContent=`${{accounts.length}} 账号 / ${{channels.length}} 通道状态`;
   byId('accountList').innerHTML=accounts.length?accounts.map(item=>`<div class="entity-row"><div><strong>${{esc(item.login_alias||item.username||item.account_id)}}</strong><span>绑定 ${{esc(item.bound_channel_id||'未绑定')}} · 每课程 ${{esc(item.course_upload_limit??'--')}} 个名额</span></div>${{badge(item.status)}}</div>`).join(''):'<div class="empty-state">接口未返回学校上传账号。</div>';
   byId('channelList').innerHTML=channels.length?channels.map(item=>`<div class="entity-row"><div><strong>${{esc(item.channel_name||item.channel_id)}}</strong><span>${{esc(item.username||'未绑定账号')}} · ${{esc(item.task_count??0)}} 个有效任务</span></div>${{badge(item.status||item.account_status)}}</div>`).join(''):'<div class="empty-state">接口未返回视频通道。</div>';
   byId('courseUsage').innerHTML=usage.length?usage.map(item=>`<tr><td class="mono">${{esc(item.course_id)}}</td><td>${{esc(item.username||item.account_id)}}</td><td>${{esc(item.used_slots)}}</td><td>${{esc(item.remaining_slots)}}</td><td>${{esc(item.max_slots)}}</td></tr>`).join(''):'<tr><td colspan="5">接口未返回课程名额记录。</td></tr>';
@@ -1211,6 +1309,63 @@ function renderReports(){{
 document.addEventListener('click',event=>{{
   const button=event.target.closest('[data-report-download]');
   if(button){{downloadReport(button.dataset.reportDownload,button.dataset.fmt||'md').catch(error=>message(error.message));}}
+}});
+let taskQueryPage=1,taskQueryPages=1,taskQueryBusy=false,taskQueryLoaded=false;
+const reportStatusBadge=item=>item.stale?'<span class="status-badge danger">已过期</span>':`<span class="status-badge ${{item.ready?'success':'warning'}}">${{esc(item.status_label||statusLabel(item.status))}}</span>`;
+function taskReportsCell(task){{
+  const reports=Array.isArray(task.reports)?task.reports:[];
+  if(!reports.length)return '<span class="muted">暂无报告</span>';
+  return reports.map(item=>`<div class="task-report-item"><span>${{esc(item.title||'课堂观察与学习支持报告')}} ${{reportStatusBadge(item)}}</span><span class="mono">${{esc(item.report_id)}}</span><div class="task-actions"><button class="button quiet" type="button" data-report-view="${{esc(item.report_id)}}">查看</button><button class="button quiet" type="button" data-report-download="${{esc(item.report_id)}}" data-fmt="md">下载 MD</button><button class="button quiet" type="button" data-report-download="${{esc(item.report_id)}}" data-fmt="json">下载 JSON</button></div></div>`).join('');
+}}
+function taskMediaCell(task){{
+  const id=encodeURIComponent(task.task_id||''),links=[`<a class="button quiet" href="/demo2/video?id=${{id}}">查看视频</a>`];
+  if(task.media_available)links.push(`<a class="button quiet" data-video-download="${{esc(task.task_id)}}" href="${{API_ROUTES.media}}?id=${{id}}&download=1" download>下载视频</a>`);
+  else links.push('<span class="status-badge warning">原视频不可下载</span>');
+  if(task.result_available)links.push(`<a class="button quiet" href="${{API_ROUTES.result}}?id=${{id}}" download>下载证据记录</a>`);
+  return `<div class="task-actions">${{links.join('')}}</div>`;
+}}
+function renderTaskRows(tasks){{
+  byId('taskQueryResults').innerHTML=tasks.length?tasks.map(task=>{{
+    const progress=['processing','queued'].includes(task.analysis_status)?` · ${{esc(task.processing_progress??0)}}%`:'';
+    return `<tr data-task-row="${{esc(task.task_id)}}"><td><span class="mono">${{esc(task.task_id)}}</span><br><span>${{esc(task.original_filename||'接口未返回文件名')}}</span></td><td>${{esc(task.username||task.account_id||'未返回')}} / ${{esc(task.channel_id||'未返回')}}</td><td>${{esc(task.course_name||task.course_id||'未返回')}}</td><td>${{badge(task.upload_status)}}</td><td>${{badge(task.analysis_status)}}<br><small>${{esc(task.processing_stage||'')}}${{progress}}</small></td><td>${{taskReportsCell(task)}}</td><td>${{taskMediaCell(task)}}</td></tr>`;
+  }}).join(''):'<tr><td colspan="7">没有符合条件的任务。</td></tr>';
+}}
+function updateTaskControls(){{
+  byId('taskQueryButton').disabled=taskQueryBusy;
+  byId('previousTasks').disabled=taskQueryBusy||!taskQueryLoaded||taskQueryPage<=1;
+  byId('nextTasks').disabled=taskQueryBusy||!taskQueryLoaded||taskQueryPage>=taskQueryPages;
+}}
+async function queryTasks(page=1){{
+  if(taskQueryBusy)return;
+  taskQueryBusy=true;updateTaskControls();
+  const params=new URLSearchParams();const keyword=byId('taskQueryInput').value.trim(),status=byId('taskStatusFilter').value;
+  if(keyword)params.set('q',keyword);if(status)params.set('status',status);params.set('page',String(page));
+  byId('taskPageStatus').textContent='正在查询…';
+  try{{
+    const payload=await api(`${{API_ROUTES.tasks}}?${{params.toString()}}`,{{cache:'no-store'}});
+    const tasks=Array.isArray(payload.tasks)?payload.tasks:[];renderTaskRows(tasks);
+    const pagination=payload.pagination||{{}};taskQueryPage=Number(pagination.page)||1;taskQueryPages=Math.max(1,Number(pagination.total_pages)||1);taskQueryLoaded=true;
+    byId('taskPageStatus').textContent=`共 ${{Number(pagination.total)||0}} 个任务 · 第 ${{taskQueryPage}} / ${{taskQueryPages}} 页`;
+  }}catch(error){{
+    byId('taskQueryResults').innerHTML=`<tr><td colspan="7">任务查询失败：${{esc(error.message)}}</td></tr>`;byId('taskPageStatus').textContent='查询失败，请重试';
+  }}finally{{taskQueryBusy=false;updateTaskControls();}}
+}}
+async function viewReport(reportId){{
+  const payload=await api(`${{API_ROUTES.reportView}}?report_id=${{encodeURIComponent(reportId)}}`,{{cache:'no-store'}});
+  const report=payload.report||{{}},content=(report.payload||{{}}).report||{{}};
+  const sections=Array.isArray(content.sections)?content.sections:[];
+  byId('reportDialogTitle').textContent=report.title||'课程报告';
+  byId('reportDialogMeta').textContent=`报告 ${{report.report_id||''}} · 任务 ${{report.task_id||''}} · ${{report.status_label||''}}`;
+  byId('reportDialogBody').innerHTML=(sections.length?sections.map(section=>`<section><h3>${{esc(section.title)}}</h3><p>${{esc(section.text)}}</p></section>`).join(''):'<p>该报告暂无正文段落。</p>')+'<p class="muted">本报告用于课堂教育支持复盘，不构成医学诊断、学生能力定级或教师绩效结论。</p>';
+  const dialog=byId('reportDialog');if(typeof dialog.showModal==='function')dialog.showModal();else dialog.setAttribute('open','');
+}}
+byId('reportDialogClose').addEventListener('click',()=>{{const dialog=byId('reportDialog');if(typeof dialog.close==='function')dialog.close();else dialog.removeAttribute('open');}});
+byId('taskQueryForm').addEventListener('submit',event=>{{event.preventDefault();queryTasks(1);}});
+byId('previousTasks').addEventListener('click',()=>{{if(!byId('previousTasks').disabled)queryTasks(taskQueryPage-1);}});
+byId('nextTasks').addEventListener('click',()=>{{if(!byId('nextTasks').disabled)queryTasks(taskQueryPage+1);}});
+document.addEventListener('click',event=>{{
+  const button=event.target.closest('[data-report-view]');
+  if(button){{viewReport(button.dataset.reportView).catch(error=>message(error.message));}}
 }});
 const membershipMoney=cents=>typeof cents==='number'&&Number.isInteger(cents)&&cents>=0?`¥${{(cents/100).toFixed(2)}}`:'待公布';
 const memberLabel=item=>item.status_label||({{inactive:'未开通',active:'已开通',expired:'已到期',suspended:'已暂停',internal_trial:'内测账号'}}[item.status]||'状态待确认');

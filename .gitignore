@@ -41,3 +41,14 @@ deliverables/**/.pytest_cache/
 *.log
 output/playwright/delivery_20261008/
 output/pdf/Demo2_完整页面与四通道内测交付说明_20261008.pdf
+# Deployment keys, certificates and invitation configs never belong in git.
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+id_ecdsa*
+**/invitations*.json
+**/invite_config*.json
+**/*credentials*.json

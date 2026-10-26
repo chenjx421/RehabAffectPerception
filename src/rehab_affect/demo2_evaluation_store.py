@@ -4,12 +4,21 @@ from __future__ import annotations
 from datetime import date
 import json
 import re
+import sqlite3
 import unicodedata
 
 from .classroom_rubric import RULE_VERSION, SUBJECTS, TEMPLATES, catalog, evaluate
+from .demo2_evaluation_debug import evaluation_debug_event, result_fields
 from .demo2_identity_store import Demo2IdentityStore, IdentityError
 from .demo2_measurement_store import MeasurementError
+from .evaluation_report_contract import school_id_from_context
 from .student_record_store import _iso
+
+# Fields frozen once a record has a saved version (课程口径保存后锁定).
+LOCKED_FIELDS = ('subject_id','template_id','weight_policy','focus_domains','goal_context','lesson_id','lesson_date')
+# Classroom evaluation never scores an individual student's ability.
+_STUDENT_SCORE_KEYS = frozenset({'student_score','student_scores','ability_score','ability_scores',
+                                 'student_ability','student_ability_score'})
 
 
 class Demo2EvaluationStore:
@@ -135,6 +144,8 @@ class Demo2EvaluationStore:
         # Annotate legacy JSON on read, without rewriting its historical version.
         data=dict(data)
         data.setdefault('task_id','')
+        # video_task_id is the integration-contract name of task_id.
+        data['video_task_id']=data['task_id']
         data.setdefault('course_id','')
         data.setdefault('evaluation_id',f"evaluation-{data.get('record_id','')}")
         data.setdefault('iep_summary_id','')
@@ -142,7 +153,23 @@ class Demo2EvaluationStore:
         data.setdefault('frame_revision','')
         data.setdefault('source_sha256',None)
         data.setdefault('source_provenance',{'status':'unlinked','scope':'course','student_linkage':'not_asserted'})
+        # Upstream stable IDs of the chain; derived on read so stored versions stay unchanged.
+        data['school_id']=school_id_from_context(data['source_provenance'].get('school_context'))
+        data['iep_document_id']=data['iep_summary_id']
+        data['evaluation_scope']='classroom'
+        for key in _STUDENT_SCORE_KEYS:
+            data.pop(key,None)
         return data
+
+    def _log_rejected(self,phase,exc,payload,account=None):
+        payload=payload if isinstance(payload,dict) else {}
+        record_id=payload.get('record_id') if isinstance(payload.get('record_id'),str) else None
+        template_id=payload.get('template_id') if isinstance(payload.get('template_id'),str) else None
+        task_id=payload.get('task_id') if isinstance(payload.get('task_id'),str) else None
+        evaluation_debug_event(self.records,'evaluation_rejected',str(exc.status),phase=phase,code=exc.code,
+            message=exc.message,record_id=record_id,evaluation_id=f'evaluation-{record_id}' if record_id else None,
+            account_id=account['account_id'] if account else None,template_id=template_id,
+            task_id=task_id,video_task_id=task_id,rule_version=RULE_VERSION)
 
     def _source(self,db,account,scope,data,old):
         old=self._public(old) if old else None
@@ -182,8 +209,23 @@ class Demo2EvaluationStore:
         data['course_id'] = task['course_id']
         if data.get('iep_summary_id'):
             from .demo2_iep_context import iep_link_is_current
-            if not iep_link_is_current(db,account,task,scope,data['iep_summary_id'],self.identities):
-                raise MeasurementError(409,'iep_link_unavailable','IEP 摘要未关联本课，或授权与身份引用已失效')
+            from .demo2_dossier_store import debug_event, material_access_state
+            document_id=data['iep_summary_id']
+            if not iep_link_is_current(db,account,task,scope,document_id,self.identities):
+                # Name the precise reason (withdrawn/expired/deleted) without exposing content.
+                try:
+                    state=material_access_state(db,document_id=document_id,purpose='scoring')
+                except sqlite3.Error:
+                    state={'available':False,'reason':'dossier_unavailable','student_id':'','document_type':''}
+                if state['available'] or state['reason']=='document_missing':
+                    reason,detail='iep_link_unavailable','IEP 摘要未关联本课，或课堂身份引用已失效'
+                else:
+                    reason,detail=state['reason'],state.get('message') or '资料服务暂不可用'
+                debug_event(self.records,'scoring_iep_check','unavailable',task_id=task_id,document_id=document_id,
+                            student_id=state.get('student_id') or None,document_type=state.get('document_type') or None,
+                            reason=reason)
+                raise MeasurementError(409,'iep_link_unavailable','IEP 摘要不可用于评分：'+detail)
+            debug_event(self.records,'scoring_iep_check','available',task_id=task_id,document_id=document_id,document_type='iep')
         data.update(source_sha256=sha,source_provenance={'status':'linked','scope':'course',
                     'student_linkage':'not_asserted','task_id':task_id,'frame_revision':revision,
                     'source_sha256':sha,'school_context':context,'course_id':task['course_id']})
@@ -225,24 +267,48 @@ class Demo2EvaluationStore:
         if row['version']!=data['expected_version'] or row['status']!='active':
             raise MeasurementError(409,'version_conflict','记录已更新或撤销，请重新加载后核对')
         old=json.loads(row['payload_json'])
-        if any(old[k]!=data[k] for k in ('template_id','subject_id','goal_context','lesson_id','lesson_date')):
+        changed=[k for k in ('template_id','subject_id','goal_context','lesson_id','lesson_date') if old[k]!=data[k]]
+        if old.get('weight_policy','common')!=data['weight_policy']: changed.append('weight_policy')
+        if old.get('focus_domains',[])!=data['focus_domains']: changed.append('focus_domains')
+        if changed:
+            evaluation_debug_event(self.records,'evaluation_lock','blocked',evaluation_id=data['evaluation_id'],
+                record_id=data['record_id'],account_id=account['account_id'],version=row['version'],locked=True,
+                locked_fields=changed,template_id=old['template_id'],rule_version=old['result']['rule_version'])
+        if any(k in changed for k in ('template_id','subject_id','goal_context','lesson_id','lesson_date')):
             raise MeasurementError(409,'configuration_locked','本课目标、模板、学科和课节已锁定；改变口径请撤销后新建')
-        if old.get('weight_policy','common')!=data['weight_policy'] or old.get('focus_domains',[])!=data['focus_domains']:
+        if changed:
             raise MeasurementError(409,'configuration_locked','权重方案与本课领域已锁定；改变口径请撤销后新建')
         if old['result']['rule_version']!=RULE_VERSION:
             raise MeasurementError(409,'rule_version_locked','历史规则版本已锁定，请保留原记录并新建')
         return old
 
     def preview(self,token,payload):
-        account=self._account(token);data,result=self._normalize(payload)
-        with self.records._connect() as db:
-            _,scope=self._scope(db,account)
-            old=self._existing(db,account,scope,data)
-            self._source(db,account,scope,data,old)
+        account=self._account(token)
+        try:
+            data,result=self._normalize(payload)
+            with self.records._connect() as db:
+                _,scope=self._scope(db,account)
+                old=self._existing(db,account,scope,data)
+                self._source(db,account,scope,data,old)
+        except MeasurementError as exc:
+            self._log_rejected('preview',exc,payload,account)
+            raise
+        evaluation_debug_event(self.records,'dual_track_compute','ok',phase='preview',
+            evaluation_id=data['evaluation_id'],record_id=data['record_id'],account_id=account['account_id'],
+            task_id=data.get('task_id'),video_task_id=data.get('task_id'),course_id=data.get('course_id'),
+            subject_id=data['subject_id'],reviewed=data['reviewed'],**result_fields(result))
         return result
 
     def save(self,token,payload):
-        account=self._account(token);data,result=self._normalize(payload)
+        account=self._account(token)
+        try:
+            return self._save(account,payload)
+        except MeasurementError as exc:
+            self._log_rejected('save',exc,payload,account)
+            raise
+
+    def _save(self,account,payload):
+        data,result=self._normalize(payload)
         with self.records._connect() as db:
             db.execute('BEGIN IMMEDIATE')
             _,scope=self._scope(db,account)
@@ -251,6 +317,7 @@ class Demo2EvaluationStore:
             duplicate=db.execute('SELECT record_id FROM demo2_classroom_evaluations WHERE owner_account_id=? AND scope_key=? AND lesson_id=? AND template_id=? AND status=? AND record_id<>?',(account['account_id'],scope,data['lesson_id'],data['template_id'],'active',data['record_id'])).fetchone()
             if duplicate:
                 raise MeasurementError(409,'duplicate_lesson','本课该模板已有评价，请编辑已有记录')
+            data.update(video_task_id=data.get('task_id',''),evaluation_scope='classroom')
             now=_iso();version=data.pop('expected_version')+1
             data.update(version=version,status='active',created_at=old['created_at'] if old else now,updated_at=now,saved_by=account['username'],result=result,
                 rule_snapshot={**catalog(),'selected_template_id':data['template_id'],'selected_subject_id':data['subject_id']})
@@ -260,10 +327,39 @@ class Demo2EvaluationStore:
                 (data['record_id'],account['account_id'],scope,data['lesson_id'],data['template_id'],version,'active',content,data['created_at'],now))
             db.execute('INSERT INTO demo2_classroom_evaluation_versions VALUES(?,?,?,?,?)',(data['record_id'],version,content,account['username'],now))
             self.records._audit(db,account['username'],'classroom_evaluation_saved','classroom_evaluation',data['record_id'],{'version':version,'rule_version':RULE_VERSION})
+        common=dict(evaluation_id=data['evaluation_id'],record_id=data['record_id'],account_id=account['account_id'],
+            task_id=data.get('task_id'),video_task_id=data.get('task_id'),course_id=data.get('course_id'),
+            subject_id=data['subject_id'],version=version)
+        scores=result_fields(result)
+        evaluation_debug_event(self.records,'evaluation_create' if old is None else 'evaluation_save','ok',
+            reviewed=data['reviewed'],**common,**scores)
+        if old is None:
+            evaluation_debug_event(self.records,'evaluation_lock','locked',locked=True,locked_fields=list(LOCKED_FIELDS),
+                template_id=data['template_id'],rule_version=RULE_VERSION,**common)
+        if data['reviewed'] or (old is not None and old.get('reviewed')):
+            review_result=('reviewed' if result['status']=='reviewed' else
+                           'review_cleared' if not data['reviewed'] else 'reviewed_incomplete')
+            evaluation_debug_event(self.records,'evaluation_review',review_result,reviewed=data['reviewed'],
+                template_id=data['template_id'],rule_version=RULE_VERSION,status=result['status'],**common)
+        evaluation_debug_event(self.records,'dual_track_compute','ok',phase='save',reviewed=data['reviewed'],**common,**scores)
         return self._public(data)
 
     def withdraw(self,token,payload):
         account=self._account(token)
+        try:
+            data=self._withdraw(account,payload)
+        except MeasurementError as exc:
+            self._log_rejected('withdraw',exc,payload,account)
+            raise
+        evaluation_debug_event(self.records,'evaluation_withdraw','ok',
+            evaluation_id=data.get('evaluation_id') or f"evaluation-{data['record_id']}",
+            record_id=data['record_id'],account_id=account['account_id'],task_id=data.get('task_id'),
+            video_task_id=data.get('task_id'),course_id=data.get('course_id'),version=data['version'],
+            template_id=data.get('template_id'),rule_version=(data.get('result') or {}).get('rule_version'),
+            status='withdrawn')
+        return self._public(data)
+
+    def _withdraw(self,account,payload):
         if not isinstance(payload,dict) or set(payload)!={'record_id','expected_version','reason'}:
             raise MeasurementError(400,'invalid_payload','请提供记录编号、版本和撤销原因')
         rid=self._id(payload['record_id']);reason=self._text(payload['reason'],limit=1000)

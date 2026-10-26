@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from pathlib import Path
 from threading import Event, Thread
 from typing import Any, Callable
+
+from .demo2_upload_debug import task_fields, upload_debug_event
 
 
 LOGGER = logging.getLogger(__name__)
@@ -39,6 +42,12 @@ def _public_processing_error(exc: Exception) -> tuple[str, str]:
     code = getattr(exc, "code", "processing_failed")
     if not isinstance(code, str) or code not in _PROCESSING_ERROR_MESSAGES:
         code = "processing_failed"
+    tool = getattr(exc, "tool", "")
+    if code == "missing_dependency" and tool in {"ffmpeg", "ffprobe"}:
+        # Name the missing tool so the teacher sees a concrete reason instead
+        # of a task that silently never finishes.
+        return code, (f"视频处理依赖不可用：服务器未找到 {tool}，请联系管理员检查 FFmpeg、ffprobe 和 OpenCV"
+                      f"（可用 REHAB_{tool.upper()} 指定路径）")
     return code, _PROCESSING_ERROR_MESSAGES[code]
 
 
@@ -115,12 +124,23 @@ class VideoAnalysisWorker:
             refresh = getattr(self.store, "refresh_next_simple_analysis", None)
             return bool(refresh(stop_event=self.stop_event)) if callable(refresh) else False
         task_id = task["task_id"]
+        started = time.monotonic()
+        fields = task_fields(task)
+        upload_debug_event(self.store, "processing_start", "claimed", **fields)
+
+        def elapsed_ms() -> float:
+            return (time.monotonic() - started) * 1000
+
         if not isinstance(task_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", task_id):
             self._fail_task(task_id, "invalid_task_path", "处理目录无效")
+            upload_debug_event(self.store, "processing_failed", "failed", code="invalid_task_path",
+                               duration_ms=elapsed_ms(), **fields)
             return True
         output_dir = self.store.video_task_dir / "analysis" / task_id
         if output_dir.resolve().parent != (self.store.video_task_dir / "analysis").resolve():
             self._fail_task(task_id, "invalid_task_path", "处理目录无效")
+            upload_debug_event(self.store, "processing_failed", "failed", code="invalid_task_path",
+                               duration_ms=elapsed_ms(), **fields)
             return True
         try:
             if self.processor is None:
@@ -137,8 +157,14 @@ class VideoAnalysisWorker:
             )
             if self.stop_event.is_set():
                 self._fail_task(task_id, "interrupted", _PROCESSING_ERROR_MESSAGES["interrupted"])
+                upload_debug_event(self.store, "processing_failed", "failed", code="interrupted",
+                                   duration_ms=elapsed_ms(), **fields)
             else:
                 self.store.finish_video_analysis(task_id, result)
+                upload_debug_event(self.store, "processing_complete", "evidence_ready",
+                                   analysis_status="evidence_ready", progress=100,
+                                   duration_ms=elapsed_ms(), **{k: v for k, v in fields.items()
+                                                                if k != "analysis_status"})
         except Exception as exc:
             if self._pending_failure is not None:
                 raise
@@ -147,6 +173,9 @@ class VideoAnalysisWorker:
                 code, message = "interrupted", _PROCESSING_ERROR_MESSAGES["interrupted"]
             LOGGER.warning("Media task %s failed (%s)", task_id, code)
             self._fail_task(task_id, code, message)
+            upload_debug_event(self.store, "processing_failed", "failed", code=code,
+                               analysis_status="failed", duration_ms=elapsed_ms(),
+                               **{k: v for k, v in fields.items() if k != "analysis_status"})
         return True
 
     def _loop(self) -> None:
@@ -165,6 +194,7 @@ class VideoAnalysisWorker:
         if self.stop_event.is_set() or self.thread is not None or not self.lock.acquire():
             return False
         try:
+            self._log_media_tools()
             self.store.recover_interrupted_video_analysis()
             self.thread = Thread(target=self._loop, name="demo2-media-analysis", daemon=True)
             self.thread.start()
@@ -173,6 +203,24 @@ class VideoAnalysisWorker:
             self.lock.release()
             raise
         return True
+
+    def _log_media_tools(self) -> None:
+        # Record which FFmpeg/ffprobe the worker will use so a host without
+        # them is visible at startup, before any teacher upload fails.
+        if self.processor is not None:
+            return
+        try:
+            from .demo2_media_analysis import media_tool_status
+
+            status = media_tool_status()
+        except Exception:
+            LOGGER.exception("Media tool check failed")
+            return
+        if not status["tools_available"]:
+            LOGGER.warning("Media tools missing: %s", ",".join(status["missing"]))
+        upload_debug_event(self.store, "media_tools_check", "ok" if status["tools_available"] else "missing",
+                           tools_available=status["tools_available"],
+                           ffmpeg_source=status["ffmpeg_source"], ffprobe_source=status["ffprobe_source"])
 
     def stop(self, timeout: float = 30.0) -> None:
         self.stop_event.set()

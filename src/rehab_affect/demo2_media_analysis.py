@@ -64,6 +64,8 @@ _SCOPE = "Technical full-scene media evidence; not student or classroom evaluati
 class MediaAnalysisError(RuntimeError):
     def __init__(self, code: str, message: str):
         self.code = code
+        # Set for missing_dependency so the worker can name ffmpeg/ffprobe.
+        self.tool = ""
         super().__init__(message)
 
 
@@ -77,9 +79,15 @@ def _check_stop(stop_event: threading.Event | None) -> None:
         raise MediaAnalysisCancelled()
 
 
-def _resolve_tool(name: str) -> str:
+def _resolve_tool_with_source(name: str) -> tuple[str, str]:
+    """Return ``(executable, source)``; source is configured/path/sibling/bundled/imageio.
+
+    Cloud hosts set REHAB_FFMPEG=/usr/bin/ffmpeg and REHAB_FFPROBE=/usr/bin/ffprobe.
+    A configured path that does not exist never falls back to another binary.
+    """
     configured = os.environ.get(f"REHAB_{name.upper()}", "").strip()
     found = shutil.which(configured or name)
+    source = "configured" if configured else "path"
     if not found and configured:
         candidate = Path(configured).expanduser()
         if candidate.is_file() and os.access(candidate, os.X_OK):
@@ -89,11 +97,11 @@ def _resolve_tool(name: str) -> str:
         if ffmpeg:
             candidate = Path(ffmpeg).parent / ("ffprobe.exe" if os.name == "nt" else "ffprobe")
             if candidate.is_file() and os.access(candidate, os.X_OK):
-                found = str(candidate.resolve())
+                found, source = str(candidate.resolve()), "sibling"
     if not found and not configured:
         candidate = Path(__file__).resolve().parents[2] / ".tools" / (f"{name}.exe" if os.name == "nt" else name)
         if candidate.is_file() and os.access(candidate, os.X_OK):
-            found = str(candidate.resolve())
+            found, source = str(candidate.resolve()), "bundled"
     if not found and name == "ffmpeg" and not configured:
         try:
             import imageio_ffmpeg
@@ -103,13 +111,34 @@ def _resolve_tool(name: str) -> str:
             candidates = sorted(binaries.glob("ffmpeg-*"))
             found = next((str(p.resolve()) for p in candidates if p.is_file() and os.access(p, os.X_OK)
                           and (p.suffix == ".exe" if os.name == "nt" else p.suffix != ".exe")), None)
+            source = "imageio"
         except ImportError:
             pass
     if not found:
-        raise MediaAnalysisError(
+        error = MediaAnalysisError(
             "missing_dependency", f"Install {name} or set REHAB_{name.upper()} to its executable."
         )
-    return found
+        error.tool = name
+        raise error
+    return found, source
+
+
+def _resolve_tool(name: str) -> str:
+    return _resolve_tool_with_source(name)[0]
+
+
+def media_tool_status() -> dict[str, Any]:
+    """Report which FFmpeg/ffprobe will be used, without exposing their paths."""
+    status: dict[str, Any] = {"tools_available": True, "missing": []}
+    for name in ("ffmpeg", "ffprobe"):
+        try:
+            _, source = _resolve_tool_with_source(name)
+        except MediaAnalysisError:
+            source = "missing"
+            status["tools_available"] = False
+            status["missing"].append(name)
+        status[f"{name}_source"] = source
+    return status
 
 
 def _no_links(path: Path) -> None:

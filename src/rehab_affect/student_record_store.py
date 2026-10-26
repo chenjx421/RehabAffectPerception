@@ -1039,9 +1039,10 @@ class Demo2StudentRecordStore:
                 "WHERE status = 'active' OR channel_id = ? ORDER BY channel_no",
                 (preferred_channel_id,),
             ).fetchall()
+            # The selected channel is always the bound one, never the first
+            # other active channel, so a paused binding is not silently replaced.
             selected_channel = next(
-                (row for row in channels if row["channel_id"] == preferred_channel_id),
-                channels[0] if channels else None,
+                (row for row in channels if row["channel_id"] == preferred_channel_id), None
             )
             students = connection.execute(
                 """
@@ -1074,11 +1075,23 @@ class Demo2StudentRecordStore:
             "max_slots": max_slots,
             "remaining_slots": max(0, max_slots - used_slots),
         }
+        channel_status = str(selected_channel["status"]) if selected_channel else "missing"
+        if channel_status == "active":
+            upload_block = None
+        elif channel_status == "missing":
+            upload_block = {"code": "channel_missing",
+                            "message": "账号绑定的上传通道不存在，请联系管理员核对通道配置"}
+        else:
+            upload_block = {"code": "channel_paused",
+                            "message": "账号绑定的上传通道已暂停，暂不能新建上传；请联系管理员恢复通道，系统不会自动切换到其他通道"}
         return {
             "account": account,
             "channel": dict(selected_channel) if selected_channel else None,
             "channels": [dict(row) for row in channels],
             "selected_channel_id": selected_channel["channel_id"] if selected_channel else "",
+            "bound_channel_id": preferred_channel_id,
+            "channel_status": channel_status,
+            "upload_blocked": upload_block,
             "students": [dict(row) for row in students],
             "security_acceptance": (
                 self._public_acceptance(dict(security_acceptance))
@@ -1248,6 +1261,96 @@ class Demo2StudentRecordStore:
                 "due_soon_count": due_soon,
                 "expired_count": expired,
             },
+        }
+
+    ADMIN_TASK_PAGE_SIZE = 20
+
+    def admin_task_query(
+        self, session_token: str, *, query: str = "", analysis_status: str = "", page: int = 1,
+    ) -> dict[str, Any]:
+        """Company-admin task lookup by task id, course or file name fragment.
+
+        Only task metadata and processing state are returned; classroom
+        results, frames and student data stay behind the per-task routes.
+        """
+        admin = self.account_from_session(session_token)
+        if admin["role"] != "company_admin":
+            raise ValueError("仅 company_admin 可查询平台任务")
+        if not isinstance(query, str) or len(query) > 80:
+            raise ValueError("任务查询关键词最多 80 个字符")
+        query = query.strip()
+        if any(ord(char) < 32 for char in query):
+            raise ValueError("任务查询关键词包含不支持的字符")
+        if analysis_status and not re.fullmatch(r"[a-z_]{1,40}", analysis_status):
+            raise ValueError("处理状态筛选值无效")
+        if type(page) is not int or not 1 <= page <= 1_000_000:
+            raise ValueError("任务查询页码须为正整数")
+        clauses: list[str] = []
+        params: list[Any] = []
+        if query:
+            pattern = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            clauses.append(
+                "(t.task_id = ? OR t.task_id LIKE ? ESCAPE '\\' OR t.course_id LIKE ? ESCAPE '\\'"
+                " OR t.course_name LIKE ? ESCAPE '\\' OR t.original_filename LIKE ? ESCAPE '\\'"
+                " OR a.username LIKE ? ESCAPE '\\')"
+            )
+            params.extend([query, pattern, pattern, pattern, pattern, pattern])
+        if analysis_status:
+            clauses.append("t.analysis_status = ?")
+            params.append(analysis_status)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        page_size = self.ADMIN_TASK_PAGE_SIZE
+        with self._connect() as connection:
+            total = connection.execute(
+                "SELECT COUNT(*) FROM video_analysis_tasks AS t "
+                "LEFT JOIN platform_accounts AS a ON a.account_id = t.account_id" + where,
+                params,
+            ).fetchone()[0]
+            total_pages = max(1, (total + page_size - 1) // page_size)
+            page = min(page, total_pages)
+            rows = connection.execute(
+                "SELECT t.*, COALESCE(a.username, t.uploader_name, 'legacy_upload') AS owner_username "
+                "FROM video_analysis_tasks AS t "
+                "LEFT JOIN platform_accounts AS a ON a.account_id = t.account_id" + where
+                + " ORDER BY t.created_at DESC, t.rowid DESC LIMIT ? OFFSET ?",
+                [*params, page_size, (page - 1) * page_size],
+            ).fetchall()
+            tasks = []
+            for row in rows:
+                public = self._public_video_task(dict(row))
+                media_available = (
+                    public.get("upload_status") == "completed"
+                    and public.get("retention_state") not in {"deleted", "expired"}
+                )
+                tasks.append({
+                    "task_id": public.get("task_id", ""),
+                    "video_task_id": public.get("task_id", ""),
+                    "account_id": public.get("account_id") or "",
+                    "username": row["owner_username"],
+                    "channel_id": public.get("channel_id") or "",
+                    "course_id": public.get("course_id") or "",
+                    "course_name": public.get("course_name") or "",
+                    "original_filename": public.get("original_filename") or "",
+                    "byte_size": int(public.get("byte_size") or 0),
+                    "upload_status": public.get("upload_status") or "",
+                    "analysis_status": public.get("analysis_status") or "",
+                    "processing_stage": public.get("processing_stage") or "",
+                    "processing_progress": int(public.get("processing_progress") or 0),
+                    "progress_percent": int(public.get("progress_percent") or 0),
+                    "retention_state": public.get("retention_state") or "",
+                    "days_remaining": int(public.get("days_remaining") or 0),
+                    "media_available": media_available,
+                    "result_available": public.get("analysis_status") in READY_VIDEO_ANALYSIS_STATUSES,
+                    "created_at": public.get("created_at") or "",
+                    "updated_at": public.get("updated_at") or "",
+                })
+            self._audit(
+                connection, admin["username"], "admin_task_query", "admin_platform", "video_tasks",
+                {"has_query": bool(query), "analysis_status": analysis_status, "page": page, "total": total},
+            )
+        return {
+            "tasks": tasks,
+            "pagination": {"page": page, "page_size": page_size, "total": total, "total_pages": total_pages},
         }
 
     def student_record(self, student_id: str) -> dict[str, Any]:

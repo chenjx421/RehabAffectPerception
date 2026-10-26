@@ -7,6 +7,7 @@ presentation and are never used as join keys.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from typing import Any
@@ -14,11 +15,15 @@ from uuid import uuid4
 
 from .demo2_identity_store import Demo2IdentityStore, IdentityError
 from .demo2_iep_context import snapshot_report
-from .evaluation_report_contract import generated_report_id
+from .demo2_report_debug import report_debug_event
+from .evaluation_report_contract import generated_report_id, school_id_from_context
 from .student_record_store import _iso
 
 
 REPORT_PAGE_SIZE = 20
+STALE_MESSAGE = "报告已过期：生成后评分或视频版本已变化，请重新生成课堂报告后再查看或下载"
+STATUS_LABELS = {"saved": "可下载", "evidence_pending": "证据待补充", "stale": "已过期"}
+ADMIN_REDACTED_KEYS = frozenset({"iep_links"})
 
 
 class ReportError(ValueError):
@@ -103,53 +108,128 @@ class Demo2ReportStore:
             raise ReportError(404, "report_unavailable", "报告不存在或无权访问")
         return dict(row)
 
-    def _require_current(self, connection, row):
-        task = connection.execute('SELECT * FROM video_analysis_tasks WHERE task_id=?', (row['task_id'],)).fetchone()
-        valid = (task is not None and task['upload_status'] != 'cancelled'
-                 and task['sha256'] == row['source_sha256']
-                 and self.identities._revision(dict(task)) == row['frame_revision'])
-        report = json.loads(row['payload_json']).get('report', {})
-        for key, table in (('record_versions', 'demo2_measurements'),
-                           ('evaluation_versions', 'demo2_classroom_evaluations')):
+    def _stale_reasons(self, connection, row) -> list[str]:
+        """Compare a snapshot with the live task and scoring versions."""
+        reasons: list[str] = []
+        task = connection.execute(
+            "SELECT * FROM video_analysis_tasks WHERE task_id=?", (row["task_id"],)
+        ).fetchone()
+        if task is None:
+            reasons.append("task_missing")
+        else:
+            if task["upload_status"] == "cancelled":
+                reasons.append("task_cancelled")
+            if task["sha256"] != row["source_sha256"]:
+                reasons.append("source_changed")
+            if self.identities._revision(dict(task)) != row["frame_revision"]:
+                reasons.append("frame_revision_changed")
+        report = json.loads(row["payload_json"] or "{}").get("report", {})
+        for key, table, label in (("record_versions", "demo2_measurements", "record_changed"),
+                                  ("evaluation_versions", "demo2_classroom_evaluations", "evaluation_changed")):
             for version in report.get(key, []):
-                current = connection.execute(f'SELECT version,status FROM {table} WHERE record_id=? AND owner_account_id=?',
-                                             (version['record_id'], row['owner_account_id'])).fetchone()
-                valid = valid and current is not None and current['status'] == 'active' and current['version'] == version['version']
-        if not valid:
-            raise ReportError(409, 'report_stale', '报告引用的视频或评分已变化，请由学校刷新课堂报告后再下载')
+                record_id = str(version.get("record_id") or "")
+                current = connection.execute(
+                    f"SELECT version,status FROM {table} WHERE record_id=? AND owner_account_id=?",
+                    (record_id, row["owner_account_id"]),
+                ).fetchone()
+                if current is None or current["status"] != "active" or current["version"] != version.get("version"):
+                    reasons.append(f"{label}:{record_id}")
+        return reasons
+
+    def _check_current(self, connection, row, *, role, operation) -> list[str]:
+        """Return stale reasons and persist the 「已过期」 mark on the snapshot."""
+        reasons = self._stale_reasons(connection, row)
+        report = json.loads(row["payload_json"] or "{}").get("report", {})
+        report_debug_event(
+            self.records, "report_stale_check", "stale" if reasons else "current",
+            report_id=row["report_id"], task_id=row["task_id"],
+            evaluation_id=_first(report.get("evaluation_ids")),
+            evaluation_versions=_version_labels(report.get("evaluation_versions")),
+            record_versions=_version_labels(report.get("record_versions")),
+            frame_revision=row["frame_revision"], version_fingerprint=_fingerprint(row),
+            role=role, stale=bool(reasons), stale_reasons=reasons, code=operation,
+        )
+        if reasons and row["status"] != "stale":
+            connection.execute(
+                "UPDATE demo2_reports SET status='stale', updated_at=? WHERE report_id=?",
+                (_iso(), row["report_id"]),
+            )
+            row["status"] = "stale"
+        elif not reasons and row["status"] == "stale":
+            # Only a regeneration on the same revision restores the snapshot;
+            # a rolled-back version keeps the earlier mark until then.
+            reasons = ["awaiting_regeneration"]
+        return reasons
 
     @staticmethod
     def _public_meta(row):
-        report = json.loads(row["payload_json"] or "{}").get("report", {})
+        payload = json.loads(row["payload_json"] or "{}")
+        report = payload.get("report", {})
+        summary = payload.get("summary") or {}
+        evaluation_ids = json.loads(row["evaluation_ids_json"] or "[]")
+        student_ids = json.loads(row["student_ids_json"] or "[]")
         return {
             "report_id": row["report_id"],
             "content_report_id": report.get("report_id", ""),
             "ready": bool(report.get("ready")),
+            # Upstream stable IDs; students are joined by student_id, never by name.
+            "school_id": school_id_from_context(payload.get("school_context")),
+            "student_ids": student_ids,
             "task_id": row["task_id"],
+            "video_task_id": row["task_id"],
             "course_id": row["course_id"],
             "course_name": row["course_name"],
+            "evaluation_id": _first(evaluation_ids),
+            "evaluation_ids": evaluation_ids,
             "frame_revision": row["frame_revision"],
             "source_sha256": row["source_sha256"],
+            "version_fingerprint": _fingerprint(row),
             "title": row["title"],
             "engine": row["engine"],
-            "student_count": len(json.loads(row["student_ids_json"] or "[]")),
+            "character_count": int(report.get("character_count") or 0),
+            "student_count": len(student_ids),
             "record_count": len(json.loads(row["record_ids_json"] or "[]")),
-            "evaluation_count": len(json.loads(row["evaluation_ids_json"] or "[]")),
+            "evaluation_count": len(evaluation_ids),
+            "stats": _stats(summary),
             "status": row["status"],
+            "stale": row["status"] == "stale",
+            "status_label": STATUS_LABELS.get(row["status"], row["status"]),
             "generated_at": row["generated_at"],
             "updated_at": row["updated_at"],
         }
 
-    @staticmethod
-    def _payload_for_role(payload, *, admin):
+    def _payload_for_role(self, payload, *, admin, report_id=""):
         """Keep dossier linkage out of company-admin report responses."""
         if not admin:
             return payload
-        result = dict(payload)
-        report = dict(result.get("report") or {})
-        report.pop("iep_links", None)
-        result["report"] = report
+        removed: list[str] = []
+        result = _strip_keys(payload, ADMIN_REDACTED_KEYS, removed)
+        report_debug_event(
+            self.records, "report_admin_redact", "redacted" if removed else "nothing_to_redact",
+            report_id=report_id, role="company_admin", removed_fields=sorted(set(removed)),
+            removed_count=len(removed),
+        )
         return result
+
+    def _iep_document_ids(self, report) -> list[str]:
+        """IEP versions named by the snapshot's iep_links; professional material is excluded."""
+        ids: list[str] = []
+        for link in report.get("iep_links", []) if isinstance(report, dict) else []:
+            for version in link.get("document_versions", []) if isinstance(link, dict) else []:
+                document_id = version.get("document_id") if isinstance(version, dict) else None
+                if isinstance(document_id, str) and document_id and document_id not in ids:
+                    ids.append(document_id)
+        if not ids:
+            return []
+        with self.records._connect() as connection:
+            if not connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                                      "AND name='demo2_dossier_documents'").fetchone():
+                return []
+            placeholders = ",".join("?" for _ in ids)
+            iep = {row[0] for row in connection.execute(
+                f"SELECT document_id FROM demo2_dossier_documents WHERE document_type='iep' "
+                f"AND document_id IN ({placeholders})", ids)}
+        return [document_id for document_id in ids if document_id in iep]
 
     # -- persistence -----------------------------------------------------------
 
@@ -264,9 +344,30 @@ class Demo2ReportStore:
             row = connection.execute(
                 "SELECT * FROM demo2_reports WHERE report_id = ?", (report_id,)
             ).fetchone()
-            return self._public_meta(dict(row))
+            meta = self._public_meta(dict(row))
+        stats = meta["stats"]
+        report_debug_event(
+            self.records, "report_generate", "regenerated" if existing else "created",
+            report_id=report_id, content_report_id=meta["content_report_id"], task_id=task_id,
+            course_id=meta["course_id"], evaluation_id=meta["evaluation_id"],
+            evaluation_ids=evaluation_ids,
+            evaluation_versions=_version_labels(report.get("evaluation_versions")),
+            record_versions=_version_labels(report.get("record_versions")),
+            frame_revision=revision, version_fingerprint=meta["version_fingerprint"],
+            role="teacher", account_id=account["account_id"], status=status, ready=meta["ready"],
+            character_count=meta["character_count"], section_count=len(report.get("sections", [])),
+            student_count=stats["students"], reviewed_count=stats["reviewed"],
+            scored_count=stats["scored"], pending_count=stats["pending"],
+        )
+        return meta
 
     # -- queries ----------------------------------------------------------------
+
+    def _list_meta(self, connection, row, *, role):
+        """List entries re-check freshness so old snapshots show 「已过期」."""
+        row = dict(row)
+        self._check_current(connection, row, role=role, operation="report_list")
+        return self._public_meta(row)
 
     def list_for_task(self, token, task_id) -> dict[str, Any]:
         account = self._account(token)
@@ -277,7 +378,10 @@ class Demo2ReportStore:
                 "ORDER BY generated_at DESC, rowid DESC LIMIT 101",
                 (task_id, account["account_id"]),
             ).fetchall()
-            return {"reports": [self._public_meta(dict(row)) for row in rows]}
+            reports = [self._list_meta(connection, row, role="teacher") for row in rows]
+        report_debug_event(self.records, "report_list", "ok", task_id=task_id, role="teacher",
+                           account_id=account["account_id"], report_count=len(reports))
+        return {"reports": reports}
 
     def list_admin(self, token, *, page: int = 1) -> dict[str, Any]:
         account = self._account(token, admin=True)
@@ -302,74 +406,200 @@ class Demo2ReportStore:
             )
             items = []
             for row in rows:
-                meta = self._public_meta(dict(row))
+                meta = self._list_meta(connection, row, role="company_admin")
                 meta["owner_username"] = row["owner_username"] or ""
                 items.append(meta)
-            return {
-                "reports": items,
-                "pagination": {"page": page, "page_size": REPORT_PAGE_SIZE,
-                               "total": total, "total_pages": total_pages},
-            }
+        report_debug_event(self.records, "report_list", "ok", role="company_admin",
+                           account_id=account["account_id"], report_count=len(items), page=page)
+        return {
+            "reports": items,
+            "pagination": {"page": page, "page_size": REPORT_PAGE_SIZE,
+                           "total": total, "total_pages": total_pages},
+        }
+
+    def admin_reports_for_tasks(self, token, task_ids) -> dict[str, list[dict[str, Any]]]:
+        """Report metadata grouped by task for the company task query panel."""
+        account = self._account(token, admin=True)
+        if not isinstance(task_ids, (list, tuple)) or len(task_ids) > 100:
+            raise ReportError(400, "invalid_request", "任务编号列表无效")
+        wanted = [item for item in task_ids
+                  if isinstance(item, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,120}", item)]
+        grouped: dict[str, list[dict[str, Any]]] = {task_id: [] for task_id in wanted}
+        if not wanted:
+            return grouped
+        with self.records._connect() as connection:
+            placeholders = ",".join("?" for _ in wanted)
+            rows = connection.execute(
+                f"SELECT * FROM demo2_reports WHERE task_id IN ({placeholders}) "
+                "ORDER BY generated_at DESC, rowid DESC",
+                wanted,
+            ).fetchall()
+            for row in rows:
+                grouped[row["task_id"]].append(self._list_meta(connection, row, role="company_admin"))
+        report_debug_event(self.records, "report_list", "ok", role="company_admin",
+                           account_id=account["account_id"], report_count=len(rows))
+        return grouped
+
+    def _load_current(self, token, report_id, operation):
+        """Authorize, re-check freshness and return (account, admin, row).
+
+        The stale mark is committed before raising so the snapshot stays
+        「已过期」 in later list views even though this request is refused.
+        """
+        admin = _is_admin(token, self.records)
+        role = "company_admin" if admin else "teacher"
+        try:
+            account = self._account(token, admin=admin)
+            with self.records._connect() as connection:
+                row = self._report(connection, account, report_id, admin=admin)
+                reasons = self._check_current(connection, row, role=role, operation=operation)
+        except ReportError as exc:
+            report_debug_event(self.records, "report_rejected", str(exc.status), code=exc.code,
+                               report_id=report_id if isinstance(report_id, str) else "",
+                               role=role, message=operation)
+            raise
+        if reasons:
+            report_debug_event(self.records, "report_rejected", "409", code="report_stale",
+                               report_id=row["report_id"], task_id=row["task_id"], role=role,
+                               version_fingerprint=_fingerprint(row), stale=True,
+                               stale_reasons=reasons, status="stale", message=operation)
+            raise ReportError(409, "report_stale", STALE_MESSAGE)
+        return account, admin, role, row
 
     def get(self, token, report_id) -> dict[str, Any]:
-        admin = _is_admin(token, self.records)
-        account = self._account(token, admin=admin)
-        with self.records._connect() as connection:
-            row = self._report(connection, account, report_id, admin=admin)
-            self._require_current(connection, row)
-            meta = self._public_meta(row)
-            meta["payload"] = self._payload_for_role(
-                json.loads(row["payload_json"] or "{}"), admin=admin
-            )
-            return meta
+        account, admin, role, row = self._load_current(token, report_id, "report_view")
+        meta = self._public_meta(row)
+        meta["payload"] = self._payload_for_role(
+            json.loads(row["payload_json"] or "{}"), admin=admin, report_id=row["report_id"]
+        )
+        if not admin:
+            # Dossier linkage stays teacher-side, like iep_links.
+            meta["iep_document_ids"] = self._iep_document_ids(meta["payload"].get("report", {}))
+        report_debug_event(
+            self.records, "report_view", "ok", report_id=row["report_id"], task_id=row["task_id"],
+            evaluation_id=meta["evaluation_id"], frame_revision=row["frame_revision"],
+            version_fingerprint=meta["version_fingerprint"], role=role,
+            account_id=account["account_id"], status=meta["status"],
+            character_count=meta["character_count"],
+        )
+        return meta
 
     def download(self, token, report_id, *, fmt: str = "md") -> tuple[str, str, str]:
-        admin = _is_admin(token, self.records)
-        account = self._account(token, admin=admin)
         if fmt not in {"md", "json"}:
             raise ReportError(400, "invalid_format", "报告下载格式仅支持 md 或 json")
-        with self.records._connect() as connection:
-            row = self._report(connection, account, report_id, admin=admin)
-            self._require_current(connection, row)
-            payload = json.loads(row["payload_json"] or "{}")
-            report = self._payload_for_role(payload, admin=admin).get("report", {})
-            if fmt == "json":
-                text = json.dumps(
-                    {
-                        "report_id": row["report_id"], "task_id": row["task_id"],
-                        "content_report_id": report.get("report_id", ""),
-                        "ready": bool(report.get("ready")),
-                        "course_id": row["course_id"], "course_name": row["course_name"],
-                        "frame_revision": row["frame_revision"],
-                        "student_ids": json.loads(row["student_ids_json"] or "[]"),
-                        "record_ids": json.loads(row["record_ids_json"] or "[]"),
-                        "evaluation_ids": json.loads(row["evaluation_ids_json"] or "[]"),
-                        "generated_at": row["generated_at"], "report": report,
-                        "boundary": "本报告用于课堂教育支持复盘，不构成医学诊断、学生能力定级或教师绩效结论。",
-                    },
-                    ensure_ascii=False, indent=2,
-                )
-                filename = f"report_{row['report_id']}.json"
-                content_type = "application/json; charset=utf-8"
-            else:
-                lines = [f"# {row['title']}", "", f"报告ID：{row['report_id']}"]
-                lines.append(f"课程ID：{row['course_id']} · 任务ID：{row['task_id']}")
-                lines.append(f"生成时间：{row['generated_at']} · 引擎：{row['engine']}")
-                lines.append(f"关联学生：{len(json.loads(row['student_ids_json'] or '[]'))} 名 · "
-                             f"观察记录：{len(json.loads(row['record_ids_json'] or '[]'))} 条 · "
-                             f"课堂评价：{len(json.loads(row['evaluation_ids_json'] or '[]'))} 条")
+        account, admin, role, row = self._load_current(token, report_id, "report_download")
+        meta = self._public_meta(row)
+        payload = self._payload_for_role(
+            json.loads(row["payload_json"] or "{}"), admin=admin, report_id=row["report_id"]
+        )
+        report = payload.get("report", {})
+        stats = meta["stats"]
+        if fmt == "json":
+            text = json.dumps(
+                {
+                    "report_id": row["report_id"], "task_id": row["task_id"],
+                    "video_task_id": row["task_id"],
+                    "content_report_id": report.get("report_id", ""),
+                    "ready": bool(report.get("ready")),
+                    "course_id": row["course_id"], "course_name": row["course_name"],
+                    "school_id": meta["school_id"],
+                    "evaluation_id": meta["evaluation_id"],
+                    "frame_revision": row["frame_revision"],
+                    "version_fingerprint": meta["version_fingerprint"],
+                    "status": meta["status"], "status_label": meta["status_label"],
+                    "stats": stats,
+                    "student_ids": json.loads(row["student_ids_json"] or "[]"),
+                    "record_ids": json.loads(row["record_ids_json"] or "[]"),
+                    "evaluation_ids": json.loads(row["evaluation_ids_json"] or "[]"),
+                    "generated_at": row["generated_at"], "report": report,
+                    "boundary": "本报告用于课堂教育支持复盘，不构成医学诊断、学生能力定级或教师绩效结论。",
+                },
+                ensure_ascii=False, indent=2,
+            )
+            filename = f"report_{row['report_id']}.json"
+            content_type = "application/json; charset=utf-8"
+        else:
+            lines = [f"# {row['title']}", "", f"报告ID：{row['report_id']}"]
+            lines.append(f"课程ID：{row['course_id']} · 任务ID：{row['task_id']}"
+                         + (f" · 评价ID：{meta['evaluation_id']}" if meta["evaluation_id"] else ""))
+            lines.append(f"生成时间：{row['generated_at']} · 版本：{meta['version_fingerprint']}")
+            lines.append(f"正文 {meta['character_count']} 字符 · {row['engine']}")
+            lines.append(f"关联学生：{stats['students']} 名 · 已复核目标：{stats['reviewed']} 条 · "
+                         f"可计分目标：{stats['scored']} 条 · 待处理记录：{stats['pending']} 条")
+            lines.append("")
+            measures = report.get("measurements") or []
+            if measures:
+                lines.append("## 已记录目标测量 · 10分制")
                 lines.append("")
-                for section in report.get("sections", []):
-                    lines.append(f"## {section.get('title', '')}")
-                    lines.append("")
-                    lines.append(section.get("text", ""))
-                    lines.append("")
-                lines.append("---")
-                lines.append("本报告用于课堂教育支持复盘，不构成医学诊断、学生能力定级或教师绩效结论。")
-                text = "\n".join(lines)
-                filename = f"report_{row['report_id']}.md"
-                content_type = "text/markdown; charset=utf-8"
-            return text, filename, content_type
+                for item in measures:
+                    score = item.get("score")
+                    lines.append(f"- {item.get('label', '')}：" + (f"{score:.2f}" if isinstance(score, (int, float)) else "空缺（不按0分）"))
+                lines.append("")
+                lines.append("不同学生、目标与支持条件不合并排名。6分为试行参考线；空缺不是0分。")
+                lines.append("")
+            for section in report.get("sections", []):
+                lines.append(f"## {section.get('title', '')}")
+                lines.append("")
+                lines.append(section.get("text", ""))
+                lines.append("")
+            lines.append("---")
+            lines.append("本报告用于课堂教育支持复盘，不构成医学诊断、学生能力定级或教师绩效结论。")
+            text = "\n".join(lines)
+            filename = f"report_{row['report_id']}.md"
+            content_type = "text/markdown; charset=utf-8"
+        report_debug_event(
+            self.records, "report_download", "ok", report_id=row["report_id"], task_id=row["task_id"],
+            evaluation_id=meta["evaluation_id"], frame_revision=row["frame_revision"],
+            version_fingerprint=meta["version_fingerprint"], role=role,
+            account_id=account["account_id"], fmt=fmt, status=meta["status"],
+        )
+        return text, filename, content_type
+
+
+def _first(values) -> str:
+    return str(values[0]) if isinstance(values, list) and values else ""
+
+
+def _version_labels(versions) -> list[str]:
+    if not isinstance(versions, list):
+        return []
+    return [f"{item.get('record_id', '')}:v{item.get('version', '')}"
+            for item in versions if isinstance(item, dict)]
+
+
+def _fingerprint(row) -> str:
+    """Short hash of everything a download must still match."""
+    report = json.loads(row["payload_json"] or "{}").get("report", {})
+    basis = json.dumps({
+        "frame_revision": row["frame_revision"], "source_sha256": row["source_sha256"],
+        "record_versions": sorted(_version_labels(report.get("record_versions"))),
+        "evaluation_versions": sorted(_version_labels(report.get("evaluation_versions"))),
+    }, sort_keys=True)
+    return hashlib.sha256(basis.encode("utf-8")).hexdigest()[:16]
+
+
+def _stats(summary) -> dict[str, int]:
+    """The four report cards, taken from the same workspace summary."""
+    def number(key):
+        value = summary.get(key, 0) if isinstance(summary, dict) else 0
+        return value if isinstance(value, int) and not isinstance(value, bool) else 0
+    return {"students": number("students"), "reviewed": number("reviewed"),
+            "scored": number("scored"), "pending": number("pending") + number("reconfirm")}
+
+
+def _strip_keys(value, keys, removed):
+    """Deep-copy ``value`` without the given keys at any nesting level."""
+    if isinstance(value, dict):
+        result = {}
+        for key, item in value.items():
+            if key in keys:
+                removed.append(key)
+                continue
+            result[key] = _strip_keys(item, keys, removed)
+        return result
+    if isinstance(value, list):
+        return [_strip_keys(item, keys, removed) for item in value]
+    return value
 
 
 def _is_admin(token, records) -> bool:

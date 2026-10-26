@@ -7,8 +7,10 @@ No synthetic scores, invented dates, or fabricated confidence values.
 """
 from __future__ import annotations
 
+import json
 from typing import Any
 
+from .assessment_rubric import rubric_contract
 from .demo2_portal import (
     _BOOK_ICON,
     _WORKSPACE_STYLE,
@@ -234,9 +236,12 @@ refresh();
 
 
 def _teacher_script(account_json: str) -> str:
+    # Same contract the backend scores with; '</' escaped so it cannot close the script tag.
+    rubric_json = json.dumps(rubric_contract(), ensure_ascii=False).replace("</", "<\\/")
     init = (
         f"const ACCT={account_json};\n"
         f"const API='{_API}';\n"
+        f"const RUBRIC={rubric_json};\n"
     )
     # JS uses raw braces; no f-string needed for the bulk
     rest = r"""
@@ -250,8 +255,11 @@ async function api(url,opts){
 function msg(text,type=''){const el=byId('pageMsg');el.textContent=text;el.className='page-message'+(type?' '+type:'')+(text?' visible':'');}
 function fmtDate(s){if(!s)return'—';const d=new Date(s);return isNaN(d)?s:`${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;}
 function scoreLabel(v){return v==null?'—':String(v);}
-const DIM_LABELS={accuracy:'准确性',independence:'独立性',consistency:'一致性',transfer:'泛化性'};
-const DIM_WEIGHTS={accuracy:'35%',independence:'30%',consistency:'20%',transfer:'15%'};
+const DIM_LABELS=Object.fromEntries(RUBRIC.dimensions.map(d=>[d.key,d.label]));
+const DIM_WEIGHTS=Object.fromEntries(RUBRIC.dimensions.map(d=>[d.key,d.weight_percent+'%']));
+const EVIDENCE_INSUFFICIENT=RUBRIC.evidence_status.insufficient;
+function fmtScore(v){return v==null?'—':Number(v).toFixed(RUBRIC.decimals);}
+function formalScore(a){return a&&a.evidence_status!==EVIDENCE_INSUFFICIENT&&a.score!=null?a.score:null;}
 let state={students:[],records:[],trends:[],stdStatus:'',selectedId:null,currentTab:'overview',saving:false};
 
 async function loadWorkspace(){
@@ -308,8 +316,8 @@ function renderOverview(){
   const sid=state.selectedId;
   if(!sid){pane.innerHTML='<p style="color:var(--muted)">请从左侧选择学生。</p>';return;}
   const recs=studentRecords(sid);
-  const reviewed=recs.filter(r=>r.reviewed&&r.assessment?.overall_score!=null).length;
-  const pending=recs.filter(r=>!r.reviewed||r.assessment?.overall_score==null).length;
+  const reviewed=recs.filter(r=>formalScore(r.assessment)!=null).length;
+  const pending=recs.length-reviewed;
   pane.innerHTML=`<h2 style="font-size:17px;margin-bottom:4px">${esc(studentName(sid))}</h2>
 <div class="overview-cards">
   <div class="ov-card"><div class="label">有效记录</div><div class="val">${recs.length}</div></div>
@@ -324,8 +332,9 @@ function renderOverview(){
   const recList=byId('ovRecList');
   if(!recs.length){recList.innerHTML='<p style="color:var(--muted);font-size:14px">该学生暂无记录。</p>';return;}
   recList.innerHTML=recs.slice().reverse().map(r=>{
-    const sc=r.assessment?.overall_score;
-    const badge=sc!=null?`<span class="status-badge success">得分 ${sc}</span>`:r.reviewed?'<span class="status-badge warning">待评分</span>':'<span class="status-badge">未复核</span>';
+    const sc=formalScore(r.assessment);
+    const reasons=(r.assessment?.evidence_reasons||[]).join('；');
+    const badge=sc!=null?`<span class="status-badge success">得分 ${fmtScore(sc)}</span>`:`<span class="status-badge warning" title="${esc(reasons)}">${esc(EVIDENCE_INSUFFICIENT)}</span>`;
     return `<div class="rec-row"><div class="rec-row-meta"><strong>${esc(fmtDate(r.lesson_date))} · ${esc(r.course_name||r.lesson_id)}</strong><span>${esc(r.goal_id)} / ${esc(r.measurement_context)}</span></div>${badge}<div class="rec-row-actions"><button class="button" style="font-size:12px;min-height:36px;padding:6px 10px" onclick="editRecord(${JSON.stringify(r.record_id)})">编辑</button><button class="button" style="font-size:12px;min-height:36px;padding:6px 10px;color:var(--danger)" onclick="promptWithdraw(${JSON.stringify(r.record_id)},${r.version})">撤销</button></div></div>`;
   }).join('');
 }
@@ -533,7 +542,7 @@ function renderTrendChart(wrap,legend,note,tableWrap,pts,seriesKey){
     if(prev===null)pathD+=`M${x.toFixed(1)},${y.toFixed(1)}`;
     else pathD+=` L${x.toFixed(1)},${y.toFixed(1)}`;
     prev=p;
-    dots+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="var(--blue)" aria-label="${esc(labels[i]||'')} 得分${p.score}"/>`;
+    dots+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="var(--blue)" aria-label="${esc(labels[i]||'')} 得分${fmtScore(p.score)}"/>`;
   });
   const passY=yScale(6);
   const yLines=[0,2,4,6,8,10].map(v=>{
@@ -558,7 +567,7 @@ function renderTrendChart(wrap,legend,note,tableWrap,pts,seriesKey){
   note.textContent=`共${pts.length}个时间点，其中${nonNull.length}个有已复核得分；空白表示该时间点未达到评分条件或尚未复核，非得分为零。`;
   const tableRows=pts.map(p=>{
     const sessions=p.sessions!=null?p.sessions:'—';
-    return `<tr><td>${esc(seriesKey==='lesson'?p.date||'—':seriesKey==='rolling_60_days'?`${p.from||''}~${p.to||''}`:p.period||'—')}</td><td>${p.score!=null?p.score:'（未评分）'}</td><td>${sessions}</td></tr>`;
+    return `<tr><td>${esc(seriesKey==='lesson'?p.date||'—':seriesKey==='rolling_60_days'?`${p.from||''}~${p.to||''}`:p.period||'—')}</td><td>${p.score!=null?fmtScore(p.score):'（未评分）'}</td><td>${sessions}</td></tr>`;
   }).join('');
   tableWrap.innerHTML=`<table><thead><tr><th>${seriesKey==='lesson'?'日期':seriesKey==='rolling_60_days'?'区间':'周期'}</th><th>综合得分</th><th>课次</th></tr></thead><tbody>${tableRows}</tbody></table>`;
 }
@@ -567,7 +576,7 @@ function renderReport(recordId){
   const pane=byId('paneReport');if(!pane)return;
   const sid=state.selectedId;
   if(!sid){pane.innerHTML='<p style="color:var(--muted)">请从左侧选择学生。</p>';return;}
-  const recs=studentRecords(sid).filter(r=>r.reviewed&&r.assessment?.overall_score!=null);
+  const recs=studentRecords(sid).filter(r=>formalScore(r.assessment)!=null);
   if(!recs.length){pane.innerHTML='<p style="color:var(--muted)">该学生暂无已复核且有综合得分的记录，无法生成报告。</p>';return;}
   let selId=recordId||pane._selId||recs[recs.length-1].record_id;
   if(!recs.find(r=>r.record_id===selId))selId=recs[recs.length-1].record_id;
@@ -576,24 +585,21 @@ function renderReport(recordId){
   const recOpts=recs.slice().reverse().map(x=>`<option value="${esc(x.record_id)}"${x.record_id===selId?' selected':''}>${esc(fmtDate(x.lesson_date))} ${esc(x.goal_id)}</option>`).join('');
   const asmnt=r.assessment||{};
   const dims=asmnt.dimensions||{};
-  const overallScore=asmnt.overall_score;
-  const provScore=asmnt.provisional_score;
+  const overallScore=formalScore(asmnt);
   const passed=asmnt.passed;
   const scaledMax=asmnt.scale?.max||10;
   const passScore=asmnt.scale?.pass_score||6;
-  const insufficientEvidence=asmnt.insufficient_evidence;
+  const insufficientEvidence=asmnt.evidence_status===EVIDENCE_INSUFFICIENT||overallScore==null;
   function dimBar(key){
     const d=dims[key];if(!d||d.score==null)return`<div class="score-bar-row"><span class="score-bar-label">${esc(DIM_LABELS[key]||key)}</span><span style="color:var(--muted);font-size:12px">未观察</span></div>`;
     const pct=Math.min(100,Math.max(0,(d.score/scaledMax)*100));
     return`<div class="score-bar-row"><span class="score-bar-label">${esc(DIM_LABELS[key]||key)}</span><div class="score-bar-track"><div class="score-bar-fill" style="width:${pct.toFixed(1)}%"></div></div><span class="score-bar-val">${d.score}</span><span style="color:var(--muted);font-size:11px">(${esc(DIM_WEIGHTS[key]||'')})</span></div>`;
   }
   let scoreBlock='';
-  if(insufficientEvidence){scoreBlock=`<div class="notice-pilot" style="border-color:var(--warning)">未达到最低评分条件：${esc(insufficientEvidence)}。不生成综合得分，避免基于不充分证据给出数字。</div>`;}
-  else if(overallScore!=null){
+  if(insufficientEvidence){scoreBlock=`<div class="notice-pilot" style="border-color:var(--warning)">${esc(EVIDENCE_INSUFFICIENT)}：${esc((asmnt.evidence_reasons||[]).join('；')||'未达到最低评分条件')}。不生成综合得分，避免基于不充分证据给出数字。</div>`;}
+  else{
     const passedStr=passed===true?'（达到参考合格线）':passed===false?'（未达参考合格线）':'';
-    scoreBlock=`<div style="display:flex;align-items:flex-end;gap:12px;margin-bottom:8px"><span style="font-size:42px;font-weight:700;color:var(--blue-deep);line-height:1">${overallScore}</span><span style="font-size:13px;color:var(--muted)">/ ${scaledMax}分 ${passedStr}</span></div>`;
-  }else if(provScore!=null){
-    scoreBlock=`<div style="margin-bottom:8px"><span style="font-size:32px;font-weight:700;color:var(--muted)">${provScore}</span><span style="font-size:13px;color:var(--muted)"> / ${scaledMax}（暂定，待正式复核）</span></div>`;
+    scoreBlock=`<div style="display:flex;align-items:flex-end;gap:12px;margin-bottom:8px"><span style="font-size:42px;font-weight:700;color:var(--blue-deep);line-height:1">${fmtScore(overallScore)}</span><span style="font-size:13px;color:var(--muted)">/ ${scaledMax}分 ${passedStr}</span></div>`;
   }
   const histTrend=state.trends.find(t=>t.student_id===sid&&t.goal_id===r.goal_id&&t.measurement_context===r.measurement_context&&t.criterion===r.criterion&&t.rubric_version===r.rubric_version);
   const histPts=histTrend?(histTrend.series.lesson||[]):[];
@@ -666,40 +672,34 @@ function downloadReport(){
 
 function renderStandard(){
   const pane=byId('paneStandard');if(!pane)return;
+  const td='padding:8px 10px;border:1px solid #cfdcea';
+  const dimRows=RUBRIC.dimensions.map(d=>`<tr data-dim="${esc(d.key)}"><td style="${td}">${esc(d.label)}</td><td style="${td}">${esc(d.weight_percent)}%</td><td style="${td}">${esc(d.description)}</td></tr>`).join('');
+  const principles=RUBRIC.principles.map(p=>`<li>${esc(p.title)}：${esc(p.text)}</li>`).join('');
+  const dimNames=RUBRIC.dimensions.map(d=>d.label).join('、');
+  const formula=RUBRIC.dimensions.map(d=>`${d.label}×${d.weight.toFixed(2)}`).join(' + ');
   pane.innerHTML=`\
 <h2 style="font-size:16px;margin-bottom:16px">评分标准说明</h2>
 <div class="notice-pilot" style="margin-bottom:16px">试行说明：以下量表为内测期间设计参考，权重与合格线尚待校方基于实际数据确认，不应作为官方验证标准引用或对外传播。</div>
-<div class="card" style="margin-bottom:14px"><div class="card-body">
+<div class="card" style="margin-bottom:14px" id="stdScoring"><div class="card-body">
   <h3 style="font-size:14px;margin-bottom:8px">计分方式</h3>
-  <p style="font-size:13px;line-height:1.8">采用10分制，6分为参考合格线（试行）。综合得分由四个维度加权合成，仅在满足最低观察条件且教师已完成复核后生成。</p>
+  <p style="font-size:13px;line-height:1.8">采用${esc(RUBRIC.scale.max)}分制，${esc(RUBRIC.scale.pass_score)}分为参考合格线（试行）。综合得分由四个维度加权合成，仅在满足最低观察条件且教师已完成复核后生成。</p>
   <table style="margin-top:10px;width:100%;border-collapse:collapse;font-size:13px">
-    <thead><tr style="background:#f7fbff"><th style="padding:8px 10px;border:1px solid #cfdcea;text-align:left">维度</th><th style="padding:8px 10px;border:1px solid #cfdcea;text-align:left">权重（试行）</th><th style="padding:8px 10px;border:1px solid #cfdcea;text-align:left">说明</th></tr></thead>
-    <tbody>
-      <tr><td style="padding:8px 10px;border:1px solid #cfdcea">准确性</td><td style="padding:8px 10px;border:1px solid #cfdcea">35%</td><td style="padding:8px 10px;border:1px solid #cfdcea">目标行为完成正确率，0分=有机会但无成功，留空=无观察机会</td></tr>
-      <tr><td style="padding:8px 10px;border:1px solid #cfdcea">独立性</td><td style="padding:8px 10px;border:1px solid #cfdcea">30%</td><td style="padding:8px 10px;border:1px solid #cfdcea">完成行为所需提示级别，10分=完全独立，0分=全程辅助</td></tr>
-      <tr><td style="padding:8px 10px;border:1px solid #cfdcea">一致性</td><td style="padding:8px 10px;border:1px solid #cfdcea">20%</td><td style="padding:8px 10px;border:1px solid #cfdcea">相同条件下重复出现的稳定程度，需至少2次观察机会</td></tr>
-      <tr><td style="padding:8px 10px;border:1px solid #cfdcea">泛化性</td><td style="padding:8px 10px;border:1px solid #cfdcea">15%</td><td style="padding:8px 10px;border:1px solid #cfdcea">在新材料或新情境中是否出现，无泛化机会时留空而非填0</td></tr>
-    </tbody>
+    <thead><tr style="background:#f7fbff"><th style="${td};text-align:left">维度</th><th style="${td};text-align:left">权重（试行）</th><th style="${td};text-align:left">说明</th></tr></thead>
+    <tbody>${dimRows}</tbody>
   </table>
+  <p style="font-size:12px;color:var(--muted);margin-top:8px" id="stdFormula">综合得分 = ${esc(formula)}，结果保留${esc(RUBRIC.decimals)}位小数。</p>
 </div></div>
-<div class="card" style="margin-bottom:14px"><div class="card-body">
+<div class="card" style="margin-bottom:14px" id="stdPrinciples"><div class="card-body">
   <h3 style="font-size:14px;margin-bottom:8px">评分原则</h3>
-  <ul style="font-size:13px;line-height:2;padding-left:20px;margin:0">
-    <li>目标对齐：所记录行为须与学习目标直接对应，不记录课堂管理或偶发行为。</li>
-    <li>提示层次：同一课次内使用相同提示级别，不混合不同支持强度的观察。</li>
-    <li>相同难度：一致性维度仅统计难度相当的重复试次，不将新材料与熟悉材料混合。</li>
-    <li>新材料独立统计：首次接触新材料或新情境的表现，记入泛化性维度而非准确性。</li>
-    <li>留空而非填0：当某维度没有观察机会时，留空；0分表示有机会但未成功，含义不同。</li>
-    <li>可比性保证：跨课比较须相同目标、测量条件、通过标准和量表版本；任一项不同即不可比。</li>
-  </ul>
+  <ul style="font-size:13px;line-height:2;padding-left:20px;margin:0">${principles}</ul>
 </div></div>
-<div class="card"><div class="card-body">
+<div class="card" id="stdMinimum"><div class="card-body">
   <h3 style="font-size:14px;margin-bottom:8px">最低评分条件</h3>
   <ul style="font-size:13px;line-height:2;padding-left:20px;margin:0">
     <li>教师须勾选"已完成复核"，否则不生成综合得分。</li>
-    <li>准确性、独立性、一致性、泛化性四个维度都须有有效分数（非空）。</li>
-    <li>观察次数至少为2次（observed &ge; 2）。</li>
-    <li>不满足上述任一条件，系统标注"证据不足"，不输出得分数字，不使用置信度作为替代。</li>
+    <li>${esc(dimNames)}四个维度都须有有效分数（非空）。</li>
+    <li>观察次数至少为${esc(RUBRIC.min_observed)}次（observed &ge; ${esc(RUBRIC.min_observed)}）。</li>
+    <li>不满足上述任一条件，系统标注"${esc(EVIDENCE_INSUFFICIENT)}"，不输出得分数字，不使用置信度作为替代。</li>
   </ul>
   <p style="font-size:12px;color:var(--muted);margin-top:10px">如需查看官方相关文献，请联系管理员在后台添加外部链接。</p>
 </div></div>`;

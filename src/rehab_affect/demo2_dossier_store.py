@@ -11,11 +11,13 @@ import hashlib
 import hmac
 import io
 import json
+import logging
 import os
 import re
 import sqlite3
 import stat
 import unicodedata
+import threading
 import zipfile
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
@@ -23,6 +25,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from uuid import uuid4
 
 from .demo2_identity_store import Demo2IdentityStore, IdentityError
+from .evaluation_report_contract import school_id_from_context
 from .student_record_store import _iso
 
 
@@ -33,12 +36,153 @@ SUMMARY_FIELDS = {"learning_goals", "support_methods", "safety_notes", "professi
 DOCUMENT_TYPES = {"iep", "professional_assessment", "five_domain", "safety_support"}
 POLICY = {"max_retention_days": 60, "training_allowed": False}
 LEGACY_NOTICE = "旧全局资料未自动迁移；请核实学生身份和校方授权后，向正确学生显式重新导入。授权勾选不等同于法律同意证明。"
+ACCESS_PURPOSES = {"analysis": "课堂分析", "scoring": "课堂评分"}
+ACCESS_MESSAGES = {
+    "available": "资料授权有效，可在授权范围内用于{purpose}",
+    "authorization_missing": "该学生尚未登记有效的资料授权，资料不可用于{purpose}",
+    "authorization_withdrawn": "该学生的资料授权已撤回，资料不可再用于{purpose}",
+    "authorization_expired": "该学生的资料授权已于 {valid_until} 到期，资料不可再用于{purpose}",
+    "document_missing": "资料版本不存在或不属于该学生，不可用于{purpose}",
+    "document_deleted": "该资料版本已删除，不可再用于{purpose}",
+    "document_withdrawn": "该资料版本所属授权已撤回，不可再用于{purpose}",
+    "document_expired": "该资料版本保存期限已于 {retain_until} 到期，不可再用于{purpose}",
+}
+REFERENCE_WITHDRAWN_MESSAGE = "本课资料引用授权已撤回，分析与评分不再读取该引用中的 IEP 或专业资料"
+EVIDENCE_MESSAGES = {
+    "outdated_revision": "课堂身份采样版本已变化，该来源不再作为本课有效依据",
+    "identity_unavailable": "课堂身份确认已失效，该来源不再作为本课有效依据",
+    "task_unavailable": "课堂任务证据不可用，该来源不再作为本课有效依据",
+}
+DEBUG_LOG_DIR_ENV = "REHAB_DEMO2_DOSSIER_DEBUG_LOG_DIR"
+DEBUG_LOGGER = logging.getLogger("rehab_affect.dossier")
+# Only identifiers, enums, dates and counts are ever logged; names, summaries,
+# source references, filenames and authorization text never reach the log.
+_DEBUG_ID_FIELDS = ("actor_account_id", "student_id", "document_id", "authorization_id", "family_id",
+                    "supersedes_id", "reference_id", "task_id")
+_DEBUG_ENUM_FIELDS = {"document_type": DOCUMENT_TYPES, "storage_mode": {"summary_only", "original_and_summary"},
+                      "purpose": set(ACCESS_PURPOSES)}
+_DEBUG_DATE_FIELDS = ("valid_until", "retain_until", "document_date")
+_DEBUG_COUNT_FIELDS = ("version", "document_count", "candidate_count", "expired_authorization_count",
+                       "expired_document_count", "purged_count", "deletion_pending_count", "http_status",
+                       "valid_source_count", "invalid_source_count", "reference_count", "included_count",
+                       "excluded_count", "iep_included_count", "professional_included_count")
+_DEBUG_TOKEN_FIELDS = ("code", "reason", "status", "error_type", "evidence_status")
+_DEBUG_LOCK = threading.Lock()
 
 
 class DossierError(ValueError):
     def __init__(self, status, code, message):
         super().__init__(message)
         self.status, self.code, self.message = status, code, message
+
+
+def debug_log_dir(records):
+    configured = os.getenv(DEBUG_LOG_DIR_ENV, "").strip()
+    return Path(configured) if configured else Path(os.path.abspath(Path(records.upload_dir).parent / "logs"))
+
+
+def _debug_value(key, value):
+    if value is None:
+        return None
+    if key in _DEBUG_ID_FIELDS or key in _DEBUG_TOKEN_FIELDS:
+        text = str(value)
+        return text if re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", text) else "<invalid>"
+    if key in _DEBUG_ENUM_FIELDS:
+        return value if value in _DEBUG_ENUM_FIELDS[key] else "<invalid>"
+    if key in _DEBUG_DATE_FIELDS:
+        return value if isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) else "<invalid>"
+    if key in _DEBUG_COUNT_FIELDS:
+        return value if isinstance(value, int) and not isinstance(value, bool) else "<invalid>"
+    if key == "has_file":
+        return bool(value)
+    return None
+
+
+def debug_event(records, operation, result, **fields):
+    """Write one structured dossier debug line; logging never blocks the operation."""
+    entry = {"ts": datetime.now().astimezone().isoformat(timespec="milliseconds"),
+             "operation": _debug_value("code", operation), "result": _debug_value("status", result)}
+    for key, value in fields.items():
+        cleaned = _debug_value(key, value)
+        if cleaned is not None:
+            entry[key] = cleaned
+    line = json.dumps(entry, ensure_ascii=False, sort_keys=False, separators=(",", ":"))
+    DEBUG_LOGGER.debug(line)
+    try:
+        folder = debug_log_dir(records)
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"dossier_debug_{entry['ts'][:10].replace('-', '')}.jsonl"
+        with _DEBUG_LOCK, path.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except (OSError, TypeError, ValueError):
+        DEBUG_LOGGER.warning("dossier debug log write failed")
+    return entry
+
+
+def _access_result(purpose, reason, *, student_id="", authorization_id="", valid_until="", document_id="",
+                   document_type="", retain_until=""):
+    message = ACCESS_MESSAGES[reason].format(purpose=ACCESS_PURPOSES.get(purpose, "分析和评分"),
+                                             valid_until=valid_until or "授权截止日",
+                                             retain_until=retain_until or "保存截止日")
+    return {"available": reason == "available", "reason": reason, "message": message, "purpose": purpose,
+            "student_id": student_id, "authorization_id": authorization_id, "valid_until": valid_until,
+            "document_id": document_id, "document_type": document_type, "retain_until": retain_until}
+
+
+def material_access_state(db, *, student_id="", document_id="", purpose="analysis"):
+    """Explain whether a student's dossier (or one version) may feed analysis/scoring."""
+    tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if not {"demo2_dossier_authorizations", "demo2_dossier_documents"} <= tables:
+        return _access_result(purpose, "document_missing" if document_id else "authorization_missing",
+                              student_id=student_id, document_id=document_id)
+    doc = None
+    if document_id:
+        doc = db.execute("""SELECT document_id, student_id, authorization_id, document_type, status, retain_until,
+            purge_reason, metadata_ciphertext FROM demo2_dossier_documents WHERE document_id = ?""", (document_id,)).fetchone()
+        if doc is None or (student_id and doc["student_id"] != student_id):
+            return _access_result(purpose, "document_missing", student_id=student_id, document_id=document_id)
+        student_id = doc["student_id"]
+    today = _today().isoformat()
+    rows = db.execute("""SELECT * FROM demo2_dossier_authorizations WHERE student_id = ?
+        ORDER BY created_at DESC, rowid DESC""", (student_id,)).fetchall()
+    active = next((row for row in rows if Demo2DossierStore._auth_active(row)), None)
+    if doc is not None:
+        own = next((row for row in rows if row["authorization_id"] == doc["authorization_id"]), None)
+        common = {"student_id": student_id, "document_id": doc["document_id"], "document_type": doc["document_type"],
+                  "retain_until": doc["retain_until"]}
+        if own is not None and not Demo2DossierStore._auth_active(own):
+            reason = "authorization_withdrawn" if own["status"] == "withdrawn" else "authorization_expired"
+            return _access_result(purpose, reason, authorization_id=own["authorization_id"], valid_until=own["valid_until"], **common)
+        if doc["status"] != "available" or doc["metadata_ciphertext"] is None:
+            final = doc["purge_reason"] or doc["status"]
+            reason = {"withdrawn": "document_withdrawn", "expired": "document_expired"}.get(final, "document_deleted")
+            return _access_result(purpose, reason, authorization_id=doc["authorization_id"], **common)
+        if doc["retain_until"] <= today:
+            return _access_result(purpose, "document_expired", authorization_id=doc["authorization_id"], **common)
+        if own is None:
+            return _access_result(purpose, "authorization_missing", **common)
+        return _access_result(purpose, "available", authorization_id=own["authorization_id"], valid_until=own["valid_until"], **common)
+    if active is not None:
+        return _access_result(purpose, "available", student_id=student_id, authorization_id=active["authorization_id"],
+                              valid_until=active["valid_until"])
+    if not rows:
+        return _access_result(purpose, "authorization_missing", student_id=student_id)
+    latest = rows[0]
+    reason = "authorization_withdrawn" if latest["status"] == "withdrawn" else "authorization_expired"
+    return _access_result(purpose, reason, student_id=student_id, authorization_id=latest["authorization_id"],
+                          valid_until=latest["valid_until"])
+
+
+def current_iep_versions(rows, available):
+    """Latest still-usable version per IEP family; other types never qualify."""
+    heads = {}
+    for row in rows:
+        if row["document_type"] != "iep" or not available(row):
+            continue
+        current = heads.get(row["family_id"])
+        if current is None or row["version"] > current["version"]:
+            heads[row["family_id"]] = row
+    return sorted(heads.values(), key=lambda row: (row["document_date"], row["created_at"], row["document_id"]))
 
 
 def _today():
@@ -195,6 +339,10 @@ class Demo2DossierStore:
                 );
             """)
             connection.execute("INSERT OR IGNORE INTO demo2_dossier_storage_identity VALUES (1, ?)", (uuid4().hex,))
+            # Additive migration: a classroom may withdraw its own use of a reference without deleting history.
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(demo2_dossier_references)")}
+            if "withdrawn_at" not in columns:
+                connection.execute("ALTER TABLE demo2_dossier_references ADD COLUMN withdrawn_at TEXT NOT NULL DEFAULT ''")
 
     def _storage_owned(self, connection):
         # Never adopt a populated legacy root: filenames/DB rows are not proof
@@ -350,6 +498,25 @@ class Demo2DossierStore:
             actor = self._actor(connection, token, admin=admin)
             yield connection, actor
 
+    def _debug(self, operation, result, **fields):
+        return debug_event(self.records, operation, result, **fields)
+
+    @contextmanager
+    def _trace(self, operation, **fields):
+        trace = dict(fields)
+        try:
+            yield trace
+        except DossierError as error:
+            trace.pop("result", None)
+            self._debug(operation, "rejected", code=error.code, http_status=error.status, **trace)
+            raise
+        except Exception as error:
+            trace.pop("result", None)
+            self._debug(operation, "error", error_type=type(error).__name__, **trace)
+            raise
+        else:
+            self._debug(operation, trace.pop("result", "ok"), **trace)
+
     def _audit(self, connection, actor, action, object_id, detail=None):
         self.records._audit(connection, actor if isinstance(actor, str) else actor["account_id"], action,
                             "demo2_dossier", object_id, detail or {})
@@ -422,6 +589,19 @@ class Demo2DossierStore:
             (SELECT reference_id FROM demo2_dossier_reference_documents WHERE document_id = ?)""", (document_id,))
 
     def cleanup_expired(self):
+        events = []
+        try:
+            result = self._cleanup_expired(events)
+        except Exception as error:
+            self._debug("expiry_check", "error", error_type=type(error).__name__)
+            raise
+        for operation, outcome, fields in events:
+            self._debug(operation, outcome, **fields)
+        if any(result[key] for key in result):
+            self._debug("expiry_check", "changed", **result)
+        return result
+
+    def _cleanup_expired(self, events):
         expired_auth = expired_docs = purged = pending = 0
         with self.records._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -431,17 +611,24 @@ class Demo2DossierStore:
                 return {"expired_authorization_count": 0, "expired_document_count": 0,
                         "purged_count": 0, "deletion_pending_count": pending}
             today = _today().isoformat()
-            for row in connection.execute("SELECT authorization_id FROM demo2_dossier_authorizations WHERE status = 'active' AND valid_until <= ?", (today,)).fetchall():
+            for row in connection.execute("SELECT authorization_id, student_id, valid_until FROM demo2_dossier_authorizations WHERE status = 'active' AND valid_until <= ?", (today,)).fetchall():
                 connection.execute("UPDATE demo2_dossier_authorizations SET status = 'expired', metadata_ciphertext = NULL, updated_at = ? WHERE authorization_id = ?", (_iso(), row[0]))
                 self._audit(connection, "dossier_maintenance", "dossier_authorization_expired", row[0])
+                events.append(("authorization_expiry_check", "expired", {"student_id": row["student_id"], "authorization_id": row["authorization_id"],
+                                                                         "valid_until": row["valid_until"], "status": "expired"}))
                 expired_auth += 1
-            rows = connection.execute("""SELECT d.document_id, d.retain_until, a.status AS authorization_status
+            rows = connection.execute("""SELECT d.document_id, d.student_id, d.document_type, d.version, d.authorization_id, d.retain_until,
+                a.status AS authorization_status
                 FROM demo2_dossier_documents d JOIN demo2_dossier_authorizations a ON a.authorization_id = d.authorization_id
                 WHERE d.status = 'available' AND (d.retain_until <= ? OR a.status <> 'active')""", (today,)).fetchall()
             for row in rows:
                 reason = "withdrawn" if row["authorization_status"] == "withdrawn" else "expired"
                 self._retire(connection, row["document_id"], reason)
                 self._audit(connection, "dossier_maintenance", "dossier_document_expired" if reason == "expired" else "dossier_document_withdrawn", row["document_id"])
+                events.append(("document_expiry_check", reason, {"student_id": row["student_id"], "document_id": row["document_id"],
+                                                                 "document_type": row["document_type"], "version": row["version"],
+                                                                 "authorization_id": row["authorization_id"], "retain_until": row["retain_until"],
+                                                                 "reason": "retain_until_reached" if row["retain_until"] <= today else "authorization_" + row["authorization_status"]}))
                 expired_docs += reason == "expired"
             for row in connection.execute("SELECT * FROM demo2_dossier_documents WHERE status = 'deletion_pending'").fetchall():
                 try:
@@ -451,10 +638,14 @@ class Demo2DossierStore:
                         encrypted_file_bytes = 0, metadata_ciphertext = NULL, updated_at = ? WHERE document_id = ?""",
                         (row["purge_reason"] or "deleted", _iso(), row["document_id"]))
                     self._audit(connection, "dossier_maintenance", "dossier_file_purged", row["document_id"])
+                    events.append(("document_purge", "purged", {"student_id": row["student_id"], "document_id": row["document_id"],
+                                                                "document_type": row["document_type"], "status": row["purge_reason"] or "deleted"}))
                     purged += 1
                 except (OSError, DossierError):
                     pending += 1
                     self._audit(connection, "dossier_maintenance", "dossier_purge_retry", row["document_id"], {"pending_count": 1})
+                    events.append(("document_purge", "retry", {"student_id": row["student_id"], "document_id": row["document_id"],
+                                                               "document_type": row["document_type"]}))
             # Recover ciphertext left by a failed SQLite commit/process crash.
             # Only UUID files in this NEW dedicated root are ever considered.
             try:
@@ -484,6 +675,13 @@ class Demo2DossierStore:
                 "purged_count": purged, "deletion_pending_count": pending}
 
     def save_authorization(self, token, payload):
+        with self._trace("authorization_save", student_id=payload.get("student_id") if isinstance(payload, dict) else None) as trace:
+            result = self._save_authorization(token, payload)
+            trace.update(authorization_id=result["authorization_id"], valid_until=result["valid_until"],
+                         storage_mode=result["storage_mode"], status=result["status"])
+            return result
+
+    def _save_authorization(self, token, payload):
         with self._session(token) as (connection, actor):
             _payload(payload, "student_id reference storage_mode valid_until confirmed", confirmed=True)
             student = self._student(connection, actor, payload["student_id"])
@@ -507,6 +705,15 @@ class Demo2DossierStore:
             return self._public_authorization(row)
 
     def withdraw_authorization(self, token, payload):
+        fields = payload if isinstance(payload, dict) else {}
+        with self._trace("authorization_withdraw", student_id=fields.get("student_id"), authorization_id=fields.get("authorization_id")) as trace:
+            result = self._withdraw_authorization(token, payload)
+            trace.update(status=result["status"], deletion_pending_count=result["deletion_pending_count"],
+                         document_count=result.get("document_count", 0))
+            return result
+
+    def _withdraw_authorization(self, token, payload):
+        document_count = 0
         with self._session(token) as (connection, actor):
             _payload(payload, "student_id authorization_id confirmed", confirmed=True)
             auth = self._authorization(connection, actor, payload["authorization_id"], payload["student_id"])
@@ -517,11 +724,24 @@ class Demo2DossierStore:
                 rows = connection.execute("SELECT document_id FROM demo2_dossier_documents WHERE authorization_id = ?", (auth["authorization_id"],)).fetchall()
                 for row in rows:
                     self._retire(connection, row[0], "withdrawn")
+                document_count = len(rows)
                 self._audit(connection, actor, "dossier_authorization_withdrawn", auth["authorization_id"], {"document_count": len(rows)})
         cleanup = self.cleanup_expired()
-        return {"authorization_id": auth["authorization_id"], "status": "withdrawn", "deletion_pending_count": cleanup["deletion_pending_count"]}
+        return {"authorization_id": auth["authorization_id"], "status": "withdrawn", "deletion_pending_count": cleanup["deletion_pending_count"],
+                "document_count": document_count}
 
     def create_document(self, token, payload):
+        fields = payload if isinstance(payload, dict) else {}
+        operation = "document_version_create" if fields.get("supersedes_id") else "document_create"
+        with self._trace(operation, student_id=fields.get("student_id"), authorization_id=fields.get("authorization_id"),
+                         document_type=fields.get("document_type"), supersedes_id=fields.get("supersedes_id") or None,
+                         retain_until=fields.get("retain_until")) as trace:
+            result = self._create_document(token, payload)
+            trace.update(document_id=result["document_id"], version=result["version"], family_id=result["family_id"],
+                         status=result["status"], has_file=result["has_file"])
+            return result
+
+    def _create_document(self, token, payload):
         failure = None
         with self._session(token) as (connection, actor):
             _payload(payload, "student_id authorization_id document_type document_date source_ref retain_until summary filename content_base64 supersedes_id")
@@ -533,8 +753,13 @@ class Demo2DossierStore:
             if not isinstance(kind, str) or kind not in DOCUMENT_TYPES:
                 raise DossierError(400, "invalid_document_type", "资料类型无效")
             issued, until = _date(payload["document_date"]), _date(payload["retain_until"])
-            if issued > _today() or not _today() < until <= _date(auth["valid_until"]):
-                raise DossierError(400, "invalid_retention", "资料日期或保存期限超出授权范围")
+            if issued > _today():
+                raise DossierError(400, "invalid_document_date", "资料日期不能晚于今天")
+            if until > _date(auth["valid_until"]):
+                raise DossierError(400, "retention_after_authorization",
+                                   f"资料保存至日期不得晚于授权截止日 {auth['valid_until']}，请调整保存期限")
+            if until <= _today():
+                raise DossierError(400, "invalid_retention", "资料保存至日期须晚于今天")
             source = _text(payload["source_ref"], 200, required=True)
             summary = payload["summary"]
             if not isinstance(summary, dict) or set(summary) != SUMMARY_FIELDS:
@@ -588,8 +813,14 @@ class Demo2DossierStore:
         return public
 
     def document_download(self, token, document_id):
+        with self._trace("document_download", document_id=document_id) as trace:
+            data, filename, content_type = self._document_download(token, document_id, trace)
+            return data, filename, content_type
+
+    def _document_download(self, token, document_id, trace):
         with self._session(token) as (connection, actor):
             row = self._document(connection, actor, document_id)
+            trace.update(student_id=row["student_id"], document_type=row["document_type"], version=row["version"])
             self._require_available(connection, row)
             if not row["has_file"]:
                 raise DossierError(404, "original_unavailable", "此版本未保存原件")
@@ -609,17 +840,64 @@ class Demo2DossierStore:
             return data, meta["filename"], meta["content_type"]
 
     def delete_document(self, token, payload):
+        fields = payload if isinstance(payload, dict) else {}
+        with self._trace("document_delete", student_id=fields.get("student_id"), document_id=fields.get("document_id")) as trace:
+            return self._delete_document(token, payload, trace)
+
+    def _delete_document(self, token, payload, trace):
         with self._session(token) as (connection, actor):
             _payload(payload, "student_id document_id confirmed", confirmed=True)
             self._student(connection, actor, payload["student_id"])
             row = self._document(connection, actor, payload["document_id"], payload["student_id"])
+            trace.update(document_type=row["document_type"], version=row["version"])
             if row["status"] == "available":
                 self._retire(connection, row["document_id"], "deleted")
                 self._audit(connection, actor, "dossier_document_deleted", row["document_id"])
         self.cleanup_expired()
         with self.records._connect() as connection:
             status = connection.execute("SELECT status FROM demo2_dossier_documents WHERE document_id = ?", (row["document_id"],)).fetchone()[0]
+        trace.update(status=status)
         return {"document_id": row["document_id"], "status": status, "available": False}
+
+    def iep_context(self, token, student_id):
+        """Current IEP for one student: only document_type='iep', never a silent pick."""
+        with self._trace("iep_context_query", student_id=student_id, document_type="iep") as trace:
+            with self._session(token) as (connection, actor):
+                student = self._student(connection, actor, student_id)
+                access = material_access_state(connection, student_id=student["student_id"], purpose="analysis")
+                base = {"student_id": student["student_id"], "document_type": "iep", "iep": None, "iep_document_id": "",
+                        "candidates": [], "access": access}
+                if not access["available"]:
+                    trace.update(result="unavailable", reason=access["reason"], authorization_id=access["authorization_id"])
+                    return {**base, "status": "unavailable", "reason": access["reason"], "message": access["message"]}
+                rows = [dict(row) for row in connection.execute("""SELECT * FROM demo2_dossier_documents
+                    WHERE student_id = ? AND document_type = 'iep' ORDER BY created_at, version""", (student["student_id"],))]
+                heads = current_iep_versions(rows, lambda row: self._available(connection, row))
+                trace.update(candidate_count=len(heads), authorization_id=access["authorization_id"])
+                if not heads:
+                    trace.update(result="not_found", reason="iep_not_found")
+                    return {**base, "status": "not_found", "reason": "iep_not_found",
+                            "message": "该学生当前没有有效的 IEP 资料；专业评估等其他资料不会作为 IEP 使用"}
+                if len(heads) > 1:
+                    trace.update(result="ambiguous", reason="multiple_current_iep")
+                    candidates = [{key: row[key] for key in ("document_id", "family_id", "version", "document_date", "retain_until")} for row in heads]
+                    return {**base, "status": "ambiguous", "reason": "multiple_current_iep", "candidates": candidates,
+                            "message": f"该学生同时存在 {len(heads)} 份有效 IEP，系统不自动选择；请教师核实后删除或明确使用其中一份"}
+                public = self._public_document(connection, heads[0])
+                trace.update(result="available", document_id=public["document_id"], version=public["version"])
+                return {**base, "status": "available", "reason": "available", "iep": public,
+                        "iep_document_id": public["document_id"], "message": "已读取该学生唯一有效的 IEP 当前版本"}
+
+    def material_access(self, token, student_id, purpose):
+        with self._trace("material_access_check", student_id=student_id, purpose=purpose) as trace:
+            if purpose not in ACCESS_PURPOSES:
+                raise DossierError(400, "invalid_purpose", "用途须为 analysis（课堂分析）或 scoring（课堂评分）")
+            with self._session(token) as (connection, actor):
+                student = self._student(connection, actor, student_id)
+                state = material_access_state(connection, student_id=student["student_id"], purpose=purpose)
+            trace.update(result="available" if state["available"] else "unavailable", reason=state["reason"],
+                         authorization_id=state["authorization_id"] or None, valid_until=state["valid_until"] or None)
+            return state
 
     def _task(self, connection, actor, task_id):
         try:
@@ -646,13 +924,15 @@ class Demo2DossierStore:
         bindings = [dict(row) for row in rows if row["frame_key"] in frames and row["time_sec"] == frames[row["frame_key"]]["time_sec"]]
         return bindings, "current" if bindings else "identity_unavailable"
 
-    def _reference_public(self, connection, actor, row):
+    def _reference_public(self, connection, actor, row, *, log=True):
         links = [dict(item) for item in connection.execute("SELECT document_id,version FROM demo2_dossier_reference_documents WHERE reference_id = ? ORDER BY ordinal", (row["reference_id"],))]
         documents = [self._public_document(connection, self._document(connection, actor, link["document_id"], row["student_id"])) for link in links]
         recorded = json.loads(row["binding_ids_json"])
         evidence_status = "identity_unavailable"
+        school_id = ""
         try:
             task = self._task(connection, actor, row["task_id"])
+            school_id = school_id_from_context(self.identities._context(task.get("school_context_json"), required=False))
             current, evidence_status = self._live_bindings(connection, task)
             ids = {item["binding_id"] for item in current if item["student_id"] == row["student_id"]}
             if task["sha256"] != row["source_sha256"] or self.identities._revision(task) != row["frame_revision"]:
@@ -662,15 +942,50 @@ class Demo2DossierStore:
         except DossierError:
             evidence_status = "task_unavailable"
         meta = self._open_json("reference", row["reference_id"], row["metadata_ciphertext"]) if row["metadata_ciphertext"] else {}
+        withdrawn_at = row.get("withdrawn_at") or ""
+        sources = []
+        for link, document in zip(links, documents):
+            if withdrawn_at:
+                reason, message = "reference_withdrawn", REFERENCE_WITHDRAWN_MESSAGE
+            elif not document["available"]:
+                state = material_access_state(connection, student_id=row["student_id"], document_id=link["document_id"])
+                reason = state["reason"] if not state["available"] else "document_unavailable"
+                message = state["message"] if not state["available"] else "资料版本已不可用，不作为本课有效依据"
+            elif evidence_status != "current":
+                reason, message = evidence_status, EVIDENCE_MESSAGES.get(evidence_status, "身份依据未确认，该来源不作为本课有效依据")
+            else:
+                reason, message = "available", "授权、资料版本与当前身份依据均有效"
+            sources.append({"document_id": link["document_id"], "version": link["version"],
+                            "document_type": document["document_type"], "valid_as_evidence": reason == "available",
+                            "reason": reason, "message": message})
         sources_available = all(document["available"] for document in documents) and bool(documents)
-        available = sources_available and evidence_status == "current"
-        return {"reference_id": row["reference_id"], "task_id": row["task_id"], "student_id": row["student_id"],
-                "course_id": meta.get("course_id", ""), "course_name": meta.get("course_name", ""),
-                "frame_revision": row["frame_revision"], "source_sha256": row["source_sha256"], "bindings": recorded,
-                "document_versions": links, "documents": documents, "created_at": row["created_at"], "available": available,
-                "evidence_status": evidence_status,
-                "status": "sources_unavailable" if not sources_available else "available" if available else evidence_status,
-                "identity_scope": "single_sample_frame", "notice": "这是教师确认的单帧身份与授权资料版本引用，不是自动诊断、连续身份跟踪或教学成效结论。"}
+        available = sources_available and evidence_status == "current" and not withdrawn_at
+        status = ("withdrawn" if withdrawn_at else "sources_unavailable" if not sources_available
+                  else "available" if available else evidence_status)
+        iep_docs = [doc for doc in documents if doc["document_type"] == "iep"]
+        iep_ids = [doc["document_id"] for doc in iep_docs]
+        # v1 and v2 of one IEP family resolve to the newest; separate families stay ambiguous.
+        iep_document_id = ("" if not iep_docs else "ambiguous" if len({doc["family_id"] for doc in iep_docs}) > 1
+                           else max(iep_docs, key=lambda doc: doc["version"])["document_id"])
+        result = {"reference_id": row["reference_id"], "task_id": row["task_id"], "video_task_id": row["task_id"],
+                  "school_id": school_id, "student_id": row["student_id"],
+                  "iep_document_id": iep_document_id,
+                  "course_id": meta.get("course_id", ""), "course_name": meta.get("course_name", ""),
+                  "frame_revision": row["frame_revision"], "source_sha256": row["source_sha256"], "bindings": recorded,
+                  "document_versions": links,
+                  "iep_document_ids": iep_ids,
+                  "documents": documents, "sources": sources, "created_at": row["created_at"], "available": available,
+                  "withdrawn": bool(withdrawn_at), "withdrawn_at": withdrawn_at,
+                  "identity_valid": evidence_status == "current", "sources_available": sources_available,
+                  "evidence_status": evidence_status, "status": status,
+                  "identity_scope": "single_sample_frame", "notice": "这是教师确认的单帧身份与授权资料版本引用，不是自动诊断、连续身份跟踪或教学成效结论。"}
+        if log:
+            invalid = [item for item in sources if not item["valid_as_evidence"]]
+            self._debug("reference_validity_check", "valid" if available else "invalid", task_id=row["task_id"],
+                        student_id=row["student_id"], reference_id=row["reference_id"], status=status,
+                        evidence_status=evidence_status, reason=invalid[0]["reason"] if invalid else "available",
+                        valid_source_count=len(sources) - len(invalid), invalid_source_count=len(invalid))
+        return result
 
     def _references(self, connection, actor, *, student_id=None, task_id=None):
         field, value = ("student_id", student_id) if student_id is not None else ("task_id", task_id)
@@ -696,7 +1011,9 @@ class Demo2DossierStore:
             students = []
             for student_id in dict.fromkeys(item["student_id"] for item in bindings):
                 student = self._student(connection, actor, student_id)
-                docs = [self._public_document(connection, dict(row)) for row in connection.execute("SELECT * FROM demo2_dossier_documents WHERE student_id = ? ORDER BY created_at,version", (student_id,))]
+                # Only versions usable right now; withdrawn/deleted/expired versions never become new references.
+                docs = [public for public in (self._public_document(connection, dict(row)) for row in connection.execute(
+                    "SELECT * FROM demo2_dossier_documents WHERE student_id = ? ORDER BY created_at,version", (student_id,))) if public["available"]]
                 students.append({"student_id": student_id, "display_name": student["display_name"],
                                  "confirmed_binding_count": sum(item["student_id"] == student_id for item in bindings), "documents": docs})
             self._audit(connection, actor, "dossier_task_viewed", task_id, {"student_count": len(students)})
@@ -705,45 +1022,119 @@ class Demo2DossierStore:
                     "notice": "仅列出当前版本有效学生身份绑定；历史引用保留失效标记。" if reason == "current" else "当前没有可用于新资料引用的有效身份与原视频证据。"}
 
     def create_reference(self, token, payload):
-        with self._session(token) as (connection, actor):
-            _payload(payload, "task_id student_id frame_revision document_ids confirmed", confirmed=True)
-            student = self._student(connection, actor, payload["student_id"])
-            task = self._task(connection, actor, payload["task_id"])
-            if payload["frame_revision"] != self.identities._revision(task):
-                raise DossierError(409, "stale_frame_revision", "身份采样版本已变化，请刷新后复核")
-            bindings, reason = self._live_bindings(connection, task)
-            bindings = [item for item in bindings if item["student_id"] == student["student_id"]]
-            if reason != "current" or not bindings:
-                raise DossierError(409, "identity_unavailable", "没有当前有效的学生身份与原视频证据，不能建立新引用")
-            ids = payload["document_ids"]
-            if (not isinstance(ids, list) or not 1 <= len(ids) <= 10 or any(not isinstance(value, str) for value in ids)
-                    or len(ids) != len(set(ids))):
-                raise DossierError(400, "invalid_document_ids", "请选择一至十个不同的资料版本")
-            documents = [self._document(connection, actor, value, student["student_id"]) for value in ids]
-            for document in documents:
-                self._require_available(connection, document)
-            object_id = uuid4().hex
-            row = {"reference_id": object_id, "student_id": student["student_id"], "owner_account_id": actor["account_id"],
-                   "scope_key": student["scope_key"], "task_id": task["task_id"], "frame_revision": self.identities._revision(task),
-                   "source_sha256": task["sha256"], "binding_ids_json": _json([{key: item[key] for key in ("binding_id", "frame_key", "time_sec")} for item in bindings]),
-                   "metadata_ciphertext": self._seal_json("reference", object_id, {"course_id": task["course_id"], "course_name": task["course_name"]}), "created_at": _iso()}
-            connection.execute("""INSERT INTO demo2_dossier_references VALUES
-                (:reference_id,:student_id,:owner_account_id,:scope_key,:task_id,:frame_revision,:source_sha256,:binding_ids_json,:metadata_ciphertext,:created_at)""", row)
-            connection.executemany("INSERT INTO demo2_dossier_reference_documents VALUES (?,?,?,?)",
-                                   [(object_id, doc["document_id"], doc["version"], index) for index, doc in enumerate(documents)])
-            self._audit(connection, actor, "dossier_reference_created", object_id, {"task_id": task["task_id"], "student_id": student["student_id"], "document_count": len(documents)})
-            return self._reference_public(connection, actor, row)
+        fields = payload if isinstance(payload, dict) else {}
+        requested = fields.get("document_ids")
+        with self._trace("reference_create", task_id=fields.get("task_id"), student_id=fields.get("student_id"),
+                         document_count=len(requested) if isinstance(requested, list) else None) as trace:
+            with self._session(token) as (connection, actor):
+                _payload(payload, "task_id student_id frame_revision document_ids confirmed", confirmed=True)
+                student = self._student(connection, actor, payload["student_id"])
+                task = self._task(connection, actor, payload["task_id"])
+                if payload["frame_revision"] != self.identities._revision(task):
+                    raise DossierError(409, "stale_frame_revision", "身份采样版本已变化，请刷新后复核")
+                bindings, reason = self._live_bindings(connection, task)
+                bindings = [item for item in bindings if item["student_id"] == student["student_id"]]
+                if reason != "current" or not bindings:
+                    raise DossierError(409, "identity_unavailable", "没有当前有效的学生身份与原视频证据，不能建立新引用")
+                ids = payload["document_ids"]
+                if (not isinstance(ids, list) or not 1 <= len(ids) <= 10 or any(not isinstance(value, str) for value in ids)
+                        or len(ids) != len(set(ids))):
+                    raise DossierError(400, "invalid_document_ids", "请选择一至十个不同的资料版本")
+                documents = [self._document(connection, actor, value, student["student_id"]) for value in ids]
+                for document in documents:
+                    self._require_available(connection, document)
+                object_id = uuid4().hex
+                row = {"reference_id": object_id, "student_id": student["student_id"], "owner_account_id": actor["account_id"],
+                       "scope_key": student["scope_key"], "task_id": task["task_id"], "frame_revision": self.identities._revision(task),
+                       "source_sha256": task["sha256"], "binding_ids_json": _json([{key: item[key] for key in ("binding_id", "frame_key", "time_sec")} for item in bindings]),
+                       "metadata_ciphertext": self._seal_json("reference", object_id, {"course_id": task["course_id"], "course_name": task["course_name"]}),
+                       "created_at": _iso(), "withdrawn_at": ""}
+                connection.execute("""INSERT INTO demo2_dossier_references (reference_id,student_id,owner_account_id,scope_key,task_id,
+                    frame_revision,source_sha256,binding_ids_json,metadata_ciphertext,created_at,withdrawn_at) VALUES
+                    (:reference_id,:student_id,:owner_account_id,:scope_key,:task_id,:frame_revision,:source_sha256,:binding_ids_json,:metadata_ciphertext,:created_at,:withdrawn_at)""", row)
+                connection.executemany("INSERT INTO demo2_dossier_reference_documents VALUES (?,?,?,?)",
+                                       [(object_id, doc["document_id"], doc["version"], index) for index, doc in enumerate(documents)])
+                self._audit(connection, actor, "dossier_reference_created", object_id, {"task_id": task["task_id"], "student_id": student["student_id"], "document_count": len(documents)})
+                result = self._reference_public(connection, actor, row, log=False)
+            trace.update(result="created", reference_id=object_id, task_id=task["task_id"], student_id=student["student_id"],
+                         document_count=len(documents), status=result["status"], evidence_status=result["evidence_status"])
+            return result
+
+    def _reference_row(self, connection, actor, reference_id):
+        row = connection.execute("SELECT * FROM demo2_dossier_references WHERE reference_id = ? AND owner_account_id = ? AND scope_key = ?",
+                                 (_text(reference_id, 120, required=True), actor["account_id"], self._scope(connection, actor))).fetchone()
+        if row is None:
+            raise DossierError(404, "reference_unavailable", "引用不存在或不可访问")
+        self._student(connection, actor, row["student_id"])
+        return dict(row)
 
     def reference_export(self, token, reference_id):
-        with self._session(token) as (connection, actor):
-            row = connection.execute("SELECT * FROM demo2_dossier_references WHERE reference_id = ? AND owner_account_id = ? AND scope_key = ?",
-                                     (_text(reference_id, 120, required=True), actor["account_id"], self._scope(connection, actor))).fetchone()
-            if row is None:
-                raise DossierError(404, "reference_unavailable", "引用不存在或不可访问")
-            self._student(connection, actor, row["student_id"])
-            result = self._reference_public(connection, actor, dict(row))
-            self._audit(connection, actor, "dossier_reference_exported", reference_id)
+        """Download re-verifies authorization, versions and identity; invalid sources are never valid evidence."""
+        with self._trace("reference_export", reference_id=reference_id) as trace:
+            with self._session(token) as (connection, actor):
+                row = self._reference_row(connection, actor, reference_id)
+                result = self._reference_public(connection, actor, row)
+                valid = [item for item in result["sources"] if item["valid_as_evidence"]]
+                invalid = [item for item in result["sources"] if not item["valid_as_evidence"]]
+                result["export"] = {
+                    "export_kind": "classroom_dossier_reference", "verified_at": _iso(),
+                    "valid_evidence": result["available"],
+                    "valid_sources": [{key: item[key] for key in ("document_id", "version", "document_type")} for item in valid],
+                    "invalid_sources": [{key: item[key] for key in ("document_id", "version", "document_type", "reason", "message")} for item in invalid],
+                    "verification_notice": "导出时已重新核验授权、资料版本和当前身份依据；已撤回、删除、过期或身份失效的来源不作为有效依据。"}
+                self._audit(connection, actor, "dossier_reference_exported", reference_id,
+                            {"valid_source_count": len(valid), "invalid_source_count": len(invalid)})
+            trace.update(result="valid" if result["available"] else "invalid", task_id=result["task_id"],
+                         student_id=result["student_id"], status=result["status"], evidence_status=result["evidence_status"],
+                         valid_source_count=len(valid), invalid_source_count=len(invalid))
             return result
+
+    def withdraw_reference(self, token, payload):
+        """Withdraw this classroom's use of the referenced materials; history stays, analysis stops reading it."""
+        fields = payload if isinstance(payload, dict) else {}
+        with self._trace("reference_withdraw", reference_id=fields.get("reference_id")) as trace:
+            with self._session(token) as (connection, actor):
+                _payload(payload, "reference_id confirmed", confirmed=True)
+                row = self._reference_row(connection, actor, payload["reference_id"])
+                trace.update(task_id=row["task_id"], student_id=row["student_id"])
+                if row.get("withdrawn_at"):
+                    raise DossierError(409, "reference_already_withdrawn", "该课堂引用授权已撤回")
+                row["withdrawn_at"] = _iso()
+                connection.execute("UPDATE demo2_dossier_references SET withdrawn_at = ? WHERE reference_id = ? AND withdrawn_at = ''",
+                                   (row["withdrawn_at"], row["reference_id"]))
+                self._audit(connection, actor, "dossier_reference_withdrawn", row["reference_id"], {"task_id": row["task_id"]})
+                result = self._reference_public(connection, actor, row, log=False)
+            trace.update(result="withdrawn", status=result["status"])
+            return result
+
+    def analysis_context(self, token, task_id):
+        """Snapshot of which dossier versions may enter this task's analysis/scoring context right now."""
+        with self._trace("analysis_context_snapshot", task_id=task_id) as trace:
+            with self._session(token) as (connection, actor):
+                task = self._task(connection, actor, task_id)
+                references = self._references(connection, actor, task_id=task["task_id"])
+            entries, included_total, iep_total = [], 0, 0
+            for ref in references:
+                included = [{key: item[key] for key in ("document_id", "version", "document_type")}
+                            for item in ref["sources"] if ref["available"] and item["valid_as_evidence"]]
+                excluded = [{key: item[key] for key in ("document_id", "version", "document_type", "reason", "message")}
+                            for item in ref["sources"] if not (ref["available"] and item["valid_as_evidence"])]
+                included_total += len(included)
+                iep_total += sum(item["document_type"] == "iep" for item in included)
+                entries.append({"reference_id": ref["reference_id"], "student_id": ref["student_id"],
+                                "video_task_id": ref["task_id"], "status": ref["status"], "withdrawn": ref["withdrawn"],
+                                "included": included, "excluded": excluded})
+            professional_total = included_total - iep_total
+            snapshot = {"video_task_id": task["task_id"], "task_id": task["task_id"], "course_id": task["course_id"],
+                        "generated_at": _iso(), "references": entries,
+                        "reads_iep": iep_total > 0, "reads_professional_materials": professional_total > 0,
+                        "iep_included_count": iep_total, "professional_included_count": professional_total,
+                        "notice": "仅当课堂引用未撤回、授权与资料版本有效且当前身份依据有效时，IEP 或专业资料才会进入分析与评分上下文。"}
+            trace.update(result="included" if included_total else "none", task_id=task["task_id"],
+                         reference_count=len(entries), included_count=included_total,
+                         excluded_count=sum(len(entry["excluded"]) for entry in entries),
+                         iep_included_count=iep_total, professional_included_count=professional_total)
+            return snapshot
 
     def admin_summary(self, token):
         with self._session(token, admin=True) as (connection, actor):

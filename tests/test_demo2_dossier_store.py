@@ -512,7 +512,8 @@ def test_storage_marker_binds_canonical_path_and_persistent_database_identity(en
     assert value["database_id"] == query(env, "SELECT database_id FROM demo2_dossier_storage_identity")[0]["database_id"]
     assert canonical.encode() not in saved
     alternate = env.records.db_path.parent / "unused" / ".." / env.records.db_path.name
-    alternate.parent.mkdir(exist_ok=True)
+    # POSIX resolves "unused/.." only when "unused" exists; Windows is lexical.
+    (env.records.db_path.parent / "unused").mkdir(exist_ok=True)
     reopened = Demo2DossierStore(Demo2StudentRecordStore(alternate, env.records.upload_dir))
     with reopened.records._connect() as connection:
         assert reopened._storage_owned(connection)

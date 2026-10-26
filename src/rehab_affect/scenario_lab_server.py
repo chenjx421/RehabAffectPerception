@@ -57,6 +57,9 @@ from .student_record_store import (
 )
 from .showcase import render_showcase_html
 from .demo2_media_cache import MediaResultCache
+from .demo2_upload_debug import task_fields as _upload_task_fields
+from .demo2_upload_debug import upload_debug_event
+from .demo2_admin_debug import admin_debug_event
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -253,6 +256,24 @@ def _session_token(session: Any) -> str:
             if token:
                 return token
     return ""
+
+
+def _render_admin_analysis_guide() -> str:
+    """Static task-selection guide for admins opening /demo2/analysis bare."""
+    return (
+        "<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>请选择课堂任务 · RehabAffect</title>"
+        "<style>body{margin:0;font-family:'Microsoft YaHei','PingFang SC','Segoe UI',sans-serif;"
+        "background:#f3f7fc;color:#102a43}main{max-width:620px;margin:12vh auto;padding:32px;"
+        "background:#fff;border:1px solid #d9e3f0;border-radius:10px}h1{margin:0 0 12px;font-size:24px}"
+        "p{line-height:1.7;color:#486581}a{display:inline-block;margin-top:8px;padding:9px 16px;"
+        "border-radius:6px;background:#1559c7;color:#fff;text-decoration:none}</style></head><body>"
+        "<main id='adminAnalysisGuide'><h1>请选择课堂任务</h1>"
+        "<p><strong>请从任务记录进入。</strong>公司后台需要从「任务查询」或「近期上传」中的任务记录打开分析页面，"
+        "未指定任务时不读取任何课堂数据。</p>"
+        "<p><a href='/demo2/admin#taskQueryTitle'>返回公司后台任务查询</a></p></main></body></html>"
+    )
 
 
 def _render_demo2_portal_page(page: str, account: Any | None = None) -> str:
@@ -973,12 +994,11 @@ def create_handler(
                     parsed_analysis = urlparse(self.path)
                     if _account_role(account) == 'company_admin' and not parsed_analysis.query:
                         self._require_role(account, 'company_admin')
-                        self._send_text_payload(
-                            "<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>"
-                            "<title>请选择课堂任务</title></head><body>"
-                            "<main><h1>请选择课堂任务</h1>"
-                            "<p>公司后台需要从任务记录进入分析页面，未指定任务时不读取任何课堂数据。</p>"
-                            "<p><a href='/demo2/admin'>返回公司后台</a></p></main></body></html>".encode('utf-8'),
+                        # Nothing below this point touches tasks, students or
+                        # results: the guide is static apart from the log line.
+                        self._admin_log(account, "admin_analysis_guide", "guide_shown",
+                                        http_status=200, classroom_data_read=False)
+                        self._send_text_payload(_render_admin_analysis_guide().encode('utf-8'),
                             content_type="text/html; charset=utf-8",
                             extra_headers={"Cache-Control": "no-store, private"},
                         )
@@ -986,7 +1006,19 @@ def create_handler(
                     self._require_role(account, 'school_uploader', 'company_admin')
                     if parsed_analysis.query:
                         task_id, = self._identity_query(parsed_analysis, ('task_id',))
-                        self._measurement_call('course_workspace', self._session_cookie_token(), task_id)
+                        try:
+                            self._measurement_call('course_workspace', self._session_cookie_token(), task_id)
+                        except Demo2APIError as exc:
+                            # Missing and foreign tasks share one 403 so the
+                            # page never reveals whether a task id exists.
+                            if exc.status not in {403, 404}:
+                                self._admin_log(account, "admin_analysis_denied", "failed", task_id=task_id,
+                                                code=exc.code, http_status=exc.status)
+                                raise
+                            self._admin_log(account, "admin_analysis_denied", "forbidden", task_id=task_id,
+                                            code=exc.code, http_status=403)
+                            raise Demo2APIError(403, "task_forbidden", "当前账号无权查看此课堂任务") from None
+                        self._admin_log(account, "admin_analysis_open", "ok", task_id=task_id, http_status=200)
                     renderer = importlib.import_module('.demo2_course_page', package=__package__)
                     self._send_text_payload(renderer.render_course_analysis(account).encode("utf-8"), content_type="text/html; charset=utf-8",
                                             extra_headers={"Cache-Control": "no-store, private"})
@@ -1001,10 +1033,40 @@ def create_handler(
                     self._send_html(_render_demo2_portal_page("identity", account))
                 elif path == "/demo2/simple-result":
                     self._require_role(account, "school_uploader", "company_admin")
-                    task_id, = self._identity_query(urlparse(self.path), ("task_id",))
+                    parsed_result = urlparse(self.path)
+                    # The upload page appends from=upload when it redirects
+                    # after processing; nothing else may widen the query.
+                    redirected = "from=upload" in parsed_result.query.split("&")
+                    if redirected:
+                        task_id, _ = self._identity_query(parsed_result, ("task_id", "from"))
+                    else:
+                        task_id, = self._identity_query(parsed_result, ("task_id",))
                     # The simple result page is the default teacher path. It
                     # authorizes the task without requiring roster binding.
-                    student_store.account_simple_analysis(self._session_cookie_token(), task_id)
+                    try:
+                        student_store.account_simple_analysis(self._session_cookie_token(), task_id)
+                    except ValueError as exc:
+                        message = str(exc)
+                        if any(marker in message for marker in ("无权", "权限", "其他账号")):
+                            mapped = Demo2APIError(403, "task_forbidden", "当前账号无权查看此课堂结果")
+                        elif any(marker in message for marker in ("未找到", "不存在")):
+                            mapped = Demo2APIError(404, "task_unavailable", "课堂任务不存在或已不可用")
+                        else:
+                            mapped = Demo2APIError(400, "result_unavailable", message)
+                        upload_debug_event(student_store, "result_redirect" if redirected else "result_page_open",
+                                           "denied", task_id=task_id, account_id=_account_id(account),
+                                           role=_account_role(account), code=mapped.code, http_status=mapped.status)
+                        raise mapped from exc
+                    task_row: Any = None
+                    try:
+                        task_row = student_store.account_video_task(self._session_cookie_token(), task_id)
+                    except (ValueError, AttributeError):
+                        task_row = None
+                    upload_debug_event(student_store, "result_redirect" if redirected else "result_page_open", "ok",
+                                       role=_account_role(account),
+                                       **{"task_id": task_id, "account_id": _account_id(account),
+                                          **{key: value for key, value in _upload_task_fields(task_row).items()
+                                             if key in {"channel_id", "course_id", "byte_size", "analysis_status"}}})
                     renderer = importlib.import_module(".demo2_simple_result", package=__package__)
                     self._send_text_payload(
                         renderer.render_simple_result().encode("utf-8"),
@@ -1159,19 +1221,40 @@ def create_handler(
                     if not task_id:
                         raise Demo2APIError(400, "invalid_request", "id is required")
                     asset = query.get("asset", ["source"])[0]
+                    as_download = query.get("download", [""])[0] == "1"
+                    operation = "admin_video_download" if as_download else "admin_video_view"
                     try:
                         media_path, content_type = student_store.account_video_media(
                             self._session_cookie_token(), task_id, asset=asset,
                         )
                     except ValueError:
+                        self._admin_log(account, operation, "unavailable", task_id=task_id, asset=asset,
+                                        code="media_unavailable", http_status=404)
                         raise Demo2APIError(404, "media_unavailable", "视频或音轨不可用、已到期，或当前账号无权查看")
-                    self._send_media(media_path, content_type=content_type)
+                    # Range requests from the player would flood the log;
+                    # only the first chunk (or a full download) is recorded.
+                    if as_download or not self.headers.get("Range", "").startswith("bytes=") or \
+                            self.headers.get("Range", "").startswith("bytes=0-"):
+                        self._admin_log(account, operation, "ok", task_id=task_id, asset=asset, http_status=200,
+                                        byte_size=media_path.stat().st_size)
+                    download_name = None
+                    if as_download:
+                        suffix = media_path.suffix if re.fullmatch(r"\.[A-Za-z0-9]{1,8}", media_path.suffix) else ""
+                        download_name = f"video_{task_id}{suffix}" if asset == "source" else f"audio_{task_id}.wav"
+                    self._send_media(media_path, content_type=content_type, download_name=download_name)
                 elif parsed.path == f"{DEMO2_API_PREFIX}/upload/result":
                     task_id = parse_qs(parsed.query).get("id", [""])[0].strip()
                     if not task_id:
                         raise Demo2APIError(400, "invalid_request", "id is required")
-                    result_path, filename = self._account_video_result_for_download(task_id)
+                    try:
+                        result_path, filename = self._account_video_result_for_download(task_id)
+                    except Demo2APIError as exc:
+                        self._admin_log(account, "admin_result_download", "denied", task_id=task_id,
+                                        code=exc.code, http_status=exc.status)
+                        raise
                     content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+                    self._admin_log(account, "admin_result_download", "ok", task_id=task_id, http_status=200,
+                                    byte_size=result_path.stat().st_size)
                     self._send_download(result_path, filename=filename, content_type=content_type)
                 elif parsed.path == f"{DEMO2_API_PREFIX}/simple-result":
                     task_id = parse_qs(parsed.query).get("task_id", [""])[0].strip()
@@ -1235,7 +1318,51 @@ def create_handler(
                             self._session_cookie_token(), upload_page=int(pages[0]))
                     else:
                         summary = student_store.admin_platform_summary(self._session_cookie_token())
+                    storage_bytes = sum(int(item.get("byte_size") or 0) for item in (summary.get("storage") or {}).values()
+                                        if isinstance(item, dict))
+                    self._admin_log(account, "admin_refresh", "ok", http_status=200,
+                                    account_count=len(summary.get("upload_accounts") or []),
+                                    channel_count=len(summary.get("channels") or []),
+                                    task_total=int((summary.get("task_status") or {}).get("total") or 0),
+                                    storage_bytes=storage_bytes,
+                                    page=int((summary.get("upload_pagination") or {}).get("page") or 1))
                     self._send_demo2_json({"ok": True, "summary": summary})
+                elif parsed.path == f"{DEMO2_API_PREFIX}/admin/tasks":
+                    self._require_role(account, "company_admin")
+                    try:
+                        query = parse_qs(parsed.query, keep_blank_values=True, max_num_fields=6, strict_parsing=bool(parsed.query))
+                    except ValueError:
+                        raise Demo2APIError(400, "invalid_request", "任务查询参数无效") from None
+                    if set(query) - {"q", "status", "page"} or any(len(values) != 1 for values in query.values()):
+                        raise Demo2APIError(400, "invalid_request", "任务查询仅支持 q、status、page 参数")
+                    keyword = query.get("q", [""])[0]
+                    status_filter = query.get("status", [""])[0]
+                    page_text = query.get("page", ["1"])[0]
+                    if not re.fullmatch(r"[1-9][0-9]{0,6}", page_text):
+                        raise Demo2APIError(400, "invalid_request", "任务查询页码须为正整数")
+                    try:
+                        found = student_store.admin_task_query(
+                            self._session_cookie_token(), query=keyword,
+                            analysis_status=status_filter, page=int(page_text))
+                    except ValueError as exc:
+                        self._admin_log(account, "admin_task_query", "rejected", http_status=400,
+                                        has_query=bool(keyword.strip()), query_length=len(keyword),
+                                        filter_status=status_filter or None, message=str(exc))
+                        raise Demo2APIError(400, "invalid_request", str(exc)) from None
+                    reports = self._report_call("admin_reports_for_tasks", self._session_cookie_token(),
+                                                [item["task_id"] for item in found["tasks"]])
+                    for item in found["tasks"]:
+                        item["reports"] = reports.get(item["task_id"], [])
+                    exact = next((item for item in found["tasks"] if item["task_id"] == keyword.strip()), None)
+                    self._admin_log(account, "admin_task_query", "ok", http_status=200,
+                                    has_query=bool(keyword.strip()), query_length=len(keyword),
+                                    filter_status=status_filter or None,
+                                    task_id=exact["task_id"] if exact else None,
+                                    analysis_status=exact["analysis_status"] if exact else None,
+                                    result_count=len(found["tasks"]),
+                                    report_count=sum(len(item["reports"]) for item in found["tasks"]),
+                                    total=found["pagination"]["total"], page=found["pagination"]["page"])
+                    self._send_demo2_json({"ok": True, **found})
                 elif parsed.path == f"{DEMO2_API_PREFIX}/reports":
                     token = self._session_cookie_token()
                     try:
@@ -1251,7 +1378,15 @@ def create_handler(
                         report_id = query["report_id"][0]
                         if not re.fullmatch(r"[0-9a-f]{32}", report_id):
                             raise Demo2APIError(400, "invalid_request", "报告编号格式无效")
-                        self._send_demo2_json({"ok": True, "report": self._report_call("get", token, report_id)})
+                        try:
+                            report = self._report_call("get", token, report_id)
+                        except Demo2APIError as exc:
+                            self._admin_log(account, "admin_report_view", "denied", report_id=report_id,
+                                            code=exc.code, http_status=exc.status)
+                            raise
+                        self._admin_log(account, "admin_report_view", "ok", report_id=report_id,
+                                        task_id=report.get("task_id"), status=report.get("status"), http_status=200)
+                        self._send_demo2_json({"ok": True, "report": report})
                     else:
                         raise Demo2APIError(400, "invalid_request", "请仅提供 task_id 或 report_id 查询参数")
                 elif parsed.path == f"{DEMO2_API_PREFIX}/reports/download":
@@ -1266,7 +1401,15 @@ def create_handler(
                     fmt = query.get("fmt", ["md"])[0]
                     if not re.fullmatch(r"[0-9a-f]{32}", report_id):
                         raise Demo2APIError(400, "invalid_request", "报告编号格式无效")
-                    text, filename, content_type = self._report_call("download", token, report_id, fmt=fmt)
+                    try:
+                        text, filename, content_type = self._report_call("download", token, report_id, fmt=fmt)
+                    except Demo2APIError as exc:
+                        self._admin_log(account, "admin_report_download", "denied", report_id=report_id,
+                                        fmt=fmt, code=exc.code, http_status=exc.status)
+                        raise
+                    self._admin_log(account, "admin_report_download", "ok", report_id=report_id, fmt=fmt,
+                                    task_id=self._report_task_id(account, report_id),
+                                    http_status=200, byte_size=len(text.encode("utf-8")))
                     self._send_text_payload(text.encode("utf-8"), content_type=content_type, extra_headers={
                         "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
                         "Cache-Control": "no-store",
@@ -1363,23 +1506,51 @@ def create_handler(
                         raise Demo2APIError(403, "origin_forbidden", "请从平台当前页面提交上传")
                     is_resume = parsed.path.endswith("/resume")
                     binary = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() == "application/octet-stream"
-                    if is_resume or not binary:
-                        if parsed.query:
-                            raise Demo2APIError(400, "invalid_request", "JSON 上传请求不接受查询参数")
-                        payload = self._read_upload_body(binary=False, max_bytes=128 * 1024 if is_resume else 6 * 1024 * 1024)
-                        task = (student_store.resume_video_upload(self._session_cookie_token(), payload) if is_resume
-                                else self._append_account_upload_chunk(account, payload))
-                    else:
-                        try:
-                            query = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True, max_num_fields=3)
-                        except ValueError:
-                            raise Demo2APIError(400, "invalid_request", "上传查询参数无效") from None
-                        if (set(query) != {"task_id", "course_id", "chunk_index"}
-                                or any(len(values) != 1 or not 1 <= len(values[0]) <= 120 for values in query.values())):
-                            raise Demo2APIError(400, "invalid_request", "请提供唯一的 task_id、course_id、chunk_index")
-                        payload = {key: values[0] for key, values in query.items()}
-                        chunk = self._read_upload_body(binary=True, max_bytes=MAX_VIDEO_CHUNK_BYTES)
-                        task = self._append_account_upload_chunk(account, payload, chunk=chunk)
+                    started = time.monotonic()
+                    log_fields: dict[str, Any] = {"account_id": _account_id(account)}
+                    try:
+                        if is_resume or not binary:
+                            if parsed.query:
+                                raise Demo2APIError(400, "invalid_request", "JSON 上传请求不接受查询参数")
+                            payload = self._read_upload_body(binary=False, max_bytes=128 * 1024 if is_resume else 6 * 1024 * 1024)
+                            if isinstance(payload, dict):
+                                log_fields.update(task_id=payload.get("task_id"), course_id=payload.get("course_id"),
+                                                  chunk_index=payload.get("chunk_index") if type(payload.get("chunk_index")) is int else None)
+                                if is_resume and isinstance(payload.get("chunk_sha256"), list):
+                                    log_fields["verified_chunks"] = len(payload["chunk_sha256"])
+                            task = (student_store.resume_video_upload(self._session_cookie_token(), payload) if is_resume
+                                    else self._append_account_upload_chunk(account, payload))
+                        else:
+                            try:
+                                query = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True, max_num_fields=3)
+                            except ValueError:
+                                raise Demo2APIError(400, "invalid_request", "上传查询参数无效") from None
+                            if (set(query) != {"task_id", "course_id", "chunk_index"}
+                                    or any(len(values) != 1 or not 1 <= len(values[0]) <= 120 for values in query.values())):
+                                raise Demo2APIError(400, "invalid_request", "请提供唯一的 task_id、course_id、chunk_index")
+                            payload = {key: values[0] for key, values in query.items()}
+                            log_fields.update(task_id=payload["task_id"], course_id=payload["course_id"])
+                            if payload["chunk_index"].isdigit():
+                                log_fields["chunk_index"] = int(payload["chunk_index"])
+                            chunk = self._read_upload_body(binary=True, max_bytes=MAX_VIDEO_CHUNK_BYTES)
+                            log_fields["chunk_bytes"] = len(chunk)
+                            task = self._append_account_upload_chunk(account, payload, chunk=chunk)
+                    except Exception as exc:
+                        status = getattr(exc, "status", 400 if isinstance(exc, ValueError) else 500)
+                        upload_debug_event(
+                            student_store, "upload_resume" if is_resume else "upload_chunk", "failed",
+                            code=getattr(exc, "code", "invalid_request" if isinstance(exc, ValueError) else "internal_error"),
+                            http_status=status if isinstance(status, int) else None,
+                            duration_ms=(time.monotonic() - started) * 1000, **log_fields,
+                        )
+                        raise
+                    duration_ms = (time.monotonic() - started) * 1000
+                    log_fields.update(_upload_task_fields(task))
+                    upload_debug_event(student_store, "upload_resume" if is_resume else "upload_chunk", "ok",
+                                       duration_ms=duration_ms, **log_fields)
+                    if not is_resume and isinstance(task, dict) and task.get("upload_status") == "completed":
+                        upload_debug_event(student_store, "upload_complete", "queued" if task.get("analysis_status") == "queued"
+                                           else "completed", duration_ms=duration_ms, **log_fields)
                     self._send_demo2_json({"ok": True, "task": task})
                     return
                 if parsed.path == f'{DEMO2_API_PREFIX}/applicability':
@@ -1774,6 +1945,9 @@ def create_handler(
                         "/task": ("task_id", "task_workspace", "workspace"),
                         "/document": ("document_id", "document_download", ""),
                         "/reference": ("reference_id", "reference_export", ""),
+                        "/iep-context": ("student_id", "iep_context", "iep_context"),
+                        "/access": (("student_id", "purpose"), "material_access", "access"),
+                        "/analysis-context": ("task_id", "analysis_context", "analysis_context"),
                     }
                     if admin_read:
                         self._dossier_query(parsed, ())
@@ -1783,14 +1957,14 @@ def create_handler(
                     if suffix not in routes:
                         raise Demo2APIError(404, "not_found", "资料接口不存在")
                     field, method, envelope = routes[suffix]
-                    identifier, = self._dossier_query(parsed, (field,))
-                    result = dossier_call(method, token, identifier)
+                    identifiers = self._dossier_query(parsed, field if isinstance(field, tuple) else (field,))
+                    result = dossier_call(method, token, *identifiers)
                     if suffix == "/document":
                         self._send_dossier_document(result)
                     elif suffix == "/reference":
                         if not isinstance(result, dict):
                             raise Demo2APIError(503, "dossier_unavailable", "课堂引用暂不可导出")
-                        self._send_dossier_json(result, headers={"Content-Disposition": 'attachment; filename="course-evidence.json"'})
+                        self._send_dossier_json(result, headers={"Content-Disposition": 'attachment; filename="classroom-reference-record.json"'})
                     else:
                         self._send_dossier_json({"ok": True, envelope: result})
                     return
@@ -1803,6 +1977,7 @@ def create_handler(
                     "/documents": ("create_document", "document", "student_id authorization_id document_type document_date source_ref retain_until summary filename content_base64 supersedes_id"),
                     "/documents/delete": ("delete_document", "result", "student_id document_id confirmed"),
                     "/references": ("create_reference", "reference", "task_id student_id frame_revision document_ids confirmed"),
+                    "/references/withdraw": ("withdraw_reference", "reference", "reference_id confirmed"),
                 }
                 if suffix not in commands:
                     raise Demo2APIError(404, "not_found", "资料接口不存在")
@@ -1879,10 +2054,24 @@ def create_handler(
             course_id = str(payload.get("course_id", "")).strip()
             workspace = student_store.account_upload_workspace(token, course_id)
             channel_id = str(payload.get("channel_id", "")).strip()
+            byte_size = payload.get("byte_size") if type(payload.get("byte_size")) is int else None
+            log_fields = {"account_id": account_id, "course_id": course_id, "channel_id": channel_id,
+                          "byte_size": byte_size}
+
+            def reject(status: int, code: str, message: str) -> Demo2APIError:
+                upload_debug_event(student_store, "upload_rejected", "rejected", code=code,
+                                   http_status=status, channel_status=(workspace or {}).get("channel_status"),
+                                   **log_fields)
+                return Demo2APIError(status, code, message)
+
             if channel_id not in _bound_channel_ids(account, workspace):
-                raise Demo2APIError(403, "channel_forbidden", "当前账号无权使用此上传通道，请选择账号绑定的通道")
+                raise reject(403, "channel_forbidden", "当前账号无权使用此上传通道，请选择账号绑定的通道")
+            blocked = workspace.get("upload_blocked") if isinstance(workspace, dict) else None
+            if isinstance(blocked, dict) and blocked.get("code"):
+                # Never fall back to another channel; the teacher must see the pause.
+                raise reject(409, str(blocked["code"]), str(blocked.get("message") or "上传通道暂不可用"))
             if _workspace_quota_exhausted(workspace):
-                raise Demo2APIError(409, "quota_exceeded", "该课程上传名额已满，请查看现有任务或联系管理员")
+                raise reject(409, "quota_exceeded", "该课程上传名额已满，请查看现有任务或联系管理员")
             allow_company_archive = payload.get("allow_company_archive", False)
             if not isinstance(allow_company_archive, bool):
                 raise Demo2APIError(
@@ -1909,16 +2098,29 @@ def create_handler(
             task_payload["security_confirmed"] = True
             task_payload["confirmed_by"] = username
             task_payload["allow_company_archive"] = allow_company_archive
+            started = time.monotonic()
             try:
-                return student_store.create_video_task(task_payload, actor=account_id)
+                task = student_store.create_video_task(task_payload, actor=account_id)
             except ValueError as exc:
                 if _is_quota_error(exc):
-                    raise Demo2APIError(
+                    raise reject(
                         409,
                         "quota_exceeded",
                         "该课程上传名额已满，请查看现有任务或联系管理员",
                     ) from exc
+                if "已暂停" in str(exc):
+                    raise reject(409, "channel_paused",
+                                 "账号绑定的上传通道已暂停，暂不能新建上传；请联系管理员恢复通道，系统不会自动切换到其他通道") from exc
+                if "通道不存在" in str(exc):
+                    raise reject(409, "channel_missing", "账号绑定的上传通道不存在，请联系管理员核对通道配置") from exc
+                upload_debug_event(student_store, "upload_start", "failed",
+                                   code=getattr(exc, "code", "invalid_request"),
+                                   duration_ms=(time.monotonic() - started) * 1000, **log_fields)
                 raise
+            upload_debug_event(student_store, "upload_start", "created",
+                               duration_ms=(time.monotonic() - started) * 1000,
+                               **{**log_fields, **_upload_task_fields(task)})
+            return task
 
         def _account_video_analysis_action(
             self, payload: dict[str, Any], *, legacy: bool
@@ -2013,6 +2215,26 @@ def create_handler(
             if chunk is not None:
                 return student_store.append_video_chunk(chunk_payload, actor=account_id, chunk=chunk)
             return student_store.append_video_chunk(chunk_payload, actor=account_id)
+
+        def _report_task_id(self, account: Any, report_id: str) -> str | None:
+            """Stable task id of a report, looked up only for admin log lines."""
+            if _account_role(account) != "company_admin" or not callable(getattr(student_store, "_connect", None)):
+                return None
+            try:
+                with student_store._connect() as connection:
+                    row = connection.execute(
+                        "SELECT task_id FROM demo2_reports WHERE report_id = ?", (report_id,)).fetchone()
+            except Exception:  # the log line must never break the download
+                return None
+            return str(row[0]) if row else None
+
+        def _admin_log(self, account: Any, operation: str, result: str, **fields: Any) -> None:
+            """Company-admin operations only; teacher traffic keeps its own logs."""
+            if _account_role(account) != "company_admin":
+                return
+            admin_debug_event(student_store, operation, result,
+                              admin_account=str(_account_value(account, "username", "")).strip(),
+                              account_id=_account_id(account), role="company_admin", **fields)
 
         @staticmethod
         def _require_role(account: Any, *roles: str) -> None:
@@ -2488,10 +2710,12 @@ def create_handler(
             self.end_headers()
 
         def _send_json_error(self, status: int, code: str, message: str) -> None:
-            self._send_demo2_json(
-                {"ok": False, "error": {"code": code, "message": message}},
-                status=status,
-            )
+            error: dict[str, Any] = {"code": code, "message": message}
+            if code == "report_stale":
+                # Old snapshots are refused, not silently rebuilt: tell the
+                # client to regenerate from the current scoring versions.
+                error.update({"stale": True, "status_label": "已过期", "action": "regenerate"})
+            self._send_demo2_json({"ok": False, "error": error}, status=status)
 
         def _send_demo2_json(
             self,
@@ -2573,7 +2797,7 @@ def create_handler(
             self.end_headers()
             self._write_response(data)
 
-        def _send_media(self, path: Path, *, content_type: str) -> None:
+        def _send_media(self, path: Path, *, content_type: str, download_name: str | None = None) -> None:
             # Range streaming allows seeking in long classroom recordings without loading GBs into memory.
             with path.open("rb") as media:
                 size = os.fstat(media.fileno()).st_size
@@ -2603,6 +2827,8 @@ def create_handler(
                 self.send_header("Cache-Control", "no-store, private")
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("Accept-Ranges", "bytes")
+                if download_name:
+                    self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(download_name)}")
                 self.send_header("Content-Length", str(max(0, end - start + 1)))
                 if range_header:
                     self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
