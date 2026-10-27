@@ -125,3 +125,29 @@ def test_support_conclusions_are_three_items_with_next_lesson():
     assert all('机器人' not in item['action'] for item in support['next_lesson'])
     assert support['profile']['attached'] is False and 'IEP' in support['profile']['note']
     assert '人物 1' in support['conclusions'][1]['text']
+
+
+def test_classroom_summary_reaches_1000_characters_for_a_full_lesson():
+    windows = []
+    for index in range(40):
+        state = ("engaged", "engaged", "low_attention", "engaged", "confused_or_stuck",
+                 "engaged", "engaged", "uncertain_adult_interference")[index % 8]
+        windows.append(dict(
+            start_sec=index * 30, end_sec=(index + 1) * 30, state=state,
+            state_zh=tracking.STUDENT_STATE_LABELS[state],
+            lesson_phase=("导入与示范", "引导练习", "个别练习与迁移", "总结与回顾")[index % 4],
+            audio_activity=.6, adult_interference=.6 if state == "uncertain_adult_interference" else .1,
+            observed_samples=30, expected_samples=30, interpretation="x",
+            recommended_action=dict(teacher_alert=state in {"confused_or_stuck", "uncertain"}),
+        ))
+    anchor = dict(x=.4, y=.3, width=.1, height=.2)
+    action, report = tracking._person_report(
+        "人物 1", anchor, windows, 6.0, .92,
+        {"wait_available": True, "teacher_talk_ratio": .25, "question_wait_events": 3,
+         "individual_support_seconds": 120})
+    assert report["character_count"] == len(report["text"])
+    assert report["character_count"] >= 1000
+    for section in ("一、整体情况", "二、参与情况", "三、安静下来的时段", "四、停下来或跟不上的时段",
+                    "五、需要你确认的时段", "六、最值得回看的片段", "七、下节课可以试试", "八、这份小结的边界"):
+        assert section in report["text"]
+    assert action

@@ -90,7 +90,7 @@ def test_person_reports_are_independent_and_motion_is_not_attention(scene):
                    or 'teacher_confirmation_required' in window['recommended_action']
                    for window in person['windows'])
         assert '不能单凭运动强度判成走神' in report['text']
-        assert '这份小结来自画面和课堂声音' in report['text']
+        assert '这份小结的边界' in report['text']
         assert '不代表他全程在场' in report['text'] and '身份也没有做人脸核验' in report['text']
         assert '操场多人动作练习' not in report['text']
     assert left['lesson_report']['text'] != right['lesson_report']['text']

@@ -658,53 +658,110 @@ def _support_conclusions(persons, rhythm):
                                 "系统不自动推断诊断或正式成绩。"}}
 
 
-def _person_report(display_name, anchor, windows, average_score, visibility):
-    """A teacher-facing narrative summary that stays tied to the video evidence."""
+def _person_report(display_name, anchor, windows, average_score, visibility, rhythm=None):
+    """A long, teacher-facing classroom summary that stays tied to the evidence."""
     x = center(anchor)[0]
     area = "画面左侧" if x < 1/3 else "画面中部" if x < 2/3 else "画面右侧"
     counts = {state: sum(w.get("state") == state for w in windows) for state in STUDENT_STATE_LABELS}
+    total = max(1, len(windows))
+    minutes = total * WINDOW_SEC / 60
     top = max(counts, key=counts.get) if any(counts.values()) else "uncertain"
     review_states = ("confused_or_stuck", "uncertain_adult_interference", "low_attention", "uncertain")
     lead = (max(review_states, key=lambda state: counts[state])
             if any(counts[state] for state in review_states) else "engaged")
 
-    def periods(state, limit=3):
+    def periods(state, limit=5):
         items = [w for w in windows if w.get("state") == state][:limit]
         return "、".join(f"{_clock(w['start_sec'])}–{_clock(w['end_sec'])}" for w in items)
 
-    key = _select_key_moments(windows, 3)
-    key_text = "、".join(f"{_clock(w['start_sec'])}（{w['state_zh']}）" for w in key) or "暂无"
+    def phases(items):
+        tally = {}
+        for window in items:
+            phase = window.get("lesson_phase") or "课堂"
+            tally[phase] = tally.get(phase, 0) + 1
+        ordered = sorted(tally.items(), key=lambda item: -item[1])[:3]
+        return "、".join(f"{name} {count} 段" for name, count in ordered) or "暂缺"
+
     observed = sum(int(w.get("observed_samples", 0)) for w in windows)
     expected = sum(int(w.get("expected_samples", 0)) for w in windows)
-    parts = [
-        f"{display_name} 这节课大部分时间在{area}参与课堂（{counts['engaged']} 个 30 秒时间片），"
-        f"安静下来 {counts['low_attention']} 段，突然停住 {counts['confused_or_stuck']} 段，"
-        f"被旁边人挡住 {counts['uncertain_adult_interference']} 段，看不清 {counts['uncertain']} 段。"
-    ]
-    if lead == "engaged":
-        parts.append("这节课没有出现明显需要提醒的片段，保持现在的节奏就好。")
+    average = f"{average_score:.1f}" if average_score is not None else "暂无"
+    key = _select_key_moments(windows, 5)
+    key_text = "；".join(f"{_clock(w['start_sec'])} {w['state_zh']}" for w in key) or "暂无"
+    engaged = [w for w in windows if w.get("state") == "engaged"]
+    quiet = [w for w in windows if w.get("state") == "low_attention"]
+    stuck = [w for w in windows if w.get("state") == "confused_or_stuck"]
+    adult = [w for w in windows if w.get("state") == "uncertain_adult_interference"]
+    unclear = [w for w in windows if w.get("state") == "uncertain"]
+
+    parts = [f"{display_name} 这节课的完整小结如下。"]
+    parts.append(
+        f"一、整体情况。这节课约 {minutes:.0f} 分钟，按 30 秒一格共 {total} 段。"
+        f"整体以“{STUDENT_STATE_LABELS[top]}”为主：参与 {counts['engaged']} 段、注意力下降 {counts['low_attention']} 段、"
+        f"困惑·停滞 {counts['confused_or_stuck']} 段、成人干扰下不确定 {counts['uncertain_adult_interference']} 段、"
+        f"无法判断 {counts['uncertain']} 段。画面变化参考值平均 {average}，只用来比较这名学生自己的不同时段。"
+    )
+    parts.append(
+        f"二、参与情况。有动作、像在跟着课堂做的时段共 {counts['engaged']} 段，主要出现在{phases(engaged)}。"
+        + (f"比较集中的活跃时段是 {periods('engaged', 4)}，合计约 {counts['engaged'] * 0.5:.0f} 分钟。"
+           if engaged else "本课没有明显的活跃时段。")
+        + "这些时段说明画面里有持续动作，但具体是在做题、操作还是和同学互动，需要结合当时任务判断。"
+    )
+    if quiet:
+        parts.append(
+            f"三、安静下来的时段。注意力下降共 {counts['low_attention']} 段，主要出现在{phases(quiet)}。"
+            f"先看 {periods('low_attention', 5)} 这几段。"
+            "安静有多种可能：在听讲、在等待、低头看材料，也可能被挡住或走神；"
+            "建议先对照当时的教学环节，不要单凭安静就下结论。"
+        )
     else:
-        parts.append(f"最值得回看的是 {periods(lead)} 这几段，状态偏向“{STUDENT_STATE_LABELS[lead]}”。")
-        if lead == "confused_or_stuck":
-            parts.append("这类片段通常是前面还在动手、这一会儿停下来，可能是没跟上，也可能是在等提示，不一定是走神。")
-        elif lead == "low_attention":
-            parts.append("安静也可能是听讲、等待或低头，未必是分心，先结合当时的任务看。")
-        elif lead == "uncertain_adult_interference":
-            parts.append("旁边有人靠近时系统不做判断，这一段先交给你确认。")
-        else:
-            parts.append("有几段画面看不清，系统没有下判断，回看确认一下就好。")
-    parts.append(f"关键片段是 {key_text}。")
+        parts.append("三、安静下来的时段。这节课没有出现明显的长时间安静片段。")
+    if stuck:
+        parts.append(
+            f"四、停下来或跟不上的时段。困惑·停滞共 {counts['confused_or_stuck']} 段，出现在{phases(stuck)}。"
+            f"重点是 {periods('confused_or_stuck', 5)}。这些片段通常是前面还有动作、这几分钟突然安静，"
+            "而课堂上仍在讲；更像是在等提示或没跟上，不一定是分心。可以先只重复当前这一步，看他能不能跟上来。"
+        )
+    else:
+        parts.append("四、停下来或跟不上的时段。这节课没有出现“先动后静”的困惑片段。")
+    if adult or unclear:
+        detail = []
+        if adult:
+            detail.append(f"被旁边人挡住 {periods('uncertain_adult_interference', 3)}")
+        if unclear:
+            detail.append(f"画面看不清 {periods('uncertain', 3)}")
+        parts.append(
+            "五、需要你确认的时段。" + "；".join(detail) + "。这些片段系统没有下判断，"
+            "先记下来，课后结合当时的情况或原片确认就好。"
+        )
+    else:
+        parts.append("五、需要你确认的时段。这节课没有出现明显的遮挡或看不清的片段。")
     parts.append(
-        f"这份小结来自画面和课堂声音：能看清的采样约占 {visibility * 100:.0f}%（{observed}/{expected}），"
+        f"六、最值得回看的片段。建议按顺序看 {key_text}。"
+        "先看“困惑·停滞”和“注意力下降”的时段；参与时段可以快速扫过，确认当时的任务安排是否对得上。"
+        "回看时可以直接把原视频拖到对应时间点，也可以先看旁边的证据截图，再决定要不要看整段。"
+    )
+    next_actions = [STUDENT_STATE_ACTIONS[lead]["speech"]]
+    if rhythm and rhythm.get("wait_available"):
+        next_actions.append("讲完一个例子后停 5–10 秒，再往下讲，给安静的孩子留出回应时间。")
+    elif rhythm:
+        next_actions.append("下一节课顺手记一下提问和等待次数，课后和状态时间轴对一下。")
+    if counts["confused_or_stuck"]:
+        next_actions.append("讲到出现困惑的环节时，先只讲当前这一步，再让他复述或操作一次。")
+    if counts["uncertain_adult_interference"]:
+        next_actions.append("需要个别支持时一次只看一位，避免同时处理几个座位。")
+    parts.append(
+        "七、下节课可以试试。" + " ".join(f"（{index}）{text}" for index, text in enumerate(next_actions, 1))
+        + "不需要一次全用，挑一两条先试，再用同一时段的画面做对照，看看变化是不是真的出现了。"
+    )
+    parts.append(
+        f"八、这份小结的边界。能看清的采样约占 {visibility * 100:.0f}%（{observed}/{expected}），"
         "只说明画面读得到，不代表他全程在场，身份也没有做人脸核验。"
+        "画面里的动作多少只是参考值，不是成绩，也不是注意力分数；跑步、走位这类正常动作不能单凭运动强度判成走神。"
+        "状态是帮你找到值得回看的片段，最后的判断还是看当时的课堂和你的观察。"
+        "如果某个时段你现场看到的情况和这里不一样，以你的记录为准，也可以把那段标出来，下次分析时优先看。"
     )
-    parts.append(
-        "画面里的动作多少只是参考值，不是成绩；跑步、走位这类正常动作不能单凭运动强度判成走神。"
-        "具体是不是分心、有没有听懂，还要看当时的课堂和你的判断。"
-    )
-    parts.append(f"下一步可以试试：{STUDENT_STATE_ACTIONS[lead]['speech']}然后回看上面这几段。")
-    report = "".join(parts)
-    action = (f"这节课“{STUDENT_STATE_LABELS[top]}”的时间片最多（{counts[top]}/{len(windows)}）；"
+    report = "\n".join(parts)
+    action = (f"这节课“{STUDENT_STATE_LABELS[top]}”的时间片最多（{counts[top]}/{total}）；"
               f"先回看 {key_text}。{STUDENT_STATE_ACTIONS[lead]['speech']}")
     return action, {"title": f"{display_name}课堂小结", "text": report,
                     "character_count": len(report),
@@ -1080,7 +1137,6 @@ def analyze(request, detector=None):
         average_student_score = round(sum(student_scores)/len(student_scores), 2) if student_scores else None
         visibility = round(sum(x["visible"] for x in items)/max(1,len(samples)), 3)
         display_name = f"人物 {i+1}"
-        action_summary, person_report = _person_report(display_name, anchors[i], windows, average_student_score, visibility)
         confirmed = [x for x in items if x["face_detected"]]
         reacquisitions = sum(1 for before, after in zip(items, items[1:])
                              if after["face_detected"] and not before["face_detected"])
@@ -1105,11 +1161,17 @@ def analyze(request, detector=None):
                             student_summary=(f"这节课整体以“{STUDENT_STATE_LABELS[dominant]}”为主"
                                              + (f"，有 {review_required} 个片段建议你回看。" if review_required
                                                 else "，没有需要特别回看的片段。")),
-                            action_summary=action_summary, lesson_report=person_report,
+                            action_summary="", lesson_report={},
                             tracking="首次从左到右编号；固定人物区域结合每3秒人脸位置复核，禁止跨区域串人"))
     if not persons:
         return unavailable("no_persistent_students", excluded=excluded)
     rhythm = _classroom_rhythm(persons, duration)
+    for person in persons:
+        action_summary, person_report = _person_report(
+            person["display_name"], person["anchor_bbox"], person["windows"],
+            person.get("average_student_score"), person.get("visibility", 0), rhythm)
+        person["action_summary"] = action_summary
+        person["lesson_report"] = person_report
     support = _support_conclusions(persons, rhythm)
     summaries = []
     for item in persons:
