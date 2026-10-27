@@ -19,7 +19,7 @@ def cue(activity, *, adult=0.1, audio=0.1, visibility=1.0, quality=0.8, expected
 def test_engaged_state_when_sustained_movement():
     state, label, evidence, interpretation, confidence = cue(.62)
     assert state == "engaged" and label == "参与"
-    assert "参与线索" in evidence and confidence >= .6
+    assert "跟着课堂在做事" in evidence and confidence >= .6
 
 
 def test_adult_interference_defers_to_teacher():
@@ -30,7 +30,7 @@ def test_adult_interference_defers_to_teacher():
 def test_quiet_after_activity_with_classroom_sound_is_confused_or_stuck():
     state, label, evidence, interpretation, _ = cue(.10, adult=.2, audio=.6, previous=.5)
     assert state == "confused_or_stuck" and label == "困惑·停滞"
-    assert "声音" in evidence and "提示" in interpretation
+    assert "声音" in evidence and "这一步" in interpretation
 
 
 def test_quiet_after_quiet_is_low_attention_not_confused():

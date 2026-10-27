@@ -89,12 +89,13 @@ def test_person_reports_are_independent_and_motion_is_not_attention(scene):
         assert all(window.get('teacher_confirmation_required') is not None
                    or 'teacher_confirmation_required' in window['recommended_action']
                    for window in person['windows'])
-        assert '不能单凭运动强度判定分心' in report['text']
-        assert '该区域在' in report['text'] and '不代表本人全程在场或身份连续已获验证' in report['text']
+        assert '不能单凭运动强度判成走神' in report['text']
+        assert '这份小结来自画面和课堂声音' in report['text']
+        assert '不代表他全程在场' in report['text'] and '身份也没有做人脸核验' in report['text']
         assert '操场多人动作练习' not in report['text']
     assert left['lesson_report']['text'] != right['lesson_report']['text']
-    assert '区域图像可用率不代表身份连续追踪' in result['score_note']
-    assert '跑步和正常体育动作不能单凭动作判为分心' in result['score_note']
+    assert '不是成绩，也不是注意力分数' in result['score_note']
+    assert '不能单凭运动强度判成走神' in result['score_note']
     assert result['classroom_rhythm']['window_count'] >= 1
     assert len(result['support_conclusions']['conclusions']) == 3
     assert result['support_conclusions']['next_lesson']

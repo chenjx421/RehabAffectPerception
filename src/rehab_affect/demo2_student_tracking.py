@@ -47,25 +47,25 @@ STUDENT_STATE_LABELS = {
 }
 STUDENT_STATE_ACTIONS = {
     "engaged": {
-        "action_id": "continue_current_task", "screen": "保持当前教学画面，不额外弹窗",
-        "speech": "保持当前节奏，必要时给予具体正反馈。", "teacher_alert": False,
+        "action_id": "continue_current_task", "screen": "不打断，保持现在的画面",
+        "speech": "保持现在的节奏，做得好的时候可以给一句具体的肯定。", "teacher_alert": False,
     },
     "low_attention": {
-        "action_id": "regain_attention_low_stimulation", "screen": "轻微高亮当前步骤或目标物",
+        "action_id": "regain_attention_low_stimulation", "screen": "轻轻提示当前这一步",
         "speech": "我们先看这里，只做这一步。", "teacher_alert": False,
     },
     "confused_or_stuck": {
         "action_id": "repeat_one_step_with_visual_highlight",
-        "screen": "只保留当前一步，弱化无关信息", "speech": "没关系，我们先看第一步。",
+        "screen": "只留当前这一步，把其他信息收起来", "speech": "没关系，我们再来看一遍这一步。",
         "teacher_alert": True,
     },
     "uncertain_adult_interference": {
-        "action_id": "defer_to_teacher_observation", "screen": "不触发学生端强提示",
-        "speech": "系统记录为需要人工确认的片段。", "teacher_alert": True,
+        "action_id": "defer_to_teacher_observation", "screen": "先不打扰，把这段记下来",
+        "speech": "这段画面被挡住了，交给你确认。", "teacher_alert": True,
     },
     "uncertain": {
-        "action_id": "mark_for_review", "screen": "不触发自动干预",
-        "speech": "该片段画质或遮挡不足，建议人工确认。", "teacher_alert": True,
+        "action_id": "mark_for_review", "screen": "不自动提示",
+        "speech": "画面看不清，建议回看确认。", "teacher_alert": True,
     },
 }
 MOTION_SCORE_NOTE = (
@@ -462,35 +462,34 @@ def _student_state(
     audio = float(audio_activity or 0.0)
     if not enough_evidence or activity is None:
         state = "uncertain"
-        evidence = (f"本时段可用画面约{visibility:.0%}、清晰度约{quality:.0%}，不足以判断，"
-                    "保留为无法判断，不用旁边人物代替。")
-        interpretation = "当前片段需要结合原视频确认，不能据此判断学生是否参与或理解。"
+        evidence = f"这一段画面看不清（能用的采样约{visibility:.0%}），先不下结论。"
+        interpretation = "需要结合原片再确认。"
         confidence = .35
     elif activity >= .35:
         state = "engaged"
-        evidence = "本人物区域有持续可见的局部画面变化，保留为参与线索。"
-        interpretation = "更像仍在参与课堂活动；具体任务完成与理解仍需教师确认。"
+        evidence = "这段时间他一直有动作，像是跟着课堂在做事。"
+        interpretation = "保持现在的节奏就好。"
         confidence = .68 + min(.17, activity * .2)
     elif adult >= .55 and activity < .22:
         state = "uncertain_adult_interference"
-        evidence = "本人物相邻区域动作明显，可能有教师或同学靠近、遮挡；本人物自身变化较少。"
-        interpretation = "成人靠近或遮挡时优先记录并交给教师确认，不触发学生侧结论。"
+        evidence = "旁边有人靠得很近，可能挡住了他；这一段先交给你确认。"
+        interpretation = "先记下来，下课问一下当时的情况。"
         confidence = .52
     elif activity < .14 and audio >= .35 and previous_activity is not None and previous_activity >= .30:
         state = "confused_or_stuck"
-        evidence = ("前一时间片仍能看到活动，本时段明显安静下来，而课堂声音仍在，"
-                    "更像听指令或等待回应时的停滞。")
-        interpretation = "可能不是单纯分心，更像需要一步提示或教师确认；请回看当时指令。"
+        evidence = ("前面还在动，这一段突然安静下来，而课堂声音还在——"
+                    "更像是没跟上，或者正在等一个提示。")
+        interpretation = "可以只把当前这一步再说一遍，看看他有没有跟上来。"
         confidence = .58
     elif activity < .18:
         state = "low_attention"
-        evidence = "本人物区域长时间动作较少，参与线索减弱。"
-        interpretation = "可能是倾听、等待、遮挡或未参与；建议低刺激提示，不公开点名提醒。"
+        evidence = "这一段他基本没怎么动，可能是在听、在等，也可能走神了。"
+        interpretation = "给个轻提示就够了，先别点名。"
         confidence = .55
     else:
         state = "engaged"
-        evidence = "本人物区域有一定动作变化，未达到异常阈值。"
-        interpretation = "当前维持观察，不额外提示。"
+        evidence = "有一点点动作，还没到需要提醒的程度。"
+        interpretation = "继续观察就好。"
         confidence = .60
     if quality < .45 and state != "uncertain":
         confidence = max(.30, confidence - .08)
@@ -500,7 +499,7 @@ def _student_state(
     if audio_activity is not None and state == "confused_or_stuck":
         evidence += "；声音为整段课堂活动，未定位到该学生。"
     if lesson_phase:
-        evidence += f"当前处于“{lesson_phase}”，状态解释需结合当时教学环节。"
+        evidence += f"现在在“{lesson_phase}”环节，先按这个背景看。"
     confidence = round(max(.25, min(.92, confidence)), 3)
     return state, STUDENT_STATE_LABELS[state], evidence, interpretation, confidence
 
@@ -599,8 +598,8 @@ def _support_conclusions(persons, rhythm):
         dominant = max(counts, key=counts.get)
         conclusions.append({
             "title": "本课状态分布",
-            "text": f"{len(persons)}个人物候选共{total_windows}个时间片，建议教师确认{review}段；"
-                    f"以“{STUDENT_STATE_LABELS[dominant]}”为主的是{top['display_name']}（{counts[dominant]}段）。",
+            "text": f"这节课三个人物一共 {total_windows} 个时间片，其中 {review} 段建议你回看；"
+                    f"整体以“{STUDENT_STATE_LABELS[dominant]}”为主的是{top['display_name']}。",
             "basis": "逐人固定区域变化、相邻区域活动、课堂声音与画质"})
         focus_states = ("confused_or_stuck", "uncertain_adult_interference", "low_attention")
         focus = [(window["state"], window["start_sec"], window["end_sec"])
@@ -610,50 +609,49 @@ def _support_conclusions(persons, rhythm):
             stuck = sum(1 for item in focus if item[0] == "confused_or_stuck")
             conclusions.append({
                 "title": "优先复核",
-                "text": f"{top['display_name']} 在{_clock(start)}–{_clock(end)}出现“{STUDENT_STATE_LABELS[state]}”；"
-                        f"本课需要复核的片段共{len(focus)}个，其中困惑·停滞{stuck}个；先回看这些片段再决定支持方式。",
+                "text": f"最想请你看的是{top['display_name']} 在{_clock(start)}–{_clock(end)} 的那一段"
+                        f"“{STUDENT_STATE_LABELS[state]}”。这类片段本课有{len(focus)}个，其中困惑·停滞{stuck}个；"
+                        "先看这几段，就能判断下节课要不要调整支持方式。",
                 "basis": f"{top['display_name']}的状态时间片"})
         else:
             conclusions.append({
                 "title": "优先复核",
-                "text": "本课没有出现困惑·停滞、成人干扰或注意力下降片段，保持观察即可；"
-                        "如现场判断不同，以教师观察为准。",
+                "text": "这节课没有出现困惑·停滞、成人干扰或注意力下降的片段，保持观察就好；"
+                        "如果你现场看到的不一样，以你的判断为准。",
                 "basis": "本课状态时间片"})
     if rhythm.get("audio_flat") or not rhythm.get("wait_available", True):
         conclusions.append({
             "title": "课堂节奏",
-            "text": "本课课堂声音持续，30秒时间窗内没有出现明显的“有声→安静”间隔，"
-                    "无法据此判断提问-等待；"
-                    f"相邻区域活跃（可能有人靠近座位）的时段约{rhythm['individual_support_seconds']:.0f}秒。"
-                    "建议现场记录提问和等待次数，再与状态时间轴对照。",
-            "basis": "30秒时间窗的课堂级近似统计；未检测到可用的声音间隔"})
+            "text": "这节课的声音一直比较满，30 秒一段里没有明显的“讲完停下来”，"
+                    "所以提问-等待没法自动判断；上课时顺手记一下会更准。"
+                    f"旁边有人靠近的时段大约 {rhythm['individual_support_seconds']:.0f} 秒。",
+            "basis": "30 秒时间窗的课堂级近似统计；未检测到可用的声音间隔"})
     else:
         conclusions.append({
             "title": "课堂节奏",
-            "text": f"课堂有声音且学生整体安静的时段约{rhythm['teacher_talk_seconds']:.0f}秒"
-                    f"（{rhythm['teacher_talk_ratio']:.0%}），声音转安静的等待{rhythm['question_wait_events']}次，"
-                    f"相邻区域活跃的时段约{rhythm['individual_support_seconds']:.0f}秒。"
-                    "讲解偏长时安静时间片会增多，需要判断是听讲还是掉队。",
-            "basis": "30秒时间窗的课堂级近似统计"})
+            "text": f"讲解和示范大约占 {rhythm['teacher_talk_ratio']:.0%} 的时间，"
+                    f"出现 {rhythm['question_wait_events']} 次明显的“讲完停下来”，"
+                    f"旁边有人靠近的时段约 {rhythm['individual_support_seconds']:.0f} 秒。"
+                    "讲解偏长时安静的时间片会变多，需要看看是在听讲还是掉队。",
+            "basis": "30 秒时间窗的课堂级近似统计"})
     next_lesson = []
     if top is not None and focus:
         state, start, end = focus[0]
         next_lesson.append({
-            "action": f"下节课在类似{_clock(start)}的环节给{top['display_name']}一步提示或视觉提示，"
-                      "再观察同一时段是否变化。",
-            "reason": "本课该时段出现需要复核的状态线索"})
+            "action": f"下节课讲到{_clock(start)}附近时，先只讲当前这一步，再看他有没有跟上来。",
+            "reason": "这节课这个时段出现了需要复核的状态"})
     if rhythm.get("audio_flat") or not rhythm.get("wait_available", True):
-        next_lesson.append({"action": "下一节课现场记录提问-等待次数，用现场记录和状态时间轴对照。",
-                            "reason": "本课课堂声音持续，30秒窗内无法自动判断等待"})
+        next_lesson.append({"action": "下一节课顺手记一下提问和等待的次数，课后和状态时间轴对一下。",
+                            "reason": "声音连续，自动判断提问-等待不准"})
     elif rhythm["question_wait_events"] < max(1, rhythm["window_count"] // 4):
-        next_lesson.append({"action": "讲解后固定留一次提问-等待，先等 5–10 秒再补充说明。",
-                            "reason": "本课声音转安静的等待次数偏少"})
+        next_lesson.append({"action": "讲完一个例子后先停 5–10 秒，再往下讲，给安静的孩子留出回应时间。",
+                            "reason": "声音里明显的『讲完停下来』偏少"})
     if rhythm["individual_support_seconds"] > 0:
-        next_lesson.append({"action": "把个别支持集中在需要复核的人物，避免同时处理多个座位。",
-                            "reason": "本课已出现相邻区域活跃的时段"})
+        next_lesson.append({"action": "需要个别支持时，一次只看一位，别同时处理几个座位。",
+                            "reason": "这节课有相邻区域活跃的时段"})
     if not next_lesson:
-        next_lesson.append({"action": "保持当前节奏，继续用同一时间段对照状态变化。",
-                            "reason": "本课未出现需要调整的明显线索"})
+        next_lesson.append({"action": "保持现在的节奏，继续用同样的时间段对照。",
+                            "reason": "这节课没有明显的调整信号"})
     return {"conclusions": conclusions[:3], "next_lesson": next_lesson[:3],
             "profile": {"attached": False,
                         "note": "本课结论只基于视频证据；绑定学生后可结合已授权的最小 IEP 支持摘要复核，"
@@ -661,42 +659,56 @@ def _support_conclusions(persons, rhythm):
 
 
 def _person_report(display_name, anchor, windows, average_score, visibility):
-    """Create a distinct, evidence-bound Demo1-style student report."""
+    """A teacher-facing narrative summary that stays tied to the video evidence."""
     x = center(anchor)[0]
-    area = "左侧" if x < 1/3 else "中部" if x < 2/3 else "右侧"
+    area = "画面左侧" if x < 1/3 else "画面中部" if x < 2/3 else "画面右侧"
     counts = {state: sum(w.get("state") == state for w in windows) for state in STUDENT_STATE_LABELS}
     top = max(counts, key=counts.get) if any(counts.values()) else "uncertain"
+    review_states = ("confused_or_stuck", "uncertain_adult_interference", "low_attention", "uncertain")
+    lead = (max(review_states, key=lambda state: counts[state])
+            if any(counts[state] for state in review_states) else "engaged")
 
     def periods(state, limit=3):
         items = [w for w in windows if w.get("state") == state][:limit]
-        return "、".join(f"{_clock(w['start_sec'])}–{_clock(w['end_sec'])}" for w in items) or "暂无"
+        return "、".join(f"{_clock(w['start_sec'])}–{_clock(w['end_sec'])}" for w in items)
 
+    key = _select_key_moments(windows, 3)
+    key_text = "、".join(f"{_clock(w['start_sec'])}（{w['state_zh']}）" for w in key) or "暂无"
     observed = sum(int(w.get("observed_samples", 0)) for w in windows)
     expected = sum(int(w.get("expected_samples", 0)) for w in windows)
-    average = f"{average_score:.1f}/10" if average_score is not None else "暂缺"
-    key = _select_key_moments(windows, 4)
-    key_text = "、".join(f"{_clock(w['start_sec'])} {w['state_zh']}" for w in key) or "无"
-    action_text = STUDENT_STATE_ACTIONS[top]["speech"]
-    report = (
-        f"{display_name}是首次检测时位于原画面{area}的匿名人物候选；编号按该时点从左到右分配。"
-        f"系统随后独立读取对应固定区域，未把其他人物的截图或数值复制到本区域。全片按30秒整理为{len(windows)}个时间片；"
-        f"该区域在{observed}/{expected}个逐秒样本中满足图像可用条件，可用率约{visibility * 100:.0f}%。"
-        f"这只表示区域图像可读，不代表本人全程在场或身份连续已获验证；人物离位、交叉或换位时需要回看原片。"
-        f"时间片状态分布：参与{counts['engaged']}段、注意力下降{counts['low_attention']}段、"
-        f"困惑或停滞{counts['confused_or_stuck']}段、成人干扰下不确定{counts['uncertain_adult_interference']}段、"
-        f"无法判断{counts['uncertain']}段；本课以“{STUDENT_STATE_LABELS[top]}”线索最多。"
-        f"建议优先复核的关键片段：{key_text}。动作参考值平均{average}，"
-        "0–10只是本人物固定区域在本视频内独立归一化的画面变化参考值，不是注意力、学习、情绪或教师成绩，"
-        "不适合与其他人物横向排名。跑步、走位、伸展等正常体育活动不能单凭运动强度判定分心、不配合或扣分；"
-        "镜头、光照、遮挡、衣物摆动和人物离开固定区域都会影响数值。"
-        "上述状态是给教师复盘用的线索：注意力下降可能是倾听或等待，困惑·停滞需要结合当时指令判断，"
-        "成人干扰下不确定应直接交教师确认；系统不据此推断专注、情绪、掌握程度、意愿、障碍类型或正式课堂成绩。"
-        f"下一步建议：{action_text}并回看上述片段；教师确认后的结论才用于教学调整。"
+    parts = [
+        f"{display_name} 这节课大部分时间在{area}参与课堂（{counts['engaged']} 个 30 秒时间片），"
+        f"安静下来 {counts['low_attention']} 段，突然停住 {counts['confused_or_stuck']} 段，"
+        f"被旁边人挡住 {counts['uncertain_adult_interference']} 段，看不清 {counts['uncertain']} 段。"
+    ]
+    if lead == "engaged":
+        parts.append("这节课没有出现明显需要提醒的片段，保持现在的节奏就好。")
+    else:
+        parts.append(f"最值得回看的是 {periods(lead)} 这几段，状态偏向“{STUDENT_STATE_LABELS[lead]}”。")
+        if lead == "confused_or_stuck":
+            parts.append("这类片段通常是前面还在动手、这一会儿停下来，可能是没跟上，也可能是在等提示，不一定是走神。")
+        elif lead == "low_attention":
+            parts.append("安静也可能是听讲、等待或低头，未必是分心，先结合当时的任务看。")
+        elif lead == "uncertain_adult_interference":
+            parts.append("旁边有人靠近时系统不做判断，这一段先交给你确认。")
+        else:
+            parts.append("有几段画面看不清，系统没有下判断，回看确认一下就好。")
+    parts.append(f"关键片段是 {key_text}。")
+    parts.append(
+        f"这份小结来自画面和课堂声音：能看清的采样约占 {visibility * 100:.0f}%（{observed}/{expected}），"
+        "只说明画面读得到，不代表他全程在场，身份也没有做人脸核验。"
     )
-    action = (f"本课以“{STUDENT_STATE_LABELS[top]}”线索最多（{counts[top]}/{len(windows)} 段）；"
-              f"优先复核：{key_text}。建议：{action_text}该结果用于教学复盘，不替代教师判断。")
-    return action, {"title": f"{display_name}个人观察报告", "text": report,
-                    "character_count": len(report), "basis": "该人物候选对应固定区域的逐秒画面变化、相邻区域动作与30秒时间片",
+    parts.append(
+        "画面里的动作多少只是参考值，不是成绩；跑步、走位这类正常动作不能单凭运动强度判成走神。"
+        "具体是不是分心、有没有听懂，还要看当时的课堂和你的判断。"
+    )
+    parts.append(f"下一步可以试试：{STUDENT_STATE_ACTIONS[lead]['speech']}然后回看上面这几段。")
+    report = "".join(parts)
+    action = (f"这节课“{STUDENT_STATE_LABELS[top]}”的时间片最多（{counts[top]}/{len(windows)}）；"
+              f"先回看 {key_text}。{STUDENT_STATE_ACTIONS[lead]['speech']}")
+    return action, {"title": f"{display_name}课堂小结", "text": report,
+                    "character_count": len(report),
+                    "basis": "该人物的固定区域画面变化、相邻区域活动、课堂声音和 30 秒时间片",
                     "formal_score": False}
 
 
@@ -1022,8 +1034,8 @@ def analyze(request, detector=None):
                 )
             if state != "uncertain" and not face_in_window:
                 confidence = round(max(.25, confidence - (.05 if nearby_face else .08)), 3)
-                evidence += ("本人脸只在相邻时段确认，本时段按固定区域判断。" if nearby_face
-                             else "本时段未检出本人脸，按固定区域画面判断。")
+                evidence += ("这一小段没直接拍到脸，是按座位画面判断的。" if nearby_face
+                             else "这一小段没拍到脸，只按座位画面看。")
             student_score = _student_score(state, activity, quality)
             action = dict(STUDENT_STATE_ACTIONS[state])
             action["teacher_confirmation_required"] = bool(action["teacher_alert"])
@@ -1090,42 +1102,44 @@ def analyze(request, detector=None):
                                           if confirmed else anchors[i]),
                             portrait_quality=round(max((x["face_quality"] for x in confirmed), default=0.), 3),
                             observed_samples=sum(x["visible"] for x in items), visibility=visibility,
-                            student_summary=(f"{STUDENT_STATE_LABELS[dominant]}线索最多，共{len(windows)}个时间片；"
-                                             f"其中{review_required}个片段建议教师确认后使用。"),
+                            student_summary=(f"这节课整体以“{STUDENT_STATE_LABELS[dominant]}”为主"
+                                             + (f"，有 {review_required} 个片段建议你回看。" if review_required
+                                                else "，没有需要特别回看的片段。")),
                             action_summary=action_summary, lesson_report=person_report,
                             tracking="首次从左到右编号；固定人物区域结合每3秒人脸位置复核，禁止跨区域串人"))
     if not persons:
         return unavailable("no_persistent_students", excluded=excluded)
     rhythm = _classroom_rhythm(persons, duration)
     support = _support_conclusions(persons, rhythm)
-    rows = "".join(
-        f"{item['display_name']}：{item['dominant_state_zh']}最多"
-        f"（参与{item['state_summary']['counts']['engaged']}、"
-        f"注意力下降{item['state_summary']['counts']['low_attention']}、"
-        f"困惑·停滞{item['state_summary']['counts']['confused_or_stuck']}、"
-        f"成人干扰下不确定{item['state_summary']['counts']['uncertain_adult_interference']}、"
-        f"无法判断{item['state_summary']['counts']['uncertain']}）；"
-        for item in persons
-    )
+    summaries = []
+    for item in persons:
+        counts = item["state_summary"]["counts"]
+        summaries.append(
+            f"{item['display_name']}参与 {counts['engaged']} 段、安静下来 {counts['low_attention']} 段、"
+            f"突然停住 {counts['confused_or_stuck']} 段、被挡住 {counts['uncertain_adult_interference']} 段、"
+            f"看不清 {counts['uncertain']} 段")
+    windows_total = len(persons[0]["windows"]) if persons else 0
     review_total = sum(item["state_summary"]["review_required"] for item in persons)
+    if rhythm.get("wait_available"):
+        rhythm_line = (f"课堂节奏上，讲解和示范大约占 {rhythm['teacher_talk_ratio']:.0%} 的时间，"
+                       f"其中有 {rhythm['question_wait_events']} 次明显的“讲完停下来”。")
+    else:
+        rhythm_line = ("课堂声音比较连续，30 秒一段里暂时分不出讲解和提问-等待；"
+                       "想看得更细，可以上课时顺手记一下提问次数。")
     report = (
-        f"本段视频读取了{len(samples)}个采样画面，按30秒一个时间片整理{len(persons)}个匿名人物候选的"
-        "Demo1 风格课堂状态线索。候选按首次检测时从左到右编号，各自使用不同的固定区域、截图和时间序列；"
-        "编号只用于核对画面，不能证明姓名或全程身份连续。"
-        + rows +
-        f"全部时间片中，建议教师确认的片段共{review_total}个。"
-        "状态由固定区域画面变化、相邻区域活动、整段课堂声音和当窗画质共同判定；"
-        "声音无法定位到单个学生，只作为课堂情境参考。"
-        "这些状态是教学复盘线索：注意力下降可能是倾听、等待或遮挡；困惑·停滞需要结合当时指令判断；"
-        "成人干扰下不确定应直接交教师确认；系统不据此推断专注、情绪、掌握程度、意愿、障碍类型或正式课堂成绩。"
-        "跑步、走位、伸展等正常体育活动不能单凭运动强度判定分心。"
-        "请按关键片段回看原片，并结合教学目标与教师现场观察解释；无法核对的时间段保留为待确认，不用其他人物的表现填补。"
-        + (f"另有{len(excluded)}个候选因为未持续检测到本人脸、区域也几乎无变化而被排除，"
-           "它们未被当作学生，也没有生成状态结论。" if excluded else "")
+        f"这节课按 30 秒一段，一共看了 {windows_total} 段，三位同学的画面分别记录如下："
+        + "；".join(summaries) + "。"
+        + f"其中有 {review_total} 个片段建议你抽空回看，重点看状态变成“困惑·停滞”或“注意力下降”的地方——"
+        "安静可能是听讲、等待，也可能是没跟上或被挡住。"
+        + rhythm_line
+        + "这些只是从画面和声音里读到的线索，最后的判断还是看当时的课堂和你的观察。"
+        + (f"另外排除了 {len(excluded)} 个不可靠的人物候选，它们没有被当成学生，也没有生成结论。"
+           if excluded else "")
     )
-    score_note = ("页面展示 Demo1 风格状态：参与、注意力下降、困惑·停滞、成人干扰下不确定、无法判断；"
-                  "每段附屏幕/语音建议和是否需要教师确认，本版本不含机器人动作。"
-                  + MOTION_SCORE_NOTE)
+    score_note = ("0–10 只是画面变化的参考值，不是成绩，也不是注意力分数。"
+                  "状态线索用来找出值得回看的片段：安静可能是听讲、等待或遮挡，"
+                  "跑步、走位这类正常动作不能单凭运动强度判成走神。具体怎么理解，还要看当时的课堂。"
+                  "本版本不含机器人动作。")
     return dict(
         available=True, analysis_version=VERSION, persons=persons, window_sec=WINDOW_SEC,
         detected_samples=detection_count, observed_frames=len(samples), max_persons=MAX_PERSONS,
