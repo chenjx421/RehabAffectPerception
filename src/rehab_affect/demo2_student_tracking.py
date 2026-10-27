@@ -434,7 +434,7 @@ def _teacher_activity(sec: float, duration: float) -> str:
 
 def _student_state(
     activity, audio_activity, adult_interference, visibility, quality, motions, expected,
-    *, face_presence=0.0, response_expected=True, lesson_phase="",
+    *, face_presence=0.0, response_expected=True, lesson_phase="", previous_activity=None,
 ):
     """Demo1's five classroom state cues, bound to one window's visible evidence.
 
@@ -450,7 +450,8 @@ def _student_state(
     audio = float(audio_activity or 0.0)
     if not enough_evidence or activity is None:
         state = "uncertain"
-        evidence = "本人物区域的可用画面或人脸核对不足，保留为无法判断，不用旁边人物代替。"
+        evidence = (f"本时段可用画面约{visibility:.0%}、清晰度约{quality:.0%}，不足以判断，"
+                    "保留为无法判断，不用旁边人物代替。")
         interpretation = "当前片段需要结合原视频确认，不能据此判断学生是否参与或理解。"
         confidence = .35
     elif activity >= .35:
@@ -463,9 +464,10 @@ def _student_state(
         evidence = "本人物相邻区域动作明显，可能有教师或同学靠近、遮挡；本人物自身变化较少。"
         interpretation = "成人靠近或遮挡时优先记录并交给教师确认，不触发学生侧结论。"
         confidence = .52
-    elif activity < .14 and audio >= .35:
+    elif activity < .14 and audio >= .35 and previous_activity is not None and previous_activity >= .30:
         state = "confused_or_stuck"
-        evidence = "课堂声音活动明显，但本人物区域动作较少，更像听指令或等待回应时的停滞。"
+        evidence = ("前一时间片仍能看到活动，本时段明显安静下来，而课堂声音仍在，"
+                    "更像听指令或等待回应时的停滞。")
         interpretation = "可能不是单纯分心，更像需要一步提示或教师确认；请回看当时指令。"
         confidence = .58
     elif activity < .18:
@@ -508,6 +510,142 @@ def _select_key_moments(windows, limit=6):
              "state_zh": w["state_zh"], "reason": (w.get("interpretation") or "")[:90],
              "frame": w.get("frame"), "frame_time_sec": w.get("frame_time_sec")}
             for w in sorted(picks, key=lambda item: item["start_sec"])]
+
+
+def _classroom_rhythm(persons, duration):
+    """Coarse, explainable lesson-rhythm metrics on the same 30-second windows."""
+    import numpy as np
+    windows = {}
+    for person in persons:
+        for window in person.get("windows") or []:
+            windows.setdefault(window["start_sec"], []).append(window)
+    rows = []
+    for start in sorted(windows):
+        items = windows[start]
+        end = max(float(window.get("end_sec") or start + WINDOW_SEC) for window in items)
+        audio = max((float(window.get("audio_activity")) for window in items
+                     if isinstance(window.get("audio_activity"), (int, float))), default=0.0)
+        activity_values = [float(window.get("motion_signal")) for window in items
+                           if isinstance(window.get("motion_signal"), (int, float))]
+        adult_values = [float(window.get("adult_interference")) for window in items
+                        if isinstance(window.get("adult_interference"), (int, float))]
+        rows.append({"start_sec": float(start), "end_sec": end, "audio": audio,
+                     "activity": sum(activity_values) / len(activity_values) if activity_values else 0.0,
+                     "adult": max(adult_values) if adult_values else 0.0})
+    if not rows:
+        return {"window_sec": WINDOW_SEC, "window_count": 0, "teacher_talk_seconds": 0.0,
+                "teacher_talk_ratio": 0.0, "question_wait_events": 0, "question_wait_seconds": 0.0,
+                "individual_support_seconds": 0.0, "individual_support_ratio": 0.0,
+                "note": "没有可用于统计的时间片。"}
+    total = sum(row["end_sec"] - row["start_sec"] for row in rows) or float(duration or 1)
+    teacher = [row for row in rows if row["audio"] >= .35 and row["activity"] < .25]
+    support = [row for row in rows if row["adult"] >= .55]
+    audio_values = [row["audio"] for row in rows]
+    audio_p10 = float(np.percentile(audio_values, 10))
+    audio_p20 = float(np.percentile(audio_values, 20))
+    audio_p90 = float(np.percentile(audio_values, 90))
+    audio_median = float(np.median(audio_values))
+    audio_flat = bool((audio_p90 - audio_p10) < .15)
+    waits = [] if audio_flat else [
+        row for before, row in zip(rows, rows[1:])
+        if before["audio"] >= audio_median
+        and (before["audio"] - row["audio"]) >= .15
+        and row["audio"] <= audio_p20]
+    wait_available = bool(waits)
+
+    def seconds(items):
+        return round(sum(row["end_sec"] - row["start_sec"] for row in items), 1)
+
+    return {"window_sec": WINDOW_SEC, "window_count": len(rows),
+            "teacher_talk_seconds": seconds(teacher),
+            "teacher_talk_ratio": round(seconds(teacher) / total, 3),
+            "question_wait_events": len(waits),
+            "question_wait_seconds": seconds(waits),
+            "wait_available": wait_available,
+            "individual_support_seconds": seconds(support),
+            "individual_support_ratio": round(seconds(support) / total, 3),
+            "audio_flat": audio_flat,
+            "note": ("本课课堂声音持续较高，无法从能量起伏判断提问-等待；" if audio_flat else "")
+                    + "基于30秒时间窗的课堂级近似统计：讲解段=课堂有声音且学生整体安静；"
+                    "提问-等待=有声音窗口后接安静窗口；个别支持=相邻区域活跃且本人安静。"
+                    "声音未定位到个人，也不是逐句 ASR。"}
+
+
+def _support_conclusions(persons, rhythm):
+    """Three lesson-level conclusions plus next-lesson suggestions (teacher-facing)."""
+    total_windows = sum(len(person.get("windows") or []) for person in persons)
+    review = sum(person.get("state_summary", {}).get("review_required", 0) for person in persons)
+    focus = []
+    top = None
+    conclusions = []
+    if persons:
+        top = max(persons, key=lambda person: (
+            person["state_summary"]["counts"]["confused_or_stuck"]
+            + person["state_summary"]["counts"]["uncertain_adult_interference"],
+            person["state_summary"]["counts"]["low_attention"]))
+        counts = top["state_summary"]["counts"]
+        dominant = max(counts, key=counts.get)
+        conclusions.append({
+            "title": "本课状态分布",
+            "text": f"{len(persons)}个人物候选共{total_windows}个时间片，建议教师确认{review}段；"
+                    f"以“{STUDENT_STATE_LABELS[dominant]}”为主的是{top['display_name']}（{counts[dominant]}段）。",
+            "basis": "逐人固定区域变化、相邻区域活动、课堂声音与画质"})
+        focus_states = ("confused_or_stuck", "uncertain_adult_interference", "low_attention")
+        focus = [(window["state"], window["start_sec"], window["end_sec"])
+                 for window in top["windows"] if window["state"] in focus_states]
+        if focus:
+            state, start, end = focus[0]
+            stuck = sum(1 for item in focus if item[0] == "confused_or_stuck")
+            conclusions.append({
+                "title": "优先复核",
+                "text": f"{top['display_name']} 在{_clock(start)}–{_clock(end)}出现“{STUDENT_STATE_LABELS[state]}”；"
+                        f"本课需要复核的片段共{len(focus)}个，其中困惑·停滞{stuck}个；先回看这些片段再决定支持方式。",
+                "basis": f"{top['display_name']}的状态时间片"})
+        else:
+            conclusions.append({
+                "title": "优先复核",
+                "text": "本课没有出现困惑·停滞、成人干扰或注意力下降片段，保持观察即可；"
+                        "如现场判断不同，以教师观察为准。",
+                "basis": "本课状态时间片"})
+    if rhythm.get("audio_flat") or not rhythm.get("wait_available", True):
+        conclusions.append({
+            "title": "课堂节奏",
+            "text": "本课课堂声音持续，30秒时间窗内没有出现明显的“有声→安静”间隔，"
+                    "无法据此判断提问-等待；"
+                    f"相邻区域活跃（可能有人靠近座位）的时段约{rhythm['individual_support_seconds']:.0f}秒。"
+                    "建议现场记录提问和等待次数，再与状态时间轴对照。",
+            "basis": "30秒时间窗的课堂级近似统计；未检测到可用的声音间隔"})
+    else:
+        conclusions.append({
+            "title": "课堂节奏",
+            "text": f"课堂有声音且学生整体安静的时段约{rhythm['teacher_talk_seconds']:.0f}秒"
+                    f"（{rhythm['teacher_talk_ratio']:.0%}），声音转安静的等待{rhythm['question_wait_events']}次，"
+                    f"相邻区域活跃的时段约{rhythm['individual_support_seconds']:.0f}秒。"
+                    "讲解偏长时安静时间片会增多，需要判断是听讲还是掉队。",
+            "basis": "30秒时间窗的课堂级近似统计"})
+    next_lesson = []
+    if top is not None and focus:
+        state, start, end = focus[0]
+        next_lesson.append({
+            "action": f"下节课在类似{_clock(start)}的环节给{top['display_name']}一步提示或视觉提示，"
+                      "再观察同一时段是否变化。",
+            "reason": "本课该时段出现需要复核的状态线索"})
+    if rhythm.get("audio_flat") or not rhythm.get("wait_available", True):
+        next_lesson.append({"action": "下一节课现场记录提问-等待次数，用现场记录和状态时间轴对照。",
+                            "reason": "本课课堂声音持续，30秒窗内无法自动判断等待"})
+    elif rhythm["question_wait_events"] < max(1, rhythm["window_count"] // 4):
+        next_lesson.append({"action": "讲解后固定留一次提问-等待，先等 5–10 秒再补充说明。",
+                            "reason": "本课声音转安静的等待次数偏少"})
+    if rhythm["individual_support_seconds"] > 0:
+        next_lesson.append({"action": "把个别支持集中在需要复核的人物，避免同时处理多个座位。",
+                            "reason": "本课已出现相邻区域活跃的时段"})
+    if not next_lesson:
+        next_lesson.append({"action": "保持当前节奏，继续用同一时间段对照状态变化。",
+                            "reason": "本课未出现需要调整的明显线索"})
+    return {"conclusions": conclusions[:3], "next_lesson": next_lesson[:3],
+            "profile": {"attached": False,
+                        "note": "本课结论只基于视频证据；绑定学生后可结合已授权的最小 IEP 支持摘要复核，"
+                                "系统不自动推断诊断或正式成绩。"}}
 
 
 def _person_report(display_name, anchor, windows, average_score, visibility):
@@ -808,6 +946,7 @@ def analyze(request, detector=None):
         ring_low, ring_high = np.percentile(ring_values, [10, 90]) if ring_values else (0., 0.)
         ring_scale = max(.01, float(ring_high - ring_low))
         windows = []
+        previous_activity = None
         for start in range(0, math.ceil(duration), WINDOW_SEC):
             end = min(duration, start+WINDOW_SEC)
             group = [x for x in items if start <= x["time"] < end]
@@ -829,7 +968,8 @@ def analyze(request, detector=None):
             representative = max(visible, key=lambda x: (x["face_detected"], x["face_quality"],
                                                          x["quality"], x["appearance"])) if visible else (
                 max(group, key=lambda x: x["quality"]) if group else None)
-            nearby_face = any(x["face_detected"] and start-15 <= x["time"] < end+15 for x in items)
+            face_in_window = any(x["face_detected"] and start <= x["time"] < end for x in group)
+            nearby_face = any(x["face_detected"] and start-45 <= x["time"] < end+45 for x in items)
             quality = float(np.mean([x["quality"] for x in visible])) if visible else 0.
             audio_activity, audio_coverage = _audio_for_window(audio_windows, start, end)
             lesson_phase = _lesson_phase(start, duration)
@@ -846,9 +986,9 @@ def analyze(request, detector=None):
                 evidence = "该时段未采样，不等于学生未出现；保留为无法判断。"
                 interpretation = "缺少采样，无法给出状态线索。"
                 confidence = .30
-            elif not visible or not nearby_face:
+            elif not visible:
                 state, label = "uncertain", STUDENT_STATE_LABELS["uncertain"]
-                evidence = "保留本时段原座位画面；缺少邻近人脸核对，不把区域变化当作已确认的学生状态。"
+                evidence = "该时段固定区域被遮挡、人员离位或镜头变化，保留为无法判断。"
                 interpretation = "该片段需要结合原视频人工确认。"
                 confidence = .35
             else:
@@ -856,7 +996,12 @@ def analyze(request, detector=None):
                     activity, audio_activity, adult_interference, visibility, quality,
                     motions, expected, face_presence=face_presence,
                     response_expected=response_expected, lesson_phase=lesson_phase,
+                    previous_activity=previous_activity,
                 )
+            if state != "uncertain" and not face_in_window:
+                confidence = round(max(.25, confidence - (.05 if nearby_face else .08)), 3)
+                evidence += ("本人脸只在相邻时段确认，本时段按固定区域判断。" if nearby_face
+                             else "本时段未检出本人脸，按固定区域画面判断。")
             student_score = _student_score(state, activity, quality)
             action = dict(STUDENT_STATE_ACTIONS[state])
             action["teacher_confirmation_required"] = bool(action["teacher_alert"])
@@ -886,6 +1031,7 @@ def analyze(request, detector=None):
                       audio_coverage=round(audio_coverage, 3),
                       state_basis="Demo1 state cue: fixed-seat local image change, nearby-region activity, classroom audio and window quality")
             windows.append(w)
+            previous_activity = activity
         scores = [w["score"] for w in windows if w["score"] is not None]
         student_scores = [w["student_score"] for w in windows if w.get("student_score") is not None]
         counts = {state: sum(w["state"] == state for w in windows) for state in STUDENT_STATE_LABELS}
@@ -926,6 +1072,8 @@ def analyze(request, detector=None):
                                              f"其中{review_required}个片段建议教师确认后使用。"),
                             action_summary=action_summary, lesson_report=person_report,
                             tracking="首次从左到右编号；固定人物区域结合每3秒人脸位置复核，禁止跨区域串人"))
+    rhythm = _classroom_rhythm(persons, duration)
+    support = _support_conclusions(persons, rhythm)
     rows = "".join(
         f"{item['display_name']}：{item['dominant_state_zh']}最多"
         f"（参与{item['state_summary']['counts']['engaged']}、"
@@ -959,6 +1107,8 @@ def analyze(request, detector=None):
         student_score_kind="demo1_state_cue_index",
         state_policy_version="demo1_student_state_cues_v2",
         report_version=REPORT_VERSION,
+        classroom_rhythm=rhythm,
+        support_conclusions=support,
         score_note=score_note,
         lesson_report={"title": "全片课堂状态线索概览", "text": report,
                        "character_count": len(report),

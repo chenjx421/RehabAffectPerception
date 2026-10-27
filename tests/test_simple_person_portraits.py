@@ -68,6 +68,9 @@ def test_result_page_shows_demo1_states_actions_and_key_moments():
     assert "选中人物动作参考值" in html
     assert "const selected=persons[activeIndex]" in html
     assert "观察时间片" in html
+    assert "本课结论与下节课建议" in html
+    assert "renderSupport(" in html and "classroom_rhythm" in html
+    assert "下节课建议" in html
 
 
 @pytest.mark.parametrize('box', [

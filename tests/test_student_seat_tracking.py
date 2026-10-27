@@ -93,6 +93,10 @@ def test_person_reports_are_independent_and_motion_is_not_attention(scene):
     assert left['lesson_report']['text'] != right['lesson_report']['text']
     assert '区域图像可用率不代表身份连续追踪' in result['score_note']
     assert '跑步和正常体育动作不能单凭动作判为分心' in result['score_note']
+    assert result['classroom_rhythm']['window_count'] >= 1
+    assert len(result['support_conclusions']['conclusions']) == 3
+    assert result['support_conclusions']['next_lesson']
+    assert result['support_conclusions']['profile']['attached'] is False
 
 
 def test_legacy_motion_presentation_preserves_source_evidence_and_ignores_other_engines(scene):
