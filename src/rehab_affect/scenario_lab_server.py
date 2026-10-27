@@ -1072,8 +1072,30 @@ def create_handler(
                     self._send_demo2_json({'ok': True, 'workspace': workspace, 'report_saved': report_saved})
                 elif parsed.path == f"{DEMO2_API_PREFIX}/course-analysis/report":
                     self._require_role(account, 'school_uploader')
-                    task_id, = self._identity_query(parsed, ('task_id',))
-                    report = self._measurement_call('course_report', self._session_cookie_token(), task_id)
+                    query = parse_qs(parsed.query)
+                    task_id = query.get('task_id', [''])[0].strip()
+                    fmt = query.get('fmt', ['json'])[0].strip().lower()
+                    if not task_id:
+                        raise Demo2APIError(400, 'invalid_request', 'task_id is required')
+                    token = self._session_cookie_token()
+                    if fmt == 'pdf':
+                        workspace = self._measurement_call('course_workspace', token, task_id)
+                        ev_workspace = self._evaluation_call('workspace', token)
+                        evaluation = next((record for record in ev_workspace.get('records') or []
+                                           if record.get('task_id') == task_id), None)
+                        if evaluation is None:
+                            raise Demo2APIError(409, 'evaluation_required', '请先保存课堂评分，再下载双轨报告')
+                        try:
+                            from . import demo2_report_pdf
+                        except ImportError as exc:
+                            raise Demo2APIError(503, 'pdf_unavailable', 'PDF 组件尚未安装') from exc
+                        data = demo2_report_pdf.class_pdf(
+                            {'task_id': task_id, 'course_name': workspace.get('course_name', '')},
+                            evaluation, ev_workspace.get('reference_library'))
+                        self._send_download_bytes(
+                            data, filename='课堂双轨评价报告.pdf', content_type='application/pdf')
+                        return
+                    report = self._measurement_call('course_report', token, task_id)
                     report_id = report.get('report_id', task_id)
                     self._send_demo2_json(
                         {'ok': True, 'report': report},
@@ -1173,6 +1195,47 @@ def create_handler(
                             raise Demo2APIError(404, "task_unavailable", "课堂任务不存在或已不可用") from exc
                         raise Demo2APIError(400, "result_unavailable", message) from exc
                     self._send_demo2_json({"ok": True, **payload})
+                elif parsed.path == f"{DEMO2_API_PREFIX}/simple-result/report":
+                    self._require_role(account, "school_uploader")
+                    query = parse_qs(parsed.query)
+                    task_id = query.get("task_id", [""])[0].strip()
+                    person_id = query.get("person_id", [""])[0].strip()
+                    if not task_id or not person_id:
+                        raise Demo2APIError(400, "invalid_request", "task_id 与 person_id 必填")
+                    try:
+                        payload = student_store.account_simple_analysis(
+                            self._session_cookie_token(), task_id
+                        )
+                    except ValueError as exc:
+                        message = str(exc)
+                        if any(marker in message for marker in ("无权", "权限", "其他账号")):
+                            raise Demo2APIError(403, "task_forbidden", "当前账号无权查看此课堂结果") from exc
+                        if any(marker in message for marker in ("未找到", "不存在")):
+                            raise Demo2APIError(404, "task_unavailable", "课堂任务不存在或已不可用") from exc
+                        raise Demo2APIError(400, "result_unavailable", message) from exc
+                    analysis = payload.get("analysis") or {}
+                    person = next((item for item in analysis.get("persons") or []
+                                   if item.get("person_id") == person_id), None)
+                    if person is None:
+                        raise Demo2APIError(404, "person_unavailable", "该人物结果不存在")
+                    archive = next((item for item in analysis.get("lesson_archives") or []
+                                    if item.get("person_id") == person_id), None)
+                    evaluation = None
+                    try:
+                        ev_workspace = self._evaluation_call("workspace", self._session_cookie_token())
+                        evaluation = next((record for record in ev_workspace.get("records") or []
+                                           if record.get("task_id") == task_id), None)
+                    except Exception:
+                        evaluation = None
+                    try:
+                        from . import demo2_report_pdf
+                    except ImportError as exc:
+                        raise Demo2APIError(503, "pdf_unavailable", "PDF 组件尚未安装") from exc
+                    name = (archive or {}).get("student_name") or person.get("display_name") or "学生"
+                    data = demo2_report_pdf.student_pdf(analysis, person, archive, evaluation)
+                    self._send_download_bytes(
+                        data, filename=f"{name}课堂结果.pdf", content_type="application/pdf"
+                    )
                 elif parsed.path == f"{DEMO2_API_PREFIX}/simple-result/frame":
                     query = parse_qs(parsed.query)
                     task_id = query.get("task_id", [""])[0].strip()
@@ -2549,6 +2612,15 @@ def create_handler(
 
         def _send_download(self, path: Path, *, filename: str, content_type: str) -> None:
             data = path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", content_type or "application/octet-stream")
+            self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(filename)}")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self._write_response(data)
+
+        def _send_download_bytes(self, data: bytes, *, filename: str, content_type: str) -> None:
             self.send_response(200)
             self.send_header("Content-Type", content_type or "application/octet-stream")
             self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(filename)}")
