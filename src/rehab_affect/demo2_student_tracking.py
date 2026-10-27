@@ -17,7 +17,7 @@ import threading
 import time
 from typing import Any
 
-VERSION = "simple_student_seats_v3_7"
+VERSION = "simple_student_seats_v3_8"
 # Stored analyses written before v3.7 keep the older presentation contract.
 # Motion-only analyses may still be stored under these versions; semantic
 # v3.7 analyses carry their own state cue and are never rewritten.
@@ -698,13 +698,15 @@ def _person_report(display_name, anchor, windows, average_score, visibility, rhy
         f"一、整体情况。这节课约 {minutes:.0f} 分钟，按 30 秒一格共 {total} 段。"
         f"整体以“{STUDENT_STATE_LABELS[top]}”为主：参与 {counts['engaged']} 段、注意力下降 {counts['low_attention']} 段、"
         f"困惑·停滞 {counts['confused_or_stuck']} 段、成人干扰下不确定 {counts['uncertain_adult_interference']} 段、"
-        f"无法判断 {counts['uncertain']} 段。画面变化参考值平均 {average}，只用来比较这名学生自己的不同时段。"
+        f"无法判断 {counts['uncertain']} 段；参与占全课 {counts['engaged'] / total:.0%}。"
+        f"画面变化参考值平均 {average}，只用来比较这名学生自己的不同时段。"
     )
     parts.append(
         f"二、参与情况。有动作、像在跟着课堂做的时段共 {counts['engaged']} 段，主要出现在{phases(engaged)}。"
         + (f"比较集中的活跃时段是 {periods('engaged', 4)}，合计约 {counts['engaged'] * 0.5:.0f} 分钟。"
            if engaged else "本课没有明显的活跃时段。")
         + "这些时段说明画面里有持续动作，但具体是在做题、操作还是和同学互动，需要结合当时任务判断。"
+        "如果参与集中在某几个环节，重点看那些环节的任务设计；如果整节课都比较均匀，说明当前活动安排他能跟上。"
     )
     if quiet:
         parts.append(
@@ -739,6 +741,7 @@ def _person_report(display_name, anchor, windows, average_score, visibility, rhy
         f"六、最值得回看的片段。建议按顺序看 {key_text}。"
         "先看“困惑·停滞”和“注意力下降”的时段；参与时段可以快速扫过，确认当时的任务安排是否对得上。"
         "回看时可以直接把原视频拖到对应时间点，也可以先看旁边的证据截图，再决定要不要看整段。"
+        "时间有限时先看三到五个片段就够了，其余按状态标签快速确认，不必逐段看完。"
     )
     next_actions = [STUDENT_STATE_ACTIONS[lead]["speech"]]
     if rhythm and rhythm.get("wait_available"):
@@ -752,6 +755,7 @@ def _person_report(display_name, anchor, windows, average_score, visibility, rhy
     parts.append(
         "七、下节课可以试试。" + " ".join(f"（{index}）{text}" for index, text in enumerate(next_actions, 1))
         + "不需要一次全用，挑一两条先试，再用同一时段的画面做对照，看看变化是不是真的出现了。"
+        "上完下一节课后再用同样的段落对比一次，就能看出调整有没有效果。"
     )
     parts.append(
         f"八、这份小结的边界。能看清的采样约占 {visibility * 100:.0f}%（{observed}/{expected}），"
@@ -759,6 +763,7 @@ def _person_report(display_name, anchor, windows, average_score, visibility, rhy
         "画面里的动作多少只是参考值，不是成绩，也不是注意力分数；跑步、走位这类正常动作不能单凭运动强度判成走神。"
         "状态是帮你找到值得回看的片段，最后的判断还是看当时的课堂和你的观察。"
         "如果某个时段你现场看到的情况和这里不一样，以你的记录为准，也可以把那段标出来，下次分析时优先看。"
+        "想要更细的时间粒度，目前固定是 30 秒一格，更短的窗口还不在这个版本里。"
     )
     report = "\n".join(parts)
     action = (f"这节课“{STUDENT_STATE_LABELS[top]}”的时间片最多（{counts[top]}/{total}）；"
