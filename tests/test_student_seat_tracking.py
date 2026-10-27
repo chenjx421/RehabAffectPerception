@@ -47,7 +47,11 @@ def test_missed_left_face_does_not_steal_right_face(scene):
     assert all(w['bbox']['x'] > .6 for w in right['windows'] if w['bbox'])
     assert all(w['frame'] for w in left['windows'])
     assert left['windows'][0]['movement'] > right['windows'][0]['movement']
-    assert 'confused_or_stuck' not in json.dumps(result)
+    for person in (left, right):
+        for window in person['windows']:
+            assert window['state'] in tracking.STUDENT_STATE_LABELS
+            assert not window['state'].startswith('movement_')
+            assert 'robot_motion' not in window['recommended_action']
 
 
 def test_full_timeline_keeps_every_window_and_same_time_image(scene):
@@ -75,11 +79,14 @@ def test_person_reports_are_independent_and_motion_is_not_attention(scene):
         assert report['character_count'] >= 300
         assert report['character_count'] == len(report['text'])
         assert person['action_summary']
-        assert all(window['state'] not in {'low_attention', 'active_response', 'low_response', 'engaged'}
+        assert all(window['state'] in tracking.STUDENT_STATE_LABELS for window in person['windows'])
+        assert all('action_id' in window['recommended_action'] for window in person['windows'])
+        assert all('robot_motion' not in window['recommended_action'] for window in person['windows'])
+        assert person['key_moments'] and len(person['key_moments']) <= 6
+        assert sum(person['state_summary']['counts'].values()) == len(person['windows'])
+        assert all(window.get('teacher_confirmation_required') is not None
+                   or 'teacher_confirmation_required' in window['recommended_action']
                    for window in person['windows'])
-        assert all(window['state'] in {'movement_high', 'movement_moderate', 'movement_low', 'uncertain'}
-                   for window in person['windows'])
-        assert all('不表示注意力' in window['evidence'] for window in person['windows'] if window['score'] is not None)
         assert '不能单凭运动强度判定分心' in report['text']
         assert '该区域在' in report['text'] and '不代表本人全程在场或身份连续已获验证' in report['text']
         assert '操场多人动作练习' not in report['text']
@@ -97,6 +104,7 @@ def test_legacy_motion_presentation_preserves_source_evidence_and_ignores_other_
         person.pop('lesson_report')
         for window in person['windows']:
             window['state'] = aliases.get(window['state'], window['state'])
+    legacy['analysis_version'] = 'simple_student_seats_v3_6'
     original = deepcopy(legacy)
     presented = tracking.present_motion_analysis(legacy)
     assert legacy == original
@@ -106,8 +114,9 @@ def test_legacy_motion_presentation_preserves_source_evidence_and_ignores_other_
         assert after['anchor_bbox'] == before['anchor_bbox']
         assert after['observation_roi'] == before['observation_roi']
         for a, b in zip(before['windows'], after['windows']):
-            assert {k: v for k, v in a.items() if k not in {'state', 'state_zh', 'evidence'}} == {
-                k: v for k, v in b.items() if k not in {'state', 'state_zh', 'evidence'}}
+            scratch = {'state', 'state_zh', 'evidence', 'recommended_action', 'interpretation'}
+            assert {k: v for k, v in a.items() if k not in scratch} == {
+                k: v for k, v in b.items() if k not in scratch}
     assert tracking.present_motion_analysis(presented) == presented
     other = dict(legacy, analysis_version='different_attention_engine')
     assert tracking.present_motion_analysis(other) == other
@@ -128,7 +137,9 @@ def test_sparse_input_not_claimed_as_absence(scene):
     request = scene(65)
     request['samples'] = request['samples'][:10] + request['samples'][60:]
     result = tracking.analyze(request, lambda _: [face(.18)])
-    assert result['persons'][0]['windows'][1]['state_zh'] == '该时段未采样'
+    window = result['persons'][0]['windows'][1]
+    assert window['state'] == 'uncertain'
+    assert '未采样' in window['evidence']
 
 
 def test_no_transitive_position_drift_and_no_seat_crossing():

@@ -1,0 +1,81 @@
+"""Demo1 state cues: five classroom states, per-window advice, no robot action."""
+
+import json
+
+import pytest
+
+from rehab_affect import demo2_student_tracking as tracking
+
+
+def cue(activity, *, adult=0.1, audio=0.1, visibility=1.0, quality=0.8, expected=10, motions=None):
+    return tracking._student_state(
+        activity, audio, adult, visibility, quality,
+        motions if motions is not None else [activity] * expected, expected,
+        lesson_phase="引导练习",
+    )
+
+
+def test_engaged_state_when_sustained_movement():
+    state, label, evidence, interpretation, confidence = cue(.62)
+    assert state == "engaged" and label == "参与"
+    assert "参与线索" in evidence and confidence >= .6
+
+
+def test_adult_interference_defers_to_teacher():
+    state, label, *_ = cue(.10, adult=.8)
+    assert state == "uncertain_adult_interference" and label == "成人干扰下不确定"
+
+
+def test_quiet_seat_with_classroom_sound_is_confused_or_stuck():
+    state, label, evidence, interpretation, _ = cue(.10, adult=.2, audio=.6)
+    assert state == "confused_or_stuck" and label == "困惑·停滞"
+    assert "声音" in evidence and "提示" in interpretation
+
+
+def test_quiet_seat_without_sound_is_low_attention():
+    state, label, *_ = cue(.16, adult=.2, audio=.1)
+    assert state == "low_attention" and label == "注意力下降"
+
+
+def test_engagement_wins_over_interference_when_student_is_active():
+    state, *_ = cue(.5, adult=.9, audio=.1)
+    assert state == "engaged"
+
+
+def test_insufficient_visibility_is_uncertain():
+    state, label, *_ = cue(.6, visibility=.1)
+    assert state == "uncertain" and label == "无法判断"
+
+
+def test_low_quality_lowers_confidence_without_changing_state():
+    _, _, evidence, _, low_confidence = cue(.62, quality=.4)
+    _, _, _, _, high_confidence = cue(.62, quality=.9)
+    assert "清晰度偏低" in evidence and low_confidence < high_confidence
+
+
+@pytest.mark.parametrize("state", list(tracking.STUDENT_STATE_LABELS))
+def test_every_state_has_advice_without_robot_motion(state):
+    action = tracking.STUDENT_STATE_ACTIONS[state]
+    assert action["action_id"] and action["screen"] and action["speech"]
+    assert "robot_motion" not in action
+    assert isinstance(action["teacher_alert"], bool)
+
+
+def test_key_moments_prioritise_review_cues_and_stay_ordered():
+    windows = [
+        dict(start_sec=30, end_sec=60, state="engaged", state_zh="参与", interpretation="继续观察"),
+        dict(start_sec=60, end_sec=90, state="confused_or_stuck", state_zh="困惑·停滞", interpretation="重复一步"),
+        dict(start_sec=90, end_sec=120, state="low_attention", state_zh="注意力下降", interpretation="低刺激提示"),
+        dict(start_sec=120, end_sec=150, state="uncertain_adult_interference", state_zh="成人干扰下不确定", interpretation="教师确认"),
+        dict(start_sec=150, end_sec=180, state="engaged", state_zh="参与", interpretation="继续观察"),
+        dict(start_sec=180, end_sec=210, state="engaged", state_zh="参与", interpretation="继续观察"),
+        dict(start_sec=210, end_sec=240, state="engaged", state_zh="参与", interpretation="继续观察"),
+    ]
+    moments = tracking._select_key_moments(windows)
+    assert len(moments) == 6
+    assert [item["start_sec"] for item in moments] == sorted(item["start_sec"] for item in moments)
+    picked = {item["start_sec"] for item in moments}
+    assert {60, 90, 120} <= picked
+    assert 210 not in picked
+    assert {item["state"] for item in moments} >= {
+        "confused_or_stuck", "low_attention", "uncertain_adult_interference"}

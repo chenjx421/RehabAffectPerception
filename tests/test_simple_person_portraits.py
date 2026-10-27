@@ -55,12 +55,16 @@ def test_full_head_color_and_source_preserved_with_versioned_cache(portrait_stor
     assert store.account_simple_analysis_frame('test', 'task', source.name, box)[0] == crop
 
 
-def test_result_page_shows_individual_reports_and_motion_only_state_labels():
+def test_result_page_shows_demo1_states_actions_and_key_moments():
     html = render_simple_result()
     assert "p.lesson_report?.text" in html
     assert "p.action_summary" in html
     assert "stateLabel(w)" in html and "stateLabel(first)" in html
-    assert "旧版状态标签（仅供回看，不作注意力判断）" in html
+    for label in ("参与", "注意力下降", "困惑·停滞", "成人干扰下不确定", "无法判断"):
+        assert label in html
+    assert "建议" in html and "需教师确认" in html
+    assert "关键片段" in html and "moment-list" in html
+    assert "旧版动作线索（仅供回看，不作注意力判断）" in html
     assert "选中人物动作参考值" in html
     assert "const selected=persons[activeIndex]" in html
     assert "观察时间片" in html
