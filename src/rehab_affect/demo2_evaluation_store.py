@@ -128,7 +128,8 @@ class Demo2EvaluationStore:
                         self._source(db,account,scope,dict(value),value)
                     except (MeasurementError,IdentityError,ValueError):
                         value['source_provenance']={**value['source_provenance'],'status':'needs_reconfirmation'}
-        return {**catalog(),'records':values, 'needs_school_context':not bool(scope),'school_context':context}
+        from .evaluation_references import catalog as reference_catalog
+        return {**catalog(),'records':values, 'needs_school_context':not bool(scope),'school_context':context,'reference_library':reference_catalog()}
 
     @staticmethod
     def _public(data):

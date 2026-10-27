@@ -159,8 +159,9 @@ class Demo2ReportStore:
                 evaluation_ids = sorted({
                     str(row[0]) for row in connection.execute(
                         "SELECT record_id FROM demo2_classroom_evaluations "
-                        "WHERE task_id = ? AND status = 'active'",
-                        (task_id,),
+                        "WHERE owner_account_id = ? AND scope_key = ? AND lesson_id = ? "
+                        "AND status = 'active'",
+                        (account["account_id"], scope, task_id),
                     ).fetchall()
                 })
             payload = {

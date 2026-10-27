@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from .demo2_portal import _document, _WORKSPACE_STYLE, _account_payload
+from .evaluation_references import catalog as _reference_catalog
 
 _API = "/api/v1/demo2"
 
@@ -157,6 +158,27 @@ textarea:hover{border-color:#7fa7cf}textarea:focus{border-color:var(--blue);outl
   #itemsTable td:before{content:attr(data-label);display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
 }
 """
+
+def _reference_section() -> str:
+    from html import escape
+    catalog = _reference_catalog()
+    rows = []
+    for item in catalog["items"]:
+        meta = " · ".join(part for part in (item["issuer"], item["year"]) if part)
+        link = (f'<a href="{escape(item["url"])}" target="_blank" rel="noopener">查看原文</a>'
+                if item.get("url") else "校内材料")
+        rows.append(
+            f'<li><strong>{escape(item["title"])}</strong> <span class="ref-meta">{escape(meta)}</span>'
+            f'<p>{escape(item["scope"])} — {escape(item["note"])} {link}</p></li>'
+        )
+    return (
+        '<details class="policy-summary" id="referenceLibrary">'
+        '<summary>评分依据与参考资料（权威来源）</summary>'
+        f'<p class="policy-note">{escape(catalog["note"])}</p>'
+        '<ul class="reference-list">' + "".join(rows) + '</ul>'
+        '</details>'
+    )
+
 def render_evaluation(account: Any | None = None) -> str:
     account_json = _account_payload(account)
     body = (
@@ -252,8 +274,7 @@ def render_evaluation(account: Any | None = None) -> str:
         '<tbody id="itemsTbody"><tr><td colspan="7" class="loading-line" style="padding:20px;text-align:center">'
         '请先选择评价模板</td></tr></tbody></table></div></div>'
         '<label class="review-check"><input type="checkbox" id="fReviewed"/>我已逐项核对证据与情境，确认改分针对教学应对，而非学生障碍或采集缺失</label>'
-        '<details class="policy-summary"><summary>查看增强评分等级与证据要求</summary><div id="anchorList" class="anchor-list"></div></details>'
-        '<p class="help">未评价请留空。选择学科方案后按本课目标调整候选权重，保存后锁定。当前评分由教师录入与复核，尚未接入自动视频评分。</p>'
+        '<details class="policy-summary"><summary>查看增强评分等级与证据要求</summary><div id="anchorList" class="anchor-list"></div></details>' + _reference_section() + '<p class="help">未评价请留空。选择学科方案后按本课目标调整候选权重，保存后锁定。当前评分由教师录入与复核，尚未接入自动视频评分。</p>'
         '<div id="formMsg" class="page-msg" role="alert"></div>'
         '<div class="form-actions no-print">'
         '<button id="previewBtn" class="button" type="button">预览评分</button>'
@@ -532,7 +553,7 @@ def render_evaluation(account: Any | None = None) -> str:
         'const cr=result.context_review;const ce=byId("contextChanges");ce.hidden=!cr?.enabled;if(cr?.enabled){ce.innerHTML=`<h3>情境修正记录</h3><p>${cr.pending_count?`${cr.pending_count}项建议待复核，尚未计入总分。`:"无待复核修正。"}</p>${cr.changes.map(c=>`<article><h4>${esc(c.label)} · ${c.applied?"已复核":"建议待复核"}</h4><p>学校分 ${fmtNum(c.school_score,2)} → 建议分 ${fmtNum(c.proposed_score,2)}；总分影响 ${fmtNum(c.proposed_delta,2)}</p><p>证据：${esc(c.evidence)}</p><p>应对与后续表现：${esc(c.reason)}</p><p>下一课：${esc(c.suggestion)}</p></article>`).join("")}<p>${esc(cr.note)}</p>`;}'
         'if(!result){byId("resultCard").hidden=true;return;}'
         'byId("resultCard").hidden=false;'
-        'byId("formCard").hidden=true;'
+        'byId("formCard").hidden=!!rec;'
         'renderedRecord=rec;byId("exportJsonBtn").disabled=!rec;'
         'const sch=result.school||{};const enh=result.enhanced||{};const cmp=result.comparison||{};'
         'const statusBadge=`<span class="status-badge${result.status==="reviewed"?" success":result.status==="provisional"?" warning":" "}">${statusLabel(result.status)}</span>`;'
