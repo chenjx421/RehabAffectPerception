@@ -36,6 +36,15 @@
 窗口新增：`state`、`state_zh`、`interpretation`、`recommended_action`、`adult_interference`；原有 `movement`、`score` 保留为画面变化参考值。
 人物新增：`key_moments`、`state_summary`；`student_state` 与 `state` 一致。
 
+## 人物候选可信度门
+
+远景或教师机画面里，一次性人脸检测可能落在桌椅或背景上，随后再也不会出现。现在只有当候选满足以下任一条才会被当作学生：
+
+- 人脸复检比例 ≥ 8%（在该候选的全部采样中再次检测到本人脸）；
+- 或固定区域画面变化中位数 ≥ 0.012（确实有持续活动）。
+
+两条都不满足的候选会被排除，写入 `excluded_candidates`，并在页面提示"已排除 N 个不可靠人物候选"；如果没有任何可靠候选，分析返回 `no_persistent_students` 并提示改用学生机画面或手动画框，而不是把背景判成"注意力下降"。
+
 ## 兼容与升级
 
 - 版本号 `simple_student_seats_v3_7`，媒体缓存版本同步更新。

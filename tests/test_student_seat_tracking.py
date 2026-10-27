@@ -39,7 +39,9 @@ def test_missed_left_face_does_not_steal_right_face(scene):
     calls = []
     def detect(image):
         calls.append(1)
-        return [face(.68), face(.18)] if len(calls) == 1 else [face(.68)]
+        # The left student is often missed but still confirmed periodically;
+        # a one-off detection that never returns is a rejected candidate.
+        return [face(.68), face(.18)] if len(calls) % 3 else [face(.68)]
     result = tracking.analyze(scene(65, moving=True), detect)
     left, right = result['persons']
     assert left['anchor_bbox']['x'] < right['anchor_bbox']['x']
@@ -169,3 +171,19 @@ def test_invalid_times_and_paths_rejected(scene):
     request['samples'][0]['frame'] = '../private.jpg'
     with pytest.raises(ValueError):
         tracking.analyze(request, lambda _: [])
+
+
+def test_one_off_face_on_static_background_is_not_reported_as_a_student(scene):
+    calls = []
+
+    def detect(image):
+        calls.append(1)
+        return [face(.4)] if len(calls) == 1 else []
+
+    result = tracking.analyze(scene(65), detect)
+    assert result['available'] is False
+    assert result['reason'] == 'no_persistent_students'
+    assert result['persons'] == []
+    assert result['excluded_candidates']
+    assert result['excluded_candidates'][0]['face_confirmation_ratio'] < 0.08
+    assert '教师机' in result['message']

@@ -27,6 +27,11 @@ MAX_SAMPLES = 10800
 TIMEOUT_SEC = 900
 MAX_PERSONS = 3
 DETECTION_INTERVAL_SEC = 2.0
+# A published student candidate must keep some face evidence or real local motion.
+# Wide teacher-camera shots often yield a one-off face on a desk/chair; reporting
+# it as a student would fabricate "low attention" windows.
+PERSON_MIN_FACE_RATIO = .08
+PERSON_MIN_MOTION_MEDIAN = .012
 INITIAL_SEARCH_SAMPLES = 60
 REPORT_VERSION = "demo1_student_state_report_v6"
 MOTION_LABELS = {"movement_high": "动作变化较多", "movement_moderate": "中等动作变化",
@@ -137,11 +142,18 @@ def build_analysis(segments, run, meta, *, stop_event=None):
         communication.join(5)
 
 
-def unavailable(reason):
+def unavailable(reason, *, excluded=None):
+    messages = {
+        "no_face_candidates": "视频中未检测到可用人物，请确认画面中有学生正脸。",
+        "no_persistent_students": ("本视频未检测到可持续跟踪的学生人物，可能是教师机远景或人物过小；"
+                                   "请改用学生机画面，或在结果页手动确认人物位置。"),
+        "no_video_samples": "视频没有可用采样画面。",
+    }
     return {"available": False, "analysis_version": VERSION, "reason": reason,
+            "message": messages.get(reason, "未生成学生状态分析。"),
+            "excluded_candidates": list(excluded or []),
             "persons": [], "window_sec": WINDOW_SEC,
-            "max_persons": MAX_PERSONS,
-            "message": "未取得可持续观察的人物画面；请检查光线、拍摄距离和遮挡。"}
+            "max_persons": MAX_PERSONS}
 
 
 def center(box):
@@ -936,9 +948,19 @@ def analyze(request, detector=None):
                                   face_motion=face_motion, movement_signal_raw=movement_signal_raw,
                                   local_similarity=local_similarity, ring_motion=ring_motion))
     persons = []
+    excluded = []
     for i, items in enumerate(tracks):
         values = [x["movement_signal_raw"] for x in items
                   if isinstance(x.get("movement_signal_raw"), (int, float))]
+        face_ratio = sum(1 for x in items if x["face_detected"]) / max(1, len(items))
+        raw_median = float(np.median(values)) if values else 0.0
+        if face_ratio < PERSON_MIN_FACE_RATIO and raw_median < PERSON_MIN_MOTION_MEDIAN:
+            excluded.append({"display_name": f"人物 {i+1}",
+                             "face_confirmation_ratio": round(face_ratio, 4),
+                             "motion_median": round(raw_median, 5),
+                             "reason": "未持续检测到本人脸，且固定区域几乎没有画面变化，"
+                                       "可能是背景、椅子或一次性误检，不计入学生状态。"})
+            continue
         low, high = np.percentile(values, [10, 90]) if values else (0., 0.)
         scale = max(.015, float(high-low))
         ring_values = [x["ring_motion"] for x in items
@@ -1072,6 +1094,8 @@ def analyze(request, detector=None):
                                              f"其中{review_required}个片段建议教师确认后使用。"),
                             action_summary=action_summary, lesson_report=person_report,
                             tracking="首次从左到右编号；固定人物区域结合每3秒人脸位置复核，禁止跨区域串人"))
+    if not persons:
+        return unavailable("no_persistent_students", excluded=excluded)
     rhythm = _classroom_rhythm(persons, duration)
     support = _support_conclusions(persons, rhythm)
     rows = "".join(
@@ -1096,6 +1120,8 @@ def analyze(request, detector=None):
         "成人干扰下不确定应直接交教师确认；系统不据此推断专注、情绪、掌握程度、意愿、障碍类型或正式课堂成绩。"
         "跑步、走位、伸展等正常体育活动不能单凭运动强度判定分心。"
         "请按关键片段回看原片，并结合教学目标与教师现场观察解释；无法核对的时间段保留为待确认，不用其他人物的表现填补。"
+        + (f"另有{len(excluded)}个候选因为未持续检测到本人脸、区域也几乎无变化而被排除，"
+           "它们未被当作学生，也没有生成状态结论。" if excluded else "")
     )
     score_note = ("页面展示 Demo1 风格状态：参与、注意力下降、困惑·停滞、成人干扰下不确定、无法判断；"
                   "每段附屏幕/语音建议和是否需要教师确认，本版本不含机器人动作。"
@@ -1109,6 +1135,7 @@ def analyze(request, detector=None):
         report_version=REPORT_VERSION,
         classroom_rhythm=rhythm,
         support_conclusions=support,
+        excluded_candidates=excluded,
         score_note=score_note,
         lesson_report={"title": "全片课堂状态线索概览", "text": report,
                        "character_count": len(report),
