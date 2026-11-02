@@ -42,6 +42,9 @@ SESSION_COOKIE_NAME = "rehab_demo2_session"
 MAX_BODY_BYTES = 15 * 1024 * 1024
 DOSSIER_MAX_BODY_BYTES = 12 * 1024 * 1024
 DOSSIER_API_PREFIX = "/api/v1/demo2/dossier"
+DOCUMENT_PARSE_PATH = "/api/v1/demo2/documents/parse"
+# 20 MB document plus multipart framing; every other route keeps MAX_BODY_BYTES.
+DOCUMENT_MAX_BODY_BYTES = 20 * 1024 * 1024 + 256 * 1024
 TIMEOUT_SECONDS = 10.0
 BODY_TIMEOUT_SECONDS = 30.0
 UPLOAD_BODY_TIMEOUT_SECONDS = 180.0
@@ -67,11 +70,11 @@ AUTH_PATH = "/api/v1/demo2/auth/me"
 _PAGES = frozenset({
     "/demo2/safety",
     "/demo2/course-batch", "/demo2/teaching-support",
-    "/demo2/login", "/demo2/school", "/demo2/upload", "/demo2/admin",
-    "/demo2/analysis", "/demo2/video", "/demo2/privacy", "/demo2/help", "/demo2/register", "/demo2/membership",
+    "/demo2/login", "/demo2/home", "/demo2/school", "/demo2/upload", "/demo2/admin",
+    "/demo2/analysis", "/demo2/course-overview", "/demo2/video", "/demo2/privacy", "/demo2/help", "/demo2/register", "/demo2/membership",
     "/demo2/students", "/demo2/identity",
     "/demo2/simple-result",
-    "/demo2/admin/channels",
+    "/demo2/admin/channels", "/demo2/admin/schools",
     "/demo2/measurement", "/demo2/admin/measurements", "/demo2/capture", "/demo2/evaluation",
     "/demo2/dossier", "/demo2/course-dossier", "/demo2/admin/dossiers", "/seewo_student_demo2",
     "/demo2/student-summary", "/demo2/admin/student-summaries",
@@ -80,14 +83,16 @@ _GET_API = frozenset({
     "/api/v1/demo2/applicability",
     "/api/v1/demo2/safety", "/api/v1/demo2/safety/media",
     "/api/v1/demo2/course-analysis", "/api/v1/demo2/course-analysis/tasks",
+    "/api/v1/demo2/course-overview",
     "/api/v1/demo2/course-analysis/report",
     "/api/v1/demo2/reports", "/api/v1/demo2/reports/download",
-    "/api/v1/demo2/admin/reports", "/api/v1/demo2/admin/tasks",
+    "/api/v1/demo2/admin/reports", "/api/v1/demo2/admin/tasks", "/api/v1/demo2/home/summary",
     "/api/v1/demo2/course-batch", "/api/v1/demo2/teaching-support",
     AUTH_PATH, "/api/v1/demo2/school/context", "/api/v1/demo2/upload/workspace",
+    "/api/v1/demo2/schools/search", "/api/v1/demo2/schools/regions", "/api/v1/demo2/admin/schools",
     "/api/v1/demo2/upload/task", "/api/v1/demo2/upload/media",
     "/api/v1/demo2/upload/result", "/api/v1/demo2/admin/summary",
-    "/api/v1/demo2/simple-result", "/api/v1/demo2/simple-result/frame",
+    "/api/v1/demo2/simple-result", "/api/v1/demo2/simple-result/frame", "/api/v1/demo2/simple-result/persons",
     "/api/v1/demo2/membership/config", "/api/v1/demo2/membership", "/api/v1/demo2/admin/memberships",
     "/api/v1/demo2/identity/roster", "/api/v1/demo2/identity/workspace",
     "/api/v1/demo2/identity/frame", "/api/v1/demo2/identity/export", "/api/v1/demo2/identity/detect",
@@ -96,10 +101,18 @@ _GET_API = frozenset({
     "/api/v1/demo2/dossier/student", "/api/v1/demo2/dossier/task", "/api/v1/demo2/dossier/admin",
     "/api/v1/demo2/dossier/document", "/api/v1/demo2/dossier/reference",
     "/api/v1/demo2/dossier/iep-context", "/api/v1/demo2/dossier/access", "/api/v1/demo2/dossier/analysis-context",
+    "/api/v1/demo2/dossier/iep-intake/status",
     "/api/seewo_demo2/video_result_download",
     "/api/v1/demo2/measurements", "/api/v1/demo2/admin/measurements", "/api/v1/demo2/evaluations",
+    "/api/v1/demo2/measurements/completeness", "/api/v1/demo2/measurements/prefill",
+    "/api/v1/demo2/measurements/score-basis", "/api/v1/demo2/evaluations/score-basis",
+    "/api/v1/demo2/measurements/report/download",
+    "/api/v1/demo2/evaluations/course",
     "/api/v1/demo2/student-summaries/student", "/api/v1/demo2/student-summaries/admin",
     "/api/v1/demo2/student-summaries/export",
+    "/api/v1/demo2/course-tasks", "/api/v1/demo2/course-tasks/document",
+    "/api/v1/demo2/course-tasks/original", "/api/v1/demo2/course-tasks/summary",
+    DOCUMENT_PARSE_PATH,
 })
 _POST_API = frozenset({
     "/api/v1/demo2/applicability",
@@ -108,25 +121,35 @@ _POST_API = frozenset({
     "/api/v1/demo2/auth/login", "/api/v1/demo2/auth/logout", "/api/v1/demo2/auth/register",
     "/api/v1/demo2/auth/sms-code", "/api/v1/demo2/membership/orders",
     "/api/v1/demo2/school/context", "/api/v1/demo2/upload/tasks",
+    "/api/v1/demo2/admin/schools/review",
     "/api/v1/demo2/upload/chunks", "/api/v1/demo2/upload/tasks/cancel",
     _UPLOAD_RESUME_PATH,
     "/api/v1/demo2/upload/tasks/retry", "/api/v1/demo2/upload/tasks/enqueue",
     "/api/v1/demo2/identity/students", "/api/v1/demo2/identity/bindings",
     "/api/v1/demo2/identity/bindings/revoke",
-    "/api/v1/demo2/identity/task-school",
+    "/api/v1/demo2/identity/task-school", "/api/v1/demo2/identity/debug-event",
     "/api/v1/demo2/identity/track", "/api/v1/demo2/admin/channels",
     "/api/v1/demo2/dossier/authorization", "/api/v1/demo2/dossier/authorization/withdraw",
     "/api/v1/demo2/dossier/documents", "/api/v1/demo2/dossier/documents/delete", "/api/v1/demo2/dossier/references",
     "/api/v1/demo2/dossier/references/withdraw",
+    "/api/v1/demo2/dossier/iep-intake/summary", "/api/v1/demo2/dossier/iep-intake/commit",
     "/api/seewo_demo2/security_acceptance", "/api/seewo_demo2/video_task", "/api/seewo_demo2/video_chunk",
     "/api/v1/demo2/measurements", "/api/v1/demo2/measurements/withdraw",
+    "/api/v1/demo2/measurements/completeness/backfill",
     "/api/v1/demo2/evaluations", "/api/v1/demo2/evaluations/preview", "/api/v1/demo2/evaluations/withdraw",
+    "/api/v1/demo2/evaluations/debug-event",
     "/api/v1/demo2/student-summaries/authorization", "/api/v1/demo2/student-summaries/snapshots",
     "/api/v1/demo2/student-summaries/authorization/withdraw",
     "/api/v1/demo2/student-summaries/automatic",
+    "/api/v1/demo2/ui/client-error", "/api/v1/demo2/ui/nav-event", "/api/v1/demo2/help/debug-event",
+    "/api/v1/demo2/course-tasks/draft", "/api/v1/demo2/course-tasks/confirm",
+    "/api/v1/demo2/simple-result/person-filter", "/api/v1/demo2/simple-result/archive",
+    "/api/v1/demo2/simple-result/person-switch",
+    DOCUMENT_PARSE_PATH,
 })
 _PUBLIC_UPSTREAM = frozenset({
     "/demo2/login", "/demo2/privacy", "/demo2/help", "/demo2/register", AUTH_PATH,
+    "/api/v1/demo2/ui/client-error", "/api/v1/demo2/ui/nav-event", "/api/v1/demo2/help/debug-event",
     "/api/v1/demo2/auth/login", "/api/v1/demo2/auth/logout", "/api/v1/demo2/auth/register",
     "/api/v1/demo2/auth/sms-code", "/api/v1/demo2/membership/config",
 })
@@ -430,7 +453,8 @@ class _GatewayHandler(BaseHTTPRequestHandler):
         length = int(lengths[0]) if lengths else 0
         # Framing is unambiguous from here, so a rejection may drain safely.
         self._reject_length = length
-        if length > MAX_BODY_BYTES:
+        limit = DOCUMENT_MAX_BODY_BYTES if getattr(self, "_reject_path", None) == DOCUMENT_PARSE_PATH else MAX_BODY_BYTES
+        if length > limit:
             raise OverflowError("Request body too large")
         if self.command != "POST" and length:
             raise _InvalidFraming("Body not allowed")
@@ -604,7 +628,7 @@ catch(e){secret='';document.getElementById('status').textContent='邀请无效�
 
     def _upstream_headers(self, cookies: dict[str, str]) -> dict[str, str]:
         result = {"Host": f"127.0.0.1:{self.server.config.upstream_port}", "Connection": "close"}
-        for key in ("Accept", "Accept-Language", "Content-Type", "Range", "If-Range"):
+        for key in ("Accept", "Accept-Language", "Content-Type", "Range", "If-Range", "X-WeGlow-Brand"):
             if self.headers.get(key):
                 result[key] = self.headers[key]
         if cookies.get(SESSION_COOKIE_NAME):
@@ -835,7 +859,7 @@ catch(e){secret='';document.getElementById('status').textContent='邀请无效�
             # Forward raw binary and legacy JSON unchanged, including the exact
             # query. The application retains task ownership and chunk validation.
             self._drain_outcome = "consumed"
-            body = self._read_body(length, upload=path in _UPLOAD_CHUNK_PATHS,
+            body = self._read_body(length, upload=path in _UPLOAD_CHUNK_PATHS or path == DOCUMENT_PARSE_PATH,
                                    invite_expires_at=int(cookies[INVITE_COOKIE_NAME].split(".")[1])) if self.command == "POST" else b""
             if self._expired():
                 self._error(410, "invitation_expired", "邀请已到期")
@@ -848,7 +872,10 @@ catch(e){secret='';document.getElementById('status').textContent='邀请无效�
                 return
             self._proxy(target, body, cookies)
         except OverflowError:
-            self._error(413, "body_too_large", "请求体不能超过 15 MiB")
+            if getattr(self, "_reject_path", None) == DOCUMENT_PARSE_PATH:
+                self._error(413, "document_too_large", "文件不能超过 20 MB")
+            else:
+                self._error(413, "body_too_large", "请求体不能超过 15 MiB")
         except _UpstreamTimeout:
             self._error(410 if self._expired() else 504, "upstream_timeout", "平台验证超时，请稍后重试")
         except (socket.timeout, TimeoutError):

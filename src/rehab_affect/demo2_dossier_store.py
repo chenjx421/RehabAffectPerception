@@ -98,6 +98,11 @@ def _debug_value(key, value):
     return None
 
 
+def short_code(value):
+    """First 8 identifier characters, the same short code the dossier pages display."""
+    return re.sub(r"^[A-Za-z]{1,16}[-_](?=[0-9A-Fa-f])", "", str(value or ""))[:8]
+
+
 def debug_event(records, operation, result, **fields):
     """Write one structured dossier debug line; logging never blocks the operation."""
     entry = {"ts": datetime.now().astimezone().isoformat(timespec="milliseconds"),
@@ -106,6 +111,12 @@ def debug_event(records, operation, result, **fields):
         cleaned = _debug_value(key, value)
         if cleaned is not None:
             entry[key] = cleaned
+    # Short codes match what the teacher sees on screen, so a support ticket
+    # quoting 「资料 1a2b3c4d」 can be matched to its log lines directly.
+    for key, short_key in (("document_id", "document_short"), ("supersedes_id", "supersedes_short"),
+                           ("reference_id", "reference_short")):
+        if entry.get(key) and entry[key] != "<invalid>":
+            entry[short_key] = short_code(entry[key])
     line = json.dumps(entry, ensure_ascii=False, sort_keys=False, separators=(",", ":"))
     DEBUG_LOGGER.debug(line)
     try:
@@ -596,6 +607,11 @@ class Demo2DossierStore:
         if available:
             meta = self._open_json("document", row["document_id"], row["metadata_ciphertext"])
             public.update(source_ref=meta["source_ref"], summary=meta["summary"], filename=meta["filename"], has_file=bool(row["has_file"]))
+            if isinstance(meta.get("iep_intake"), dict):
+                intake = meta["iep_intake"]
+                public["intake"] = {"items": intake.get("items") or [], "manual_supplement": intake.get("manual_supplement") or "",
+                                    "file_type": intake.get("file_type") or "", "page_count": intake.get("page_count") or 0,
+                                    "confirmed_at": intake.get("confirmed_at") or ""}
         return public
 
     def _retire(self, connection, document_id, reason):
@@ -758,7 +774,21 @@ class Demo2DossierStore:
                          status=result["status"], has_file=result["has_file"])
             return result
 
-    def _create_document(self, token, payload):
+    def create_iep_intake_document(self, token, payload, *, original=None, intake=None):
+        """IEP version from the Word/PDF intake: original bytes come from the sealed parse staging, not Base64."""
+        fields = payload if isinstance(payload, dict) else {}
+        operation = "document_version_create" if fields.get("supersedes_id") else "document_create"
+        with self._trace(operation, student_id=fields.get("student_id"), authorization_id=fields.get("authorization_id"),
+                         document_type="iep", supersedes_id=fields.get("supersedes_id") or None,
+                         retain_until=fields.get("retain_until")) as trace:
+            if fields.get("document_type") != "iep":
+                raise DossierError(400, "invalid_document_type", "IEP 摘要只能保存为 IEP 资料")
+            result = self._create_document(token, payload, preloaded=original, intake=intake)
+            trace.update(document_id=result["document_id"], version=result["version"], family_id=result["family_id"],
+                         status=result["status"], has_file=result["has_file"])
+            return result
+
+    def _create_document(self, token, payload, *, preloaded=None, intake=None):
         failure = None
         with self._session(token) as (connection, actor):
             _payload(payload, "student_id authorization_id document_type document_date source_ref retain_until summary filename content_base64 supersedes_id")
@@ -782,9 +812,17 @@ class Demo2DossierStore:
             if not isinstance(summary, dict) or set(summary) != SUMMARY_FIELDS:
                 raise DossierError(400, "invalid_summary", "请提交约定的四类教师确认摘要")
             summary = {key: _text(value, 2000, multiline=True) for key, value in summary.items()}
-            if auth["storage_mode"] == "summary_only" and (payload["filename"] != "" or payload["content_base64"] != ""):
+            if auth["storage_mode"] == "summary_only" and (payload["filename"] != "" or payload["content_base64"] != ""
+                                                          or preloaded is not None):
                 raise DossierError(400, "original_not_authorized", "摘要授权不允许上传原件")
-            data, filename, mime = _file_content(payload["filename"], payload["content_base64"])
+            if preloaded is not None:
+                # Already type-checked by the document parse service (PDF/DOCX/DOC magic and size).
+                data, filename, mime = preloaded
+                if not isinstance(data, bytes) or not 0 < len(data) <= MAX_FILE_BYTES:
+                    raise DossierError(400, "invalid_file", "文件必须非空且不超过 8 MiB")
+                filename = _text(filename, 200, required=True)
+            else:
+                data, filename, mime = _file_content(payload["filename"], payload["content_base64"])
             if data and not self._storage_owned(connection):
                 raise DossierError(503, "storage_unavailable", "Dossier storage ownership could not be verified")
             if not data and not any(summary.values()):
@@ -802,8 +840,11 @@ class Demo2DossierStore:
                 family, version = parent["family_id"], parent["version"] + 1
             # Digest lives inside the ID-bound encrypted metadata, not an admin
             # or public field. Encrypt raw bytes to honor the vault's 8MiB cap.
-            meta = self._seal_json("document", object_id, {"source_ref": source, "summary": summary, "filename": filename,
-                                   "content_type": mime, "file_sha256": hashlib.sha256(data).hexdigest() if data else ""})
+            plain_meta = {"source_ref": source, "summary": summary, "filename": filename,
+                          "content_type": mime, "file_sha256": hashlib.sha256(data).hexdigest() if data else ""}
+            if intake is not None:
+                plain_meta["iep_intake"] = intake
+            meta = self._seal_json("document", object_id, plain_meta)
             ciphertext = self._seal(data) if data else b""
             now = _iso()
             row = {"document_id": object_id, "student_id": student["student_id"], "owner_account_id": actor["account_id"], "scope_key": student["scope_key"],
@@ -1035,6 +1076,7 @@ class Demo2DossierStore:
                 docs = [public for public in (self._public_document(connection, dict(row)) for row in connection.execute(
                     "SELECT * FROM demo2_dossier_documents WHERE student_id = ? ORDER BY created_at,version", (student_id,))) if public["available"]]
                 students.append({"student_id": student_id, "display_name": student["display_name"],
+                                 "student_code": student.get("student_code") or "", "class_name": student.get("class_name") or "",
                                  "confirmed_binding_count": sum(item["student_id"] == student_id for item in bindings), "documents": docs})
             self._audit(connection, actor, "dossier_task_viewed", task_id, {"student_count": len(students)})
             return {"task": {"task_id": task_id, "course_id": task["course_id"], "course_name": task["course_name"], "frame_revision": self.identities._revision(task)},

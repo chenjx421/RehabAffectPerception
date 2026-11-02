@@ -243,7 +243,7 @@ class AutomaticCourseHistory:
             if row is None or technical is None or not technical['score_allowed']:
                 raise ValueError
             data = json.loads(row['payload_json'])
-            if data.get('task_id') != task['task_id'] or data.get('source_type') != 'video_review':
+            if data.get('task_id') != task['task_id'] or data.get('source_type') not in {'video_review', 'video'}:
                 raise ValueError
             start, end = data.get('start_sec'), data.get('end_sec')
             if (any(type(v) not in (int, float) or not math.isfinite(v) for v in (start, end))
@@ -286,7 +286,7 @@ class AutomaticCourseHistory:
             data = json.loads(row['payload_json'])
             sources.append(dict(record_id=row['record_id'], version=row['version'],
                                 sha256=hashlib.sha256(row['payload_json'].encode()).hexdigest()))
-            if data.get('source_type') != 'video_review' or row['status'] != 'active':
+            if data.get('source_type') not in {'video_review', 'video'} or row['status'] != 'active':
                 invalid = True
                 continue
             if data.get('reviewed') is not True:
@@ -382,7 +382,7 @@ class AutomaticCourseHistory:
                 binding = bindings.get(data.get('binding_id'))
                 start, end = data.get('start_sec'), data.get('end_sec')
                 if (data.get('reviewed') is not True or data.get('rubric_version') != api.RUBRIC_VERSION
-                        or data.get('source_type') != 'video_review' or data.get('task_id') != task['task_id']
+                        or data.get('source_type') not in {'video_review', 'video'} or data.get('task_id') != task['task_id']
                         or data.get('record_id') != source['record_id'] or data.get('student_id') != student['student_id']
                         or data.get('version') != source['version'] or data.get('status') != 'active'
                         or data.get('frame_revision') != revision or data.get('source_sha256') != task['sha256']

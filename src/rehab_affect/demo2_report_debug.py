@@ -31,15 +31,30 @@ OPERATIONS = frozenset({
     "report_stale_check",
     "report_admin_redact",
     "report_rejected",
+    "analysis_task_list",
+    "report_page_view",
+    "report_page_download",
+    "course_overview_compute",
+    "course_overview_conclusion",
+    "course_overview_incomplete",
+    "course_overview_page_open",
+    "course_overview_view",
+    "course_overview_admin_view",
+    "course_overview_error",
+    "report_render_start",
+    "report_render_done",
+    "report_render_failed",
 })
 ROLES = frozenset({"teacher", "company_admin", "unknown"})
 _ID_FIELDS = ("report_id", "content_report_id", "task_id", "course_id", "evaluation_id",
-              "account_id", "frame_revision", "version_fingerprint", "status", "code", "fmt")
+              "account_id", "frame_revision", "version_fingerprint", "status", "code", "fmt",
+              "report_short", "task_short", "grade", "viewer", "kind", "record_short", "font")
 _INT_FIELDS = ("character_count", "section_count", "student_count", "record_count",
                "evaluation_count", "reviewed_count", "scored_count", "pending_count",
-               "removed_count", "report_count", "page")
+               "removed_count", "pseudonymized_count", "report_count", "page", "task_count", "stale_count", "byte_size",
+               "page_count", "image_count", "duration_ms")
 _LIST_FIELDS = ("evaluation_ids", "evaluation_versions", "record_versions",
-                "stale_reasons", "removed_fields")
+                "stale_reasons", "removed_fields", "missing_steps")
 _LOCK = threading.Lock()
 
 
@@ -78,10 +93,16 @@ def report_debug_event(store: Any, operation: str, result: str, **fields: Any) -
         elif key in _LIST_FIELDS:
             entry[key] = ([_clean_id(item) for item in value][:50]
                           if isinstance(value, (list, tuple)) else [])
-        elif key in {"ready", "stale"}:
+        elif key in {"ready", "stale", "previous_stale"}:
             entry[key] = value if isinstance(value, bool) else "<invalid>"
+        elif key == "conclusion_score":
+            entry[key] = (round(float(value), 1) if isinstance(value, (int, float)) and not isinstance(value, bool)
+                          else "<invalid>")
         elif key == "message":
             entry[key] = str(value)[:160]
+    if isinstance(entry.get("report_id"), str) and entry["report_id"] != "<invalid>" and "report_short" not in entry:
+        # Short code matches what the page shows next to 「报告编号」.
+        entry["report_short"] = entry["report_id"][:8]
     line = json.dumps(entry, ensure_ascii=False, separators=(",", ":"))
     DEBUG_LOGGER.debug(line)
     try:

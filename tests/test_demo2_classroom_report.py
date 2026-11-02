@@ -167,6 +167,26 @@ def test_admin_report_has_no_iep_links_but_teacher_keeps_them(env, report_logs):
     assert {e["role"] for e in views} == {"teacher", "company_admin"}
 
 
+def test_admin_report_replaces_student_names_but_teacher_keeps_them(env, report_logs):
+    video, _, _, _, measurements, *_ = prepared(env)
+    work = measurements.course_workspace(env.tokens["a"], video.task_id)
+    store = Demo2ReportStore(env.records)
+    snapshot = store.save_from_workspace(env.tokens["a"], work)
+    name = env.pupils["a1"]["display_name"]
+
+    teacher_md = store.download(env.tokens["a"], snapshot["report_id"], fmt="md")[0]
+    assert name in teacher_md
+    admin_view = json.dumps(store.get(env.tokens["admin"], snapshot["report_id"]), ensure_ascii=False)
+    assert name not in admin_view and "学生1" in admin_view
+    for fmt in ("json", "md"):
+        text = store.download(env.tokens["admin"], snapshot["report_id"], fmt=fmt)[0]
+        assert name not in text and "学生1" in text
+
+    redactions = [e for e in report_logs() if e["operation"] == "report_admin_redact"]
+    assert redactions[-1]["result"] == "redacted" and redactions[-1]["pseudonymized_count"] >= 1
+    assert name not in json.dumps(report_logs(), ensure_ascii=False)
+
+
 def test_report_page_matches_reference_layout():
     html = demo2_course_page.render_course_analysis()
     for text in ("正文 ${r.character_count} 字符", "已记录目标测量 · 10分制", "不同学生、目标与支持条件不合并排名",

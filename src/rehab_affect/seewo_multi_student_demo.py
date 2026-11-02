@@ -1455,7 +1455,7 @@ _HTML_TEMPLATE = r'''<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#f3f6f4" />
   <meta name="description" content="面向辅读学校的课堂学习证据、教师复核与个体支持工作台" />
-  <title>课堂学习证据台 · RehabAffect</title>
+  <title>WeGlow微光系统 · 课堂学习证据台</title>
   <style>
     :root {
       --bg:#eef2f6; --panel:#fff; --soft:#f7f9fc; --ink:#17212b; --muted:#667085;
@@ -4282,7 +4282,7 @@ _HTML_TEMPLATE = r'''<!doctype html>
 </section>
 <header>
   <div class="topbar">
-    <div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5a3 3 0 0 1 3-1.5h4a3 3 0 0 1 3 3v15a3 3 0 0 0-3-3H5a3 3 0 0 0-3 1.5z"/><path d="M22 4.5A3 3 0 0 0 19 3h-4a3 3 0 0 0-3 3v15a3 3 0 0 1 3-3h4a3 3 0 0 1 3 1.5z"/><path d="m16 9 1.5 1.5L20 8"/></svg></span><div><strong>RehabAffect</strong><span>课堂学习证据工作台</span></div></div>
+    <div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5a3 3 0 0 1 3-1.5h4a3 3 0 0 1 3 3v15a3 3 0 0 0-3-3H5a3 3 0 0 0-3 1.5z"/><path d="M22 4.5A3 3 0 0 0 19 3h-4a3 3 0 0 0-3 3v15a3 3 0 0 1 3-3h4a3 3 0 0 1 3 1.5z"/><path d="m16 9 1.5 1.5L20 8"/></svg></span><div><strong>WeGlow</strong><span>课堂学习证据工作台</span></div></div>
     <div class="top-actions">
       <span class="status" id="runStatus" role="status" aria-live="polite"><i></i>本地授权数据 · 分析已完成</span>
       <select class="course-select" id="courseSelect" aria-label="切换课程"></select>

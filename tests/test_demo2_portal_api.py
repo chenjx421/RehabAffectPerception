@@ -1296,8 +1296,10 @@ def test_legacy_video_routes_keep_account_channel_quota_and_result_isolation(
             {**base_payload, "channel_id": "channel_2"},
             cookie=owner_cookie,
         )
-        assert status == 200
-        assert body["task"]["channel_id"] == "channel_2"
+        # Another school's channel is never accepted; the bound channel is not swapped.
+        assert status == 403
+        assert body["error"]["code"] == "channel_forbidden"
+        assert store.video_channels()["channels"][1]["tasks"] == []
 
         status, _, body = _request(
             httpd.server_port,

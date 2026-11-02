@@ -1,8 +1,13 @@
 """Teacher adjudication of repeated observations across videos of one course."""
 
 
-def render_batch_review():
-    return HTML
+from .demo2_ui_kit import teacher_header, inject_kit
+
+
+def render_batch_review(account=None):
+    header = teacher_header("upload", account, logout_bound=False, page="course_batch",
+                            extra_actions='<a class="button" href="/demo2/analysis">返回课堂视频</a>')
+    return inject_kit(HTML, header=header, page="course_batch")
 
 
 HTML=r'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>同课多视频汇总</title>

@@ -81,17 +81,19 @@ def test_save_reloads_before_claiming_success_and_uses_latest_version():
     """)
 
 
-def test_conflict_requires_read_and_explicit_comparison_before_new_save():
+def test_conflict_refreshes_latest_and_requires_explicit_comparison_before_new_save():
     _run_page_js(render_channel_admin(ADMIN), SETUP, EDIT + r"""
-    replies.push({status:409,body:{error:{}}});await save(submit);
-    assert.match($('formStatus').textContent,/刷新重新核对/);
-    assert.equal($('saveChannel').disabled,true);assert.equal($('acceptComparison').hidden,true);
-    await save(submit);assert.equal(requests.filter(r=>r.options.method==='POST').length,1);
     const latest={...fixture,owner_label:'Another owner',version:9};
-    replies.push({ok:true,channels:[latest]});await reload();
+    replies.push({status:409,body:{error:{code:'channel_version_conflict'}}},{ok:true,channels:[latest]});await save(submit);
+    assert.equal(requests.filter(r=>r.options.method==='POST').length,1);
+    assert.equal(requests.at(-1).options.method,'GET');
+    assert.match($('formStatus').textContent,/数据已被他人修改，已为你刷新最新值/);
+    assert.match($('pageMessage').textContent,/数据已被他人修改，已为你刷新最新值/);
     assert.match($('comparisonValues').innerHTML,/Another owner/);
     assert.match($('comparisonValues').innerHTML,/Changed channel/);
-    assert.equal($('saveChannel').disabled,true);
+    assert.equal($('saveChannel').disabled,true);assert.equal($('acceptComparison').hidden,false);
+    await save(submit);assert.equal(requests.filter(r=>r.options.method==='POST').length,1);
+    assert.match($('channelRows').innerHTML,/Another owner/);
     await $('acceptComparison').fire('click');assert.equal($('saveChannel').disabled,false);
     const updated={...latest,channel_name:'Changed channel',owner_label:'Test owner',version:10};
     replies.push({ok:true,channel:updated},{ok:true,channels:[updated]});await save(submit);
@@ -99,11 +101,23 @@ def test_conflict_requires_read_and_explicit_comparison_before_new_save():
     """)
 
 
+def test_conflict_refresh_failure_keeps_attempt_locked():
+    _run_page_js(render_channel_admin(ADMIN), SETUP, EDIT + r"""
+    replies.push({status:409,body:{error:{}}},new TypeError('offline'));await save(submit);
+    assert.equal(pending.kind,'conflict');assert.equal(pending.latest,null);
+    assert.match($('formStatus').textContent,/保存结果未确认/);assert.equal($('saveChannel').disabled,true);
+    replies.push({ok:true,channels:[{...fixture,owner_label:'Another owner',version:9}]});await reload();
+    assert.match($('formStatus').textContent,/数据已被他人修改/);
+    assert.equal(requests.filter(r=>r.options.method==='POST').length,1);
+    """)
+
+
 @pytest.mark.parametrize("message", [None, "", "   ", {}])
 def test_409_without_usable_message_keeps_version_conflict_fallback(message):
     response = json.dumps({"status": 409, "body": {"error": {"message": message}}})
-    _run_page_js(render_channel_admin(ADMIN), SETUP, EDIT + "replies.push(" + response + ");await save(submit);" + """
-    assert.equal($('formStatus').textContent,'配置已被其他管理员修改，请刷新重新核对。');
+    _run_page_js(render_channel_admin(ADMIN), SETUP, EDIT + "replies.push(" + response + ",{ok:true,channels:[{...fixture,owner_label:'Another owner',version:9}]});await save(submit);" + """
+    assert.equal(pending.reason,'配置已被其他管理员修改，请刷新重新核对。');
+    assert.match($('comparisonNotice').textContent,/配置已被其他管理员修改/);
     assert.equal(pending.kind,'conflict');assert.equal($('saveChannel').disabled,true);
     """)
 
@@ -111,11 +125,40 @@ def test_409_without_usable_message_keeps_version_conflict_fallback(message):
 def test_409_preserves_server_message_and_version_conflict_guard():
     _run_page_js(render_channel_admin(ADMIN), SETUP, EDIT + """
     const explanation='另一位管理员刚刚更新了配置，请重新读取后核对。';
-    replies.push({status:409,body:{error:{message:explanation}}});await save(submit);
-    assert.equal($('formStatus').textContent,explanation);
-    assert.equal($('pageMessage').textContent,explanation);
+    replies.push({status:409,body:{error:{message:explanation}}},{ok:true,channels:[{...fixture,status:'paused',version:9}]});await save(submit);
+    assert.ok($('comparisonNotice').textContent.includes(explanation));
+    assert.match($('pageMessage').textContent,/数据已被他人修改，已为你刷新最新值/);
+    assert.match($('comparisonValues').innerHTML,/已暂停/);
     assert.equal(pending.kind,'conflict');assert.equal($('saveChannel').disabled,true);
     assert.equal(requests.filter(r=>r.options.method==='POST').length,1);
+    """)
+
+
+@pytest.mark.parametrize("value", ["2", "6", "4.5", "", "abc"])
+def test_out_of_range_quota_is_rejected_in_chinese_without_posting(value):
+    _run_page_js(render_channel_admin(ADMIN), SETUP, f"""
+    openSettings(0);$('courseUploadLimit').value={json.dumps(value)};await $('channelForm').fire('input');
+    assert.equal($('saveChannel').disabled,true);assert.equal($('limitError').hidden,false);
+    assert.match($('limitError').textContent,/3/);assert.match($('limitError').textContent,/名额/);
+    await save(submit);assert.match($('formStatus').textContent,/名额/);
+    assert.ok(!requests.some(r=>r.options.method==='POST'));
+    $('courseUploadLimit').value='4';await $('channelForm').fire('input');
+    assert.equal($('limitError').hidden,true);assert.equal($('saveChannel').disabled,false);
+    """)
+
+
+def test_empty_owner_and_paused_status_use_friendly_labels():
+    _run_page_js(render_channel_admin(ADMIN),
+        "replies.push({ok:true,channels:[{channel_id:'c1',channel_name:'上传通道 1',owner_label:'',status:'paused',course_upload_limit:5,version:'v1',active_task_count:2},"
+        "{channel_id:'c2',channel_name:'上传通道 2',owner_label:'王老师',status:'active',course_upload_limit:4,version:'v1'}]});",
+        """
+    assert.match($('channelRows').innerHTML,/owner-unset">未设置/);
+    assert.match($('channelRows').innerHTML,/已暂停/);assert.match($('channelRows').innerHTML,/开放上传/);
+    assert.ok(!$('channelRows').innerHTML.includes('未填写'));assert.ok(!$('channelRows').innerHTML.includes('启用新建上传'));
+    assert.equal($('kpiChannelTotal').textContent,'2');assert.equal($('kpiChannelActive').textContent,'1');
+    assert.equal($('kpiChannelPaused').textContent,'1');
+    openSettings(0);assert.equal($('settingsPanel').hidden,false);assert.equal($('settingsPanelBackdrop').hidden,false);
+    await $('closeDrawer').fire('click');assert.equal($('settingsPanel').hidden,true);assert.equal($('settingsPanelBackdrop').hidden,true);
     """)
 
 
@@ -242,17 +285,17 @@ const {chromium}=require(input.playwright);
    await page.locator('#cancelEdit').click();assert.equal(posts.length,0);
   }
   await open();await change('更新后的通道');await page.locator('#ownerLabel').fill('新负责人');
-  await page.locator('#channelStatus').selectOption('paused');await page.locator('#courseUploadLimit').selectOption('3');
+  await page.locator('#channelStatus').selectOption('paused');await page.locator('#courseUploadLimit').fill('3');
   mode='slow';const beforeReads=reads;await page.locator('#saveChannel').click();
   assert.equal(await page.locator('#cancelEdit').isEnabled(),false);
   await page.waitForFunction(()=>document.getElementById('formStatus').textContent.includes('保存成功'));
   assert.equal(posts.length,1);assert.ok(reads>beforeReads);assert.equal(posts[0].expected_version,1);
   assert.equal(posts[0].course_upload_limit,3);assert.equal(posts[0].status,'paused');
   await change('冲突中的修改');mode='conflict';await page.locator('#saveChannel').click();
-  await page.waitForFunction(()=>document.getElementById('formStatus').textContent.includes('刷新重新核对'));
-  assert.equal(await page.locator('#formStatus').innerText(),'通道配置已更新，请刷新重新核对后保存。');
+  await page.locator('#acceptComparison').waitFor();
+  assert.ok((await page.locator('#formStatus').innerText()).includes('数据已被他人修改，已为你刷新最新值'));
+  assert.ok((await page.locator('#comparisonNotice').innerText()).includes('通道配置已更新，请刷新重新核对后保存。'));
   assert.equal(await page.locator('#saveChannel').isEnabled(),false);
-  await page.locator('#readBeforeRetry').click();await page.locator('#acceptComparison').waitFor();
   assert.ok((await page.locator('#comparisonValues').innerText()).includes('另一位管理员'));
   assert.equal(posts.length,2);
   await page.locator('#acceptComparison').click();mode='uncertain';await page.locator('#saveChannel').click();

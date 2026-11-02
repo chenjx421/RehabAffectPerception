@@ -1,4 +1,12 @@
 """Restricted, human-only safety review workspace."""
+from .demo2_ui_kit import teacher_header, inject_kit
+
+
+def render_safety(account=None):
+    header = teacher_header("evaluation", account, logout_bound=False, page="safety")
+    return inject_kit(HTML, header=header, page="safety")
+
+
 HTML = r'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>安全事件人工核查</title>
 <style>
 *{box-sizing:border-box;letter-spacing:0}body{margin:0;background:#f5f8fc;color:#20364e;font:15px/1.7 "Microsoft YaHei UI",sans-serif}header{padding:20px 5%;background:white;border-bottom:1px solid #dce5ef;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}a{color:#225eca;text-decoration:none}nav{display:flex;gap:20px}main{max-width:1200px;margin:auto;padding:28px 24px}h1{font-size:25px}h2{font-size:19px}h3{font-size:16px}p{margin:8px 0}.notice{border-left:3px solid #bd7d21;background:#fff8e9;padding:12px 16px}.layout{display:grid;grid-template-columns:260px minmax(0,1fr);gap:28px;margin-top:24px}aside{border-right:1px solid #dce5ef;padding-right:20px}section{min-width:0}label{display:block;margin:14px 0 6px}input,select,textarea,button{font:inherit;max-width:100%}input:not([type=checkbox]),select,textarea{width:100%;padding:9px;border:1px solid #c9d6e5;border-radius:5px;background:white}textarea{min-height:100px;resize:vertical}button{padding:8px 15px;border:1px solid #c9d6e5;border-radius:5px;cursor:pointer;background:white;color:#245dc0}button.primary{background:#245dc0;color:white}.row{display:flex;gap:12px;flex-wrap:wrap}.row>label{flex:1;min-width:110px}.entry{width:100%;margin-bottom:8px;text-align:left;overflow-wrap:anywhere}.muted{color:#61758c;font-size:13px}.block{border-top:1px solid #dce5ef;margin-top:22px;padding-top:14px}video{width:100%;max-height:400px;background:#152130;aspect-ratio:16/9}#msg{color:#9a3d24;white-space:pre-wrap}#detail p{white-space:pre-wrap;overflow-wrap:anywhere}[hidden]{display:none!important}:focus-visible{outline:3px solid #86b0f1;outline-offset:2px}button:disabled{opacity:.5;cursor:wait}@media(max-width:700px){.layout{grid-template-columns:1fr}aside{border-right:0;border-bottom:1px solid #dce5ef;padding:0 0 18px}main{padding:18px}h1{font-size:22px}}

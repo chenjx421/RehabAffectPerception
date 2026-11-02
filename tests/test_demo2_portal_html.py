@@ -91,7 +91,7 @@ def test_upload_page_has_quota_chunk_and_task_contract(pages: dict[str, str]) ->
         "已用",
         "剩余",
         "数据使用与保存设置",
-        "开始上传并分析",
+        "确认授权并上传",
         "允许脱敏结构化结果长期归档（不含原视频）",
         "最近授权确认",
         "本课程尚未留存确认",
@@ -143,10 +143,10 @@ def test_admin_page_is_interface_driven(pages: dict[str, str]) -> None:
         "每课程名额使用",
         "任务状态",
         "总存储",
-        "保存周期",
-        "提前提醒",
-        "到期处理",
-        "自动清理",
+        "原始媒体保留",
+        "到期提醒",
+        "天内到期",
+        "到期自动清理",
         "近期上传",
         "近期安全授权确认",
         "刷新数据",
@@ -166,7 +166,7 @@ def test_admin_page_is_interface_driven(pages: dict[str, str]) -> None:
     assert "summary.recent_security_acceptances" in html
     assert "Array.isArray(summary.recent_uploads)" in html
     assert "summary.recent_tasks" not in html
-    assert "汇总接口暂未返回近期上传明细" in html
+    assert "还没有上传记录" in html and "emptyRow(6," in html
     for raw, translated in (
         ("active", "启用"),
         ("completed", "已完成"),
@@ -175,8 +175,8 @@ def test_admin_page_is_interface_driven(pages: dict[str, str]) -> None:
         ("failed", "处理失败"),
     ):
         assert f"{raw}:'{translated}'" in html
-    assert "statusLabel(task.upload_status)" in html
-    assert "statusLabel(task.analysis_status)" in html
+    assert "badge(task.upload_status)" in html
+    assert "badge(task.analysis_status)" in html
 
 
 def test_shared_visual_accessibility_and_responsive_contract(pages: dict[str, str]) -> None:
@@ -594,7 +594,9 @@ def test_video_review_playback_follows_slices_and_preserves_pending_seek():
         video.currentTime=635;await video.fire('timeupdate');
         assert.equal(selected,21);assert.equal(page,1);
         assert.equal($('selectedPeriod').textContent,'10:30 - 11:00');
-        assert.equal($('motionMetric').textContent,'0.0123');
+        assert.equal($('motionMetric').textContent,'轻微');assert.match($('motionMetricTip').textContent,/0\.0123/);
+        assert.equal($('rmsMetric').textContent,'较响');assert.match($('rmsMetricTip').textContent,/0\.2000/);
+        assert.match($('processSteps').innerHTML,/data-state="current" aria-current="step">.*待教师复核/);
         $('seekSlider').value='45';await $('seekSlider').fire('input');
         assert.equal(selected,1);assert.equal(page,0);
         audio.currentTime=100;await audio.fire('timeupdate');assert.equal(selected,3);

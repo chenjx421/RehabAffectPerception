@@ -255,6 +255,7 @@ class ChainVerifier:
         if not isinstance(evaluation_ids, list):
             evaluation_ids = []
         self._verify_evaluations(chain, task, evaluation_ids, report=report)
+        self._verify_linked_records(chain, task, report, content if isinstance(content, dict) else {})
         for version in content.get("evaluation_versions", []) if isinstance(content, dict) else []:
             record_id = str(version.get("record_id") or "") if isinstance(version, dict) else ""
             if record_id and self._has("demo2_classroom_evaluations") and self._row(
@@ -262,6 +263,65 @@ class ChainVerifier:
                 self._break(chain, "evaluation_id", "evaluation_version_orphan",
                             "报告快照中的评价版本指向不存在的评价记录", report_id=report["report_id"],
                             evaluation_record_id=record_id)
+
+    def _verify_linked_records(self, chain, task, report, content) -> None:
+        """report_id → course_task_doc_id and the video-source measurement records with their stable IDs."""
+        linked: dict[str, Any] = {"course_task_doc_id": "", "course_task_version": None, "course_task_exists": None,
+                                  "measurements": []}
+        chain["linked"] = linked
+        cited = content.get("course_task") if isinstance(content.get("course_task"), dict) else {}
+        doc_id = str(cited.get("course_task_doc_id") or "")
+        if doc_id:
+            linked["course_task_doc_id"], linked["course_task_version"] = doc_id, cited.get("version")
+            row = self._row("SELECT * FROM demo2_course_task_documents WHERE course_task_doc_id=?", (doc_id,)) \
+                if self._has("demo2_course_task_documents") else None
+            linked["course_task_exists"] = row is not None
+            self.log.event("course_task_lookup", "found" if row else "missing", report_id=report["report_id"],
+                           course_task_doc_id=doc_id)
+            if row is None:
+                self._break(chain, "course_id", "course_task_missing", "报告引用的课程任务文档不存在",
+                            report_id=report["report_id"], course_task_doc_id=doc_id)
+            elif row["course_id"] != task.get("course_id") or row["owner_account_id"] != task.get("account_id"):
+                self._break(chain, "course_id", "course_task_mismatch", "课程任务文档与课堂视频任务的课程或账号不一致",
+                            report_id=report["report_id"], course_task_doc_id=doc_id)
+        if not self._has("demo2_measurements"):
+            return
+        school_id = school_id_from_context(_context(task.get("school_context_json")))
+        student_ids = set(_json(report.get("student_ids_json"), []) or [])
+        # An ambiguous student has no single current IEP; any of its candidates is a legitimate link
+        # (the ambiguity itself is reported once as multiple_current_iep, not as per-record mismatches).
+        iep_ids: set[str] = set()
+        for entry in chain["levels"]["iep_document_id"]["entries"]:
+            if not entry.get("exists"):
+                continue
+            if entry.get("status") == "ambiguous":
+                iep_ids.update(entry.get("candidates") or [])
+            else:
+                iep_ids.add(entry["id"])
+        rows = self._rows("""SELECT record_id, student_id, payload_json FROM demo2_measurements
+            WHERE status='active' AND json_extract(payload_json,'$.task_id')=?
+            AND json_extract(payload_json,'$.source_type')='video' ORDER BY record_id""", (task["task_id"],))
+        for row in rows:
+            data = _json(row.get("payload_json"), {})
+            ids = {"record_id": row["record_id"], "school_id": data.get("school_id", ""),
+                   "student_id": row["student_id"], "iep_document_id": data.get("iep_document_id", ""),
+                   "course_id": data.get("course_id", ""), "video_task_id": data.get("video_task_id", ""),
+                   "course_task_doc_id": data.get("course_task_doc_id", "")}
+            linked["measurements"].append(ids)
+            checks = (("school_id", ids["school_id"] == school_id, "测量记录 school_id 与课堂视频任务学校不一致"),
+                      ("student_id", not student_ids or ids["student_id"] in student_ids, "测量记录学生不在报告学生列表中"),
+                      ("course_id", ids["course_id"] == (task.get("course_id") or ""), "测量记录 course_id 与课堂视频任务不一致"),
+                      ("video_task_id", ids["video_task_id"] == task["task_id"], "测量记录 video_task_id 与课堂视频任务不一致"),
+                      ("course_id", not doc_id or not ids["course_task_doc_id"] or ids["course_task_doc_id"] == doc_id,
+                       "测量记录引用的课程任务版本与报告不一致"),
+                      ("iep_document_id", not ids["iep_document_id"] or not iep_ids or ids["iep_document_id"] in iep_ids,
+                       "测量记录 iep_document_id 不是本课当前有效 IEP"))
+            for level, ok, message in checks:
+                if not ok:
+                    self._break(chain, level, "measurement_link_mismatch", message, record_id=row["record_id"],
+                                report_id=report["report_id"])
+        self.log.event("measurement_links", "checked", report_id=report["report_id"], record_count=len(rows),
+                       course_task_doc_id=doc_id or None)
 
     def _verify_task_upstream(self, chain, task: dict[str, Any], *, report: dict[str, Any] | None) -> None:
         task_id = task["task_id"]
@@ -737,6 +797,14 @@ def render_text(results: list[dict[str, Any]], orphans: list[dict[str, Any]] | N
                              + (f" · {entry['detail']}" if entry.get("detail") else ""))
                 if entry.get("candidates"):
                     lines.append(f"         候选 IEP：{', '.join(entry['candidates'])}")
+        linked = chain.get("linked") or {}
+        if linked.get("course_task_doc_id"):
+            lines.append(f"  · 课程任务文档 course_task_doc_id={linked['course_task_doc_id']} · 版本 {linked.get('course_task_version')}"
+                         f" · {'存在' if linked.get('course_task_exists') else '不存在'}")
+        for item in linked.get("measurements") or []:
+            lines.append(f"  · 视频测量记录 {item['record_id']}：school_id={item['school_id'] or '（空）'} student_id={item['student_id']} "
+                         f"iep_document_id={item['iep_document_id'] or '（空）'} course_id={item['course_id']} "
+                         f"video_task_id={item['video_task_id']} course_task_doc_id={item['course_task_doc_id'] or '（空）'}")
         for error in chain["errors"]:
             lines.append(f"  ✘ 断链 [{error['level']}] {error['code']}：{error['message']}"
                          + "".join(f" {k}={v}" for k, v in error.items() if k not in {"level", "code", "message"}))

@@ -17,11 +17,13 @@ import threading
 import time
 from typing import Any
 
-VERSION = "simple_student_seats_v3_6"
+VERSION = "simple_student_seats_v3_8"
 WINDOW_SEC = 30
 MAX_SAMPLES = 10800
 TIMEOUT_SEC = 900
-MAX_PERSONS = 3
+# Upper bound on tracked candidates.  Teachers, background adults and blank
+# picks are tracked too, then removed by demo2_person_filter before display.
+MAX_PERSONS = 8
 DETECTION_INTERVAL_SEC = 2.0
 INITIAL_SEARCH_SAMPLES = 60
 REPORT_VERSION = "student_state_report_v5"
@@ -123,6 +125,7 @@ def build_analysis(segments, run, meta, *, stop_event=None):
         result = json.loads(output)
         if result.get("analysis_version") != VERSION:
             raise RuntimeError("student_tracking_invalid_result")
+        _log_person_filter(result, run)
         return result
     finally:
         if child.poll() is None:
@@ -130,11 +133,140 @@ def build_analysis(segments, run, meta, *, stop_event=None):
         communication.join(5)
 
 
+def _log_person_filter(result, run):
+    """Debug-log screening decisions; logging never fails the analysis."""
+    try:
+        from .demo2_person_filter import log_analysis
+        run_path = Path(run).resolve()
+        task_id = run_path.parent.name if run_path.parent.parent.name == "analysis" else ""
+        log_analysis(result, task_id=task_id, run_path=run_path)
+    except Exception:
+        pass
+
+
 def unavailable(reason):
     return {"available": False, "analysis_version": VERSION, "reason": reason,
             "persons": [], "window_sec": WINDOW_SEC,
             "max_persons": MAX_PERSONS,
             "message": "未取得可持续观察的人物画面；请检查光线、拍摄距离和遮挡。"}
+
+
+def _candidate_cap():
+    try:
+        from rehab_affect.demo2_person_filter import person_filter_config
+    except ImportError:
+        return MAX_PERSONS
+    return max(1, min(MAX_PERSONS * 2, int(person_filter_config()["max_candidates"])))
+
+
+def _face_sharpness(image, box):
+    """Laplacian variance of the face box at the sample's own resolution."""
+    import cv2
+    patch = crop(image, box)
+    if patch.size == 0:
+        return 0.
+    return float(cv2.Laplacian(cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var())
+
+
+def _select_avatar(face_items):
+    """Best portrait sample: sharpest face among unoccluded, near-full-size boxes.
+
+    Size, frontal aspect and detection score only break ties, so the chosen
+    frame is the sharpest usable one and its Laplacian value can be audited.
+    """
+    if not face_items:
+        return None
+    widths = sorted(x["bbox"]["width"] for x in face_items)
+    median_width = widths[len(widths) // 2]
+    pool = [x for x in face_items
+            if x["bbox"]["width"] >= median_width * .8 and float(x.get("face_score", 0)) >= .7]
+    selection = "sharpest_unoccluded"
+    if not pool:
+        pool, selection = list(face_items), "sharpest_any"
+
+    def frontal(item):
+        aspect = (item["bbox"]["width"] * item.get("frame_width", 1)) / max(
+            item["bbox"]["height"] * item.get("frame_height", 1), 1e-6)
+        return 1. - min(1., abs(aspect - .82) / .4)
+    best = max(pool, key=lambda x: (round(float(x.get("face_sharpness", 0)), 3),
+                                    x["bbox"]["width"] * x["bbox"]["height"], frontal(x),
+                                    float(x.get("face_score", 0)), -x["time"]))
+    return dict(frame=best["frame"], time_sec=best["time"], bbox=dict(best["bbox"]),
+                sharpness=round(float(best.get("face_sharpness", 0)), 2),
+                max_sharpness=round(max(float(x.get("face_sharpness", 0)) for x in face_items), 2),
+                face_px=round(best["bbox"]["width"] * best.get("frame_width", 0), 1),
+                score=round(float(best.get("face_score", 0)), 3), frontal=round(frontal(best), 3),
+                selection=selection)
+
+
+def _merge_split_tracks(persons, face_lists):
+    """Merge lanes that are one walking person split by the fixed-seat lanes.
+
+    Two tracks merge only when their faces have a similar size and height,
+    sit near each other and were NEVER detected in the same sample: two
+    simultaneous faces are by definition two different people, so seated
+    neighbours are never merged.  The track with most face samples is kept.
+    """
+    count = len(persons)
+    if count < 2:
+        return persons, face_lists
+    stats = []
+    for person, faces in zip(persons, face_lists):
+        if not faces:
+            # A lane that never won a face is described by its opening anchor;
+            # it may only be absorbed by a track that did see faces.
+            anchor = person.get("anchor_bbox") or {}
+            if all(isinstance(anchor.get(k), (int, float)) for k in ("x", "y", "width", "height")):
+                stats.append(dict(width=anchor["width"], height=anchor["height"], x=center(anchor)[0],
+                                  y=center(anchor)[1], times=set(), empty=True))
+            else:
+                stats.append(None)
+            continue
+        widths = sorted(x["bbox"]["width"] for x in faces)
+        heights = sorted(x["bbox"]["height"] for x in faces)
+        xs = sorted(center(x["bbox"])[0] for x in faces)
+        ys = sorted(center(x["bbox"])[1] for x in faces)
+        mid = len(faces) // 2
+        stats.append(dict(width=widths[mid], height=heights[mid], x=xs[mid], y=ys[mid],
+                          times={round(x["time"], 3) for x in faces}, empty=False,
+                          x_min=xs[0], x_max=xs[-1]))
+    parent = list(range(count))
+
+    def root(index):
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+    for i in range(count):
+        for j in range(i + 1, count):
+            a, b = stats[i], stats[j]
+            if a is None or b is None or (a["empty"] and b["empty"]):
+                continue
+            ratio = a["width"] / max(b["width"], 1e-6)
+            if (.75 <= ratio <= 1.33 and abs(a["y"] - b["y"]) <= .6 * max(a["height"], b["height"])
+                    and abs(a["x"] - b["x"]) <= 4 * max(a["width"], b["width"])
+                    and not (a["times"] & b["times"])):
+                if a["empty"] or b["empty"]:
+                    empty, full = (a, b) if a["empty"] else (b, a)
+                    # Only inside the span the other person actually walked.
+                    if not full["x_min"] - full["width"] <= empty["x"] <= full["x_max"] + full["width"]:
+                        continue
+                parent[root(j)] = root(i)
+    groups = {}
+    for index in range(count):
+        groups.setdefault(root(index), []).append(index)
+    if all(len(group) == 1 for group in groups.values()):
+        return persons, face_lists
+    merged_persons, merged_faces = [], []
+    for group in sorted(groups.values(), key=lambda g: min(g)):
+        primary = max(group, key=lambda index: (len(face_lists[index]), -index))
+        person = persons[primary]
+        if len(group) > 1:
+            person["merged_person_ids"] = [persons[index]["person_id"] for index in group if index != primary]
+        faces = sorted((x for index in group for x in face_lists[index]), key=lambda x: x["time"])
+        merged_persons.append(person)
+        merged_faces.append(faces)
+    return merged_persons, merged_faces
 
 
 def center(box):
@@ -247,7 +379,7 @@ def _initial_face_set(observations):
                                  "members": [(sample_index, face)],
                                  "sample_indices": {sample_index}})
     recurring = sorted((cluster for cluster in clusters if len(cluster["members"]) >= 2),
-                       key=lambda cluster: (cluster["x"], cluster["y"]))[:MAX_PERSONS]
+                       key=lambda cluster: (cluster["x"], cluster["y"]))[:_candidate_cap()]
     if len(recurring) < 2:
         return None
 
@@ -583,8 +715,13 @@ def present_motion_analysis(analysis):
         person["tracking"] = "按首次检测位置固定区域逐秒独立取样；可用率指区域图像，不自动跨区域认人或确认身份连续。"
         summaries.append(f"{person['display_name']}：共{len(windows)}个时间片，{person['dominant_student_state_zh']}线索最多；"
                          f"固定区域图像可用率约{person.get('visibility', 0)*100:.0f}%。")
+    screening = result.get("person_filter_summary") if isinstance(result.get("person_filter_summary"), dict) else None
+    screening_text = (
+        f"系统已按学生筛查规则自动排除疑似老师{screening.get('excluded_teacher', 0)}人、无效人选{screening.get('excluded_blank', 0)}个，"
+        "以下只整理学生候选；筛查为辅助功能，需教师复核。" if screening else "")
     report = (
-        f"本段视频读取了{result.get('observed_frames', 0)}个采样画面，按30秒一个时间片整理{len(people)}个匿名人物候选的学生状态线索。"
+        screening_text +
+        f"本段视频读取了{result.get('observed_frames', 0)}个采样画面，按30秒一个时间片整理{len(people)}个匿名{'学生' if screening else '人物'}候选的学生状态线索。"
         "候选按首次检测时从左到右编号，各自使用不同的固定区域、截图和时间序列；"
         "编号只用于核对画面，不能证明姓名或全程身份连续。" + "".join(summaries)
         + "状态线索结合每个人物的固定区域变化、画面可用率和有限的课堂声音活动；"
@@ -633,7 +770,7 @@ def analyze(request, detector=None):
         candidate_image = _read(root, sample["frame"])
         if candidate_image is None:
             continue
-        candidates = sorted(detector(candidate_image), key=lambda f: center(f["bbox"])[0])[:MAX_PERSONS]
+        candidates = sorted(detector(candidate_image), key=lambda f: center(f["bbox"])[0])[:_candidate_cap()]
         detection_count += 1
         opening_observations.append((sample, candidate_image, candidates))
         if candidates:
@@ -658,7 +795,7 @@ def analyze(request, detector=None):
             candidate_image = _read(root, sample["frame"])
             if candidate_image is None:
                 continue
-            candidates = sorted(detector(candidate_image), key=lambda f: center(f["bbox"])[0])[:MAX_PERSONS]
+            candidates = sorted(detector(candidate_image), key=lambda f: center(f["bbox"])[0])[:_candidate_cap()]
             detection_count += 1
             if candidates:
                 faces, initial, anchor_time = candidates, candidate_image, float(sample["time"])
@@ -675,6 +812,7 @@ def analyze(request, detector=None):
     current_boxes = [dict(box) for box in anchors]
     tracks = [[] for _ in anchors]
     next_detection = anchor_time
+    tracking_detections = 0
     # Fixed background comparison rejects camera cuts; a stationary classroom
     # can be reacquired without letting one student's anchor walk to another.
     previous_scene = None
@@ -700,6 +838,7 @@ def analyze(request, detector=None):
         if scene_ok and t >= next_detection:
             detected = detector(image)
             detection_count += 1
+            tracking_detections += 1
             next_detection = t + DETECTION_INTERVAL_SEC
         assignments = _assign_faces(detected, anchors, regions, current_boxes) if detected else [None]*len(anchors)
         for i, (anchor, roi) in enumerate(zip(anchors, regions)):
@@ -752,7 +891,11 @@ def analyze(request, detector=None):
             # Face displacement is retained for localization diagnostics only:
             # camera tracking jitter must never manufacture a response state.
             movement_signal_raw = local_motion
+            face_score = float(face.get("score", 0.)) if face is not None else 0.
+            face_sharpness = _face_sharpness(image, face["bbox"]) if face is not None else 0.
             tracks[i].append(dict(time=t, frame=sample["frame"], bbox=current_boxes[i],
+                                  face_score=face_score, face_sharpness=face_sharpness,
+                                  frame_width=image.shape[1], frame_height=image.shape[0],
                                   visible=usable, motion=motion, quality=quality,
                                   appearance=similarity, face_detected=bool(face),
                                   face_quality=face_quality, scene_ok=scene_ok,
@@ -760,6 +903,11 @@ def analyze(request, detector=None):
                                   face_motion=face_motion, movement_signal_raw=movement_signal_raw,
                                   local_similarity=local_similarity))
     persons = []
+    try:
+        from rehab_affect import demo2_person_filter as person_filter
+    except ImportError:
+        person_filter = None
+    filter_config = person_filter.person_filter_config() if person_filter else None
     for i, items in enumerate(tracks):
         values = [x["movement_signal_raw"] for x in items
                   if isinstance(x.get("movement_signal_raw"), (int, float))]
@@ -877,11 +1025,35 @@ def analyze(request, detector=None):
                                              "请结合人物截图和原视频确认具体课堂表现。"),
                             action_summary=action_summary, lesson_report=person_report,
                             tracking="首次从左到右编号；固定人物区域结合每3秒人脸位置复核，禁止跨区域串人"))
+        persons[-1]["candidate_index"] = i
+    face_lists = [[x for x in items if x["face_detected"]] for items in tracks]
+    persons, face_lists = _merge_split_tracks(persons, face_lists)
+    for person, face_items in zip(persons, face_lists):
+        if person_filter is not None:
+            person["filter_features"] = person_filter.track_features(
+                [dict(time=x["time"], bbox=x["bbox"], score=x["face_score"], sharpness=x["face_sharpness"])
+                 for x in face_items],
+                detection_attempts=tracking_detections, frame_width=initial.shape[1],
+                frame_height=initial.shape[0], duration=duration, total_samples=len(samples))
+            limit = int(filter_config["max_track_points"])
+            step = max(1, math.ceil(len(face_items) / limit))
+            person["track_points"] = [
+                [round(x["time"], 2)] + [round(float(x["bbox"][k]), 4) for k in ("x", "y", "width", "height")]
+                for x in face_items[::step]]
+        avatar = _select_avatar(face_items)
+        if avatar is not None:
+            person["avatar"] = avatar
+            person["portrait_bbox"] = dict(avatar["bbox"])
+    if person_filter is not None and persons:
+        for person, info in zip(persons, person_filter.classify_candidates(
+                [p["filter_features"] for p in persons], filter_config)):
+            person["person_filter"] = info
     return present_motion_analysis(dict(
         available=True, analysis_version=VERSION, persons=persons, window_sec=WINDOW_SEC,
         detected_samples=detection_count, observed_frames=len(samples), max_persons=MAX_PERSONS,
          score_kind="individual_motion_index", student_score_kind="individual_participation_evidence_index",
          network_used=False,
+        person_filter_config=filter_config,
         tracking_config={"detection_interval_sec": DETECTION_INTERVAL_SEC,
                          "initial_search_samples": INITIAL_SEARCH_SAMPLES,
                          "small_face_threshold": "tracking_only",

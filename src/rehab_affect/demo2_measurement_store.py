@@ -19,8 +19,23 @@ from .assessment_rubric import (
     build_longitudinal_series,
     rubric_contract,
 )
-from .demo2_measurement_debug import measurement_debug_event, score_formula
+from .demo2_measurement_debug import (
+    TREND_MIN_POINTS,
+    measurement_debug_event,
+    score_formula,
+    trend_insufficient_info,
+)
 from .demo2_identity_store import Demo2IdentityStore, IdentityError, _field
+from .demo2_measurement_link import (
+    LINK_FIELDS,
+    SUGGESTION_LABEL,
+    VIDEO_SOURCE,
+    VIDEO_SOURCE_TYPES,
+    attach_measurement_report,
+    gate_iep,
+    log_teacher_review,
+)
+from .score_basis import measurement_score_basis, redact_for_admin
 from .student_record_store import _iso
 
 
@@ -117,6 +132,29 @@ class Demo2MeasurementStore:
         return value
 
     def save(self, token, payload):
+        try:
+            return self._save(token, payload)
+        except MeasurementError as exc:
+            self._log_rejected('save', payload, exc)
+            raise
+
+    def withdraw(self, token, payload):
+        try:
+            return self._withdraw(token, payload)
+        except MeasurementError as exc:
+            self._log_rejected('withdraw', payload, exc)
+            raise
+
+    def _log_rejected(self, action, payload, exc):
+        # Only IDs and the error code; the rejected payload text never reaches the log.
+        source = payload if isinstance(payload, dict) else {}
+        version = source.get('expected_version')
+        measurement_debug_event(self.records, 'measurement_rejected', exc.code,
+                                record_id=source.get('record_id'), student_id=source.get('student_id'),
+                                task_id=source.get('task_id') or None, source_type=source.get('source_type'),
+                                code=action, version=version if type(version) is int else None)
+
+    def _save(self, token, payload):
         account = self._account(token)
         allowed = {'record_id','expected_version','student_id','lesson_date','lesson_id','course_name',
                    'goal_id','measurement_context','criterion','scores','opportunities','observed',
@@ -155,7 +193,7 @@ class Demo2MeasurementStore:
                                     evidence_reasons=[str(exc)])
             raise MeasurementError(400, 'invalid_scores', str(exc)) from None
         source_type = payload.get('source_type')
-        if source_type not in {'classroom_observation','video_review'}:
+        if source_type not in {'classroom_observation','video_review',VIDEO_SOURCE}:
             raise MeasurementError(400,'invalid_source','请选择现场观察或视频复核')
         data.update(record_id=record_id, lesson_date=raw_date, scores=payload['scores'],
                     opportunities=payload['opportunities'], observed=payload['observed'],
@@ -177,7 +215,7 @@ class Demo2MeasurementStore:
             raise MeasurementError(400,'invalid_observation','请明确是否确认发声来源')
         data['speaker_confirmed']=payload.get('speaker_confirmed',False)
         data['vocalization_scope']='student' if data['speaker_confirmed'] else 'scene_unknown_speaker'
-        if source_type == 'video_review':
+        if source_type in VIDEO_SOURCE_TYPES:
             data['task_id'] = self._id(payload.get('task_id'), '视频复核须填写有效的上传任务编号')
             for key in ('start_sec','end_sec'):
                 value=payload.get(key)
@@ -199,7 +237,17 @@ class Demo2MeasurementStore:
                     raise MeasurementError(409,'version_conflict','记录已更新或撤销，请刷新后核对')
                 if previous['student_id'] != data['student_id']:
                     raise MeasurementError(409,'student_conflict','不可将记录改给另一名学生')
-                previous_reviewed=json.loads(previous['payload_json']).get('reviewed')
+                previous_data=json.loads(previous['payload_json'])
+                previous_reviewed=previous_data.get('reviewed')
+                if (previous_data.get('source_type')==VIDEO_SOURCE)!=(source_type==VIDEO_SOURCE):
+                    raise MeasurementError(409,'source_locked','视频来源记录的数据来源不能修改；如需现场观察请新建记录')
+                if source_type==VIDEO_SOURCE:
+                    if previous_data.get('task_id')!=data['task_id']:
+                        raise MeasurementError(409,'source_locked','视频来源记录不能改为另一个课堂任务')
+                    # Course-task goal, IEP points, video indicators and suggestions stay system-owned.
+                    data.update({k:previous_data[k] for k in LINK_FIELDS if k in previous_data})
+            elif source_type==VIDEO_SOURCE:
+                raise MeasurementError(400,'video_source_reserved','视频来源记录由系统在「绑定并保存本课记录」后生成，请编辑已生成的记录')
             elif expected != 0:
                 raise MeasurementError(409,'version_conflict','记录版本已失效，请刷新后核对')
             duplicate=db.execute('''SELECT record_id FROM demo2_measurements WHERE owner_account_id=? AND scope_key=?
@@ -207,7 +255,7 @@ class Demo2MeasurementStore:
                 (account['account_id'],scope,data['student_id'],data['lesson_id'],data['goal_id'],data['measurement_context'],record_id)).fetchone()
             if duplicate:
                 raise MeasurementError(409,'duplicate_lesson','本课同一目标和条件已有记录，请编辑原记录')
-            if source_type=='video_review':
+            if source_type in VIDEO_SOURCE_TYPES:
                 task=self.identities._task(db,account,data['task_id'])
                 self.identities._require_media(task)
                 from .video_applicability import assess
@@ -231,6 +279,8 @@ class Demo2MeasurementStore:
                 data.update(binding_id=bound['binding_id'], frame_revision=revision, source_sha256=task['sha256'])
             now=_iso(); version=expected+1
             data.update(version=version, status='active', saved_by=account['username'], updated_at=now)
+            # Basis snapshot only explains the summary above; it never changes a score.
+            data['score_basis']=measurement_score_basis(data, computed_at=now)
             content=json.dumps(data,ensure_ascii=False,allow_nan=False)
             expires=(datetime.now().astimezone()+timedelta(days=730)).isoformat(timespec='seconds')
             db.execute('''INSERT INTO demo2_measurements VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -243,6 +293,8 @@ class Demo2MeasurementStore:
             self.records._audit(db,account['username'],'measurement_saved','measurement',record_id,
                                 {'version':version,'reviewed':data['reviewed']})
         self._log_saved(account, data, previous_reviewed, is_new=previous is None)
+        if source_type==VIDEO_SOURCE:
+            log_teacher_review(self.records, data, previous_reviewed, account['account_id'])
         return data
 
     def _log_saved(self, account, data, previous_reviewed, *, is_new):
@@ -257,13 +309,20 @@ class Demo2MeasurementStore:
             measurement_debug_event(self.records, 'measurement_review',
                                     'reviewed' if data['reviewed'] else 'review_revoked',
                                     previous_reviewed=previous_reviewed, **common)
+        basis = data.get('score_basis') or {}
         measurement_debug_event(self.records, 'score_compute',
                                 'scored' if summary['score'] is not None else 'insufficient_evidence',
                                 score=summary['score'], evidence_status=summary['evidence_status'],
                                 evidence_reasons=summary['evidence_reasons'], rubric_version=data['rubric_version'],
-                                formula=score_formula(data['scores'], DIMENSION_WEIGHTS), **common)
+                                formula=score_formula(data['scores'], DIMENSION_WEIGHTS),
+                                record_short=basis.get('record_short'), basis_status=basis.get('status'),
+                                detail_version=basis.get('detail_version'),
+                                anchor_levels={d['key']: d['anchor_level'] for d in basis.get('dimensions') or []},
+                                insufficient_dims=[d['key'] for d in basis.get('dimensions') or [] if d['status'] != 'scored'],
+                                matches_page=(basis.get('overall') or {}).get('matches_page') if summary['score'] is not None else None,
+                                **common)
 
-    def withdraw(self,token,payload):
+    def _withdraw(self,token,payload):
         account=self._account(token)
         if not isinstance(payload,dict) or set(payload)!={'record_id','expected_version','reason'}:
             raise MeasurementError(400,'invalid_payload','请提交记录编号、版本和撤销原因')
@@ -294,8 +353,11 @@ class Demo2MeasurementStore:
         """Keep historical text, but exclude revoked or stale identity evidence."""
         data = dict(data)
         data['evidence_status'] = 'current'
-        if data.get('source_type') != 'video_review':
+        if data.get('source_type') not in VIDEO_SOURCE_TYPES:
             return data
+        if data.get('source_type') == VIDEO_SOURCE:
+            data = gate_iep(db, data)
+            data['suggestion_label'] = '' if data.get('reviewed') else SUGGESTION_LABEL
         binding = db.execute('SELECT * FROM demo2_identity_bindings WHERE binding_id=? AND owner_account_id=?',
                              (data.get('binding_id',''), account['account_id'])).fetchone()
         try:
@@ -345,6 +407,17 @@ class Demo2MeasurementStore:
         if not suitability['confirmed_for_source']:
             explanation=suitability['label']+'。请先确认内容适用性；可保留通用观察，但不据此推断学生能力或教师教学质量。'
             result['report']={**result['report'],'title':'视频适用性检查记录（未形成课堂评价）','ready':False,'character_count':len(explanation),'sections':[{'title':'暂不生成特教评价','text':explanation}]}
+        # Confirmed course-task goals: per-goal segment tags and the report chapter.
+        from .demo2_course_task_store import attach_to_workspace
+        attach_to_workspace(self.records, account, result, evaluations)
+        # Video-source measurement records: 「学生测量结果」 and teacher-only IEP support chapters.
+        attach_measurement_report(result)
+        # Score basis sentences and the 「评分标准细则」 appendix (explanations only, no new scores).
+        from .score_basis import attach_score_basis_report
+        attach_score_basis_report(result, evaluations)
+        # 「课程总览与结论」: per-student evaluation + overall lesson indicators (aggregation only).
+        from .demo2_course_overview import attach_course_overview
+        attach_course_overview(self.records, account, result, evaluations)
         return result
 
     def course_report(self, token, task_id):
@@ -544,9 +617,158 @@ class Demo2MeasurementStore:
             points=[dict(v['assessment'],date=v['lesson_date'],record_id=v['record_id'],reviewed=v['reviewed']) for v in values]
             trends.append({'student_id':student,'goal_id':goal,'measurement_context':context,'criterion':criterion,
                            'rubric_version':version,'series':build_longitudinal_series(points)})
+        self._log_trend_gaps(account, roster, trends)
         return {**roster,'records':records,'trends':trends,'rubric_version':RUBRIC_VERSION,'rubric':rubric_contract(),
                 'standard_status':'试行量表；权重与6分参考线待校方确认，不是已验证官方量表',
                 'retention':{'raw_media_days':60,'structured_days':730,'report':'按需生成，不额外保存含姓名副本'}}
+
+    def report_document(self, token, record_id, fmt):
+        """Word/PDF of the page 「单次报告」: same workspace record, trend and gated IEP points as the page."""
+        import time
+
+        from .demo2_report_debug import report_debug_event
+        from .demo2_report_render import (CONTENT_TYPES, RendererUnavailable, measurement_filename,
+                                          measurement_report_model, render)
+
+        if fmt not in {'docx', 'pdf'}:
+            raise MeasurementError(400, 'invalid_format', '单次报告下载格式仅支持 docx 或 pdf')
+        record_id = self._id(record_id)
+        account = self._account(token)
+        common = dict(role='teacher', fmt=fmt, kind='measurement', account_id=account['account_id'],
+                      record_short=record_id[:8])
+        workspace = self.workspace(token)
+        record = next((r for r in workspace['records'] if r.get('record_id') == record_id), None)
+        if record is None:
+            with self.records._connect() as db:
+                row = db.execute('SELECT owner_account_id,status FROM demo2_measurements WHERE record_id=?',
+                                 (record_id,)).fetchone()
+            code = (403, 'measurement_report_forbidden', '该记录不属于当前学校账号，无权下载报告') if (
+                row is not None and row['status'] == 'active' and row['owner_account_id'] != account['account_id']
+            ) else (404, 'record_unavailable', '记录不存在或已撤销')
+            report_debug_event(self.records, 'report_rejected', str(code[0]), code=code[1], message='measurement_report', **common)
+            raise MeasurementError(*code)
+        student = next((s for s in workspace.get('students') or [] if s.get('student_id') == record.get('student_id')), {})
+        name = student.get('display_name') or '学生'
+        trend = next((t for t in workspace['trends'] if t['student_id'] == record.get('student_id')
+                      and t['goal_id'] == record.get('goal_id') and t['measurement_context'] == record.get('measurement_context')
+                      and t['criterion'] == record.get('criterion') and t['rubric_version'] == record.get('rubric_version')), None)
+        points = list((trend or {}).get('series', {}).get('lesson') or [])
+        report_debug_event(self.records, 'report_render_start', 'started', **common)
+        started = time.monotonic()
+        elapsed = lambda: int(round((time.monotonic() - started) * 1000))  # noqa: E731
+        try:
+            model = measurement_report_model(record, name, points, workspace.get('rubric') or rubric_contract())
+            data, info = render(model, fmt)
+        except RendererUnavailable as exc:
+            report_debug_event(self.records, 'report_render_failed', 'renderer_unavailable', code='report_renderer_unavailable',
+                               message=exc.package, duration_ms=elapsed(), **common)
+            raise MeasurementError(503, 'report_renderer_unavailable',
+                                   f"服务器暂未安装{'PDF' if fmt == 'pdf' else 'Word'}报告生成组件，"
+                                   + ('请改用「下载 Word」' if fmt == 'pdf' else '请稍后重试或联系管理员')) from None
+        except Exception as exc:  # renderer bug: logged 500, no partial file
+            report_debug_event(self.records, 'report_render_failed', 'failed', code='report_render_failed',
+                               message=type(exc).__name__, duration_ms=elapsed(), **common)
+            raise MeasurementError(500, 'report_render_failed', '报告文件生成失败，请稍后重试或改用其他格式') from None
+        report_debug_event(self.records, 'report_render_done', 'ok', byte_size=info['byte_size'],
+                           page_count=info.get('page_count'), image_count=info.get('image_count'),
+                           section_count=len(model.headings()), duration_ms=elapsed(), font=info.get('font'), **common)
+        return data, measurement_filename(record, name, fmt), CONTENT_TYPES[fmt]
+
+    def _log_trend_gaps(self, account, roster, trends):
+        best={};groups={}
+        for trend in trends:
+            student=trend['student_id']
+            scored=sum(1 for p in trend['series'].get('lesson',[]) if p.get('score') is not None)
+            best[student]=max(best.get(student,0),scored);groups[student]=groups.get(student,0)+1
+        for student in roster.get('students') or []:
+            student_id=student.get('student_id') if isinstance(student,dict) else None
+            if not student_id or best.get(student_id,0)>=TREND_MIN_POINTS:
+                continue
+            trend_insufficient_info(self.records, account_id=account['account_id'], student_id=student_id,
+                                    scored_points=best.get(student_id,0), trend_groups=groups.get(student_id,0))
+
+    def score_basis(self, token, record_id):
+        """依据卡：teacher sees the full basis of an own record; company admin a redacted one."""
+        record_id = self._id(record_id)
+        try:
+            account = self.records.account_from_session(token)
+        except ValueError:
+            raise MeasurementError(401, 'authentication_required', '请重新登录') from None
+        role = account.get('role')
+        if role not in {'school_uploader', 'company_admin'}:
+            raise MeasurementError(403, 'score_basis_forbidden', '当前账号无权查看评分依据')
+        common = dict(record_id=record_id, account_id=account['account_id'], viewer_role=role)
+        try:
+            with self.records._connect() as db:
+                row = db.execute('SELECT * FROM demo2_measurements WHERE record_id=?', (record_id,)).fetchone()
+                if row is None or row['status'] != 'active':
+                    raise MeasurementError(404, 'record_unavailable', '记录不存在或已撤销')
+                if role == 'school_uploader':
+                    # Ownership first: a foreign record is 403 even when this account has no school context yet.
+                    if row['owner_account_id'] != account['account_id']:
+                        raise MeasurementError(403, 'score_basis_forbidden', '该记录不属于当前学校账号，无权查看评分依据')
+                    scope = self._scope(db, account)
+                    if row['scope_key'] != scope:
+                        raise MeasurementError(403, 'score_basis_forbidden', '该记录不属于当前学校账号，无权查看评分依据')
+                    record = self._effective_record(db, account, json.loads(row['payload_json']))
+                else:
+                    record = json.loads(row['payload_json'])
+                    owner = db.execute('SELECT * FROM platform_accounts WHERE account_id=?',
+                                       (row['owner_account_id'],)).fetchone()
+                    if owner is not None:
+                        record = self._effective_record(db, dict(owner), record)
+                    self.records._audit(db, account['username'], 'measurement_basis_viewed', 'measurement', record_id,
+                                        {'version': row['version']})
+        except MeasurementError as exc:
+            measurement_debug_event(self.records, 'score_basis_view', exc.code,
+                                    rubric_version=RUBRIC_VERSION, code=str(exc.status), **common)
+            raise
+        except (ValueError, TypeError, KeyError, IdentityError) as exc:
+            measurement_debug_event(self.records, 'score_basis_error', 'failed', error=type(exc).__name__,
+                                    rubric_version=RUBRIC_VERSION, **common)
+            raise MeasurementError(500, 'score_basis_failed', '评分依据暂时无法生成，请稍后重试') from None
+        stored = record.get('score_basis') if isinstance(record.get('score_basis'), dict) else None
+        fresh = measurement_score_basis(record, computed_at=stored.get('computed_at') if stored else None)
+        if stored is None:
+            measurement_debug_event(self.records, 'score_basis_compute', 'computed_on_read',
+                                    record_short=fresh['record_short'], rubric_version=fresh['rubric_version'],
+                                    basis_status=fresh['status'], detail_version=fresh['detail_version'], **common)
+        basis = {**fresh, 'basis_source': 'saved' if stored else 'computed_on_read',
+                 'saved_matches': bool(stored) and stored.get('overall', {}).get('score') == fresh['overall']['score']
+                 and stored.get('status') == fresh['status']}
+        if stored and not basis['saved_matches']:
+            # Identity/applicability changed after saving: the live state wins, the snapshot is kept for audit.
+            basis['saved_snapshot'] = {'status': stored.get('status'), 'score': (stored.get('overall') or {}).get('score'),
+                                       'computed_at': stored.get('computed_at')}
+        basis['record'] = {'record_id': record_id, 'version': record.get('version'), 'lesson_date': record.get('lesson_date'),
+                           'goal_id': record.get('goal_id'), 'task_id': record.get('task_id') or '',
+                           'course_name': record.get('course_name') or '', 'source_type': record.get('source_type')}
+        if role == 'company_admin':
+            basis = redact_for_admin(basis)
+            basis['record'].pop('course_name', None)
+        else:
+            student = None
+            with self.records._connect() as db:
+                student = db.execute('SELECT display_name FROM demo2_identity_students WHERE student_id=? AND owner_account_id=?',
+                                     (record.get('student_id'), account['account_id'])).fetchone()
+            basis['student_name'] = student['display_name'] if student else ''
+            # Gated IEP points (gate_iep already hid them when authorisation lapsed).
+            items = [i for i in record.get('iep_support') or [] if isinstance(i, dict)]
+            for ref in basis['evidence_refs']:
+                if ref['kind'] == 'iep':
+                    ref['items'] = [{'category_label': i.get('category_label') or '要点', 'text': i.get('text') or ''}
+                                    for i in items[:8]]
+        measurement_debug_event(self.records, 'score_basis_view', 'ok' if basis['status'] == 'scored' else 'insufficient',
+                                record_short=basis['record_short'], rubric_version=basis['rubric_version'],
+                                basis_status=basis['status'], basis_source=basis['basis_source'],
+                                score=basis['overall']['score'], **common)
+        if basis['status'] != 'scored':
+            measurement_debug_event(self.records, 'score_basis_insufficient', 'insufficient_evidence',
+                                    record_short=basis['record_short'], rubric_version=basis['rubric_version'],
+                                    evidence_reasons=basis['reasons'],
+                                    insufficient_dims=[d['key'] for d in basis['dimensions'] if d['status'] != 'scored'],
+                                    **common)
+        return basis
 
     def admin_summary(self,token):
         account=self._account(token,admin=True)
@@ -554,15 +776,22 @@ class Demo2MeasurementStore:
             rows=db.execute('''SELECT m.owner_account_id,a.bound_channel_id,m.status,m.payload_json,m.expires_at
                 FROM demo2_measurements m JOIN platform_accounts a ON a.account_id=m.owner_account_id''').fetchall()
             result={};total=0;reviewed=0;due=0
+            video={'records':0,'reviewed':0,'pending':0,'teacher_reviewed':0}
             for row in rows:
                 if row['status']!='active':continue
                 value=json.loads(row['payload_json']);total+=1
                 valid=value['assessment'].get('overall_score') is not None
                 reviewed+=valid
                 due+=row['expires_at'] <= _iso(datetime.now().astimezone()+timedelta(days=30))
-                key=row['bound_channel_id'];group=result.setdefault(key,{'channel_id':key,'records':0,'reviewed':0,'pending':0})
+                key=row['bound_channel_id'];group=result.setdefault(key,{'channel_id':key,'records':0,'reviewed':0,'pending':0,'video_records':0,'video_pending':0})
                 group['records']+=1;group['reviewed']+=valid;group['pending']+=not valid
+                if value.get('source_type')==VIDEO_SOURCE:
+                    # Counts only: no student, goal, IEP or score content leaves this loop.
+                    video['records']+=1;video['reviewed']+=valid;video['pending']+=not valid
+                    video['teacher_reviewed']+=value.get('reviewed') is True
+                    group['video_records']+=1;group['video_pending']+=not valid
             self.records._audit(db,account['username'],'measurement_summary_viewed','measurement','aggregate',{'records':total})
         return {'records':total,'reviewed':reviewed,'pending':total-reviewed,'due_30_days':due,'channels':list(result.values()),
+                'video_source':{**video,'label':'课堂视频系统生成（待教师复核后计分）'},
                 'scope':'仅运营统计，不返回学生姓名、分数或原文','structured_retention_days':730,
                 'cleanup':'原始媒体按现有60天任务清理；结构化记录到期只提醒，人工归档后处理'}

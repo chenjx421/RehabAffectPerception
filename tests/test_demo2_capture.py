@@ -253,3 +253,16 @@ try{
     result = subprocess.run([node, '-e', '(async()=>{' + script + '})().catch(e=>{console.error(e);process.exit(1)});'],
                             input=json.dumps(data), encoding='utf-8', capture_output=True, timeout=55)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_consent_gates_device_buttons_and_last_minute_warning():
+    run(r"""
+    assert.equal($('enable').disabled,true);assert.equal($('consentHint').hidden,false);
+    $('consent').checked=true;$('consent').onchange();
+    assert.equal($('enable').disabled,false);assert.equal($('consentHint').hidden,true);
+    stream={getTracks:()=>[]};$('record').onclick();assert.equal($('limitWarning').hidden,true);
+    const tick=[...intervals.values()].find(t=>t.delay===1000).fn;
+    started=Date.now()-845000;tick();assert.equal($('limitWarning').hidden,false);assert.equal(recorder.state,'recording');
+    assert.match($('clock').textContent,/^14:0[45]$/);
+    started=Date.now()-900000;tick();assert.equal(recorder.state,'inactive');assert.equal($('limitWarning').hidden,true);
+    """)

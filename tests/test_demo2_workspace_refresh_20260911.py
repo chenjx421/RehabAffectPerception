@@ -40,9 +40,12 @@ def test_refreshed_pages_parse_and_keep_local_resources_and_navigation():
         assert "letter-spacing:0" in html
         assert not re.search(r'<(?:script|link|img)[^>]+(?:src|href)=["\']https?://', html)
     for html in pages[:3]:
-        nav = re.search(r'<nav class="workspace-nav".*?</nav>', html, re.S).group()
-        assert re.findall(r'>([^<>]+)</a>', nav) == ["上传任务", "学生名册", "学校信息", "会员中心"]
-        assert nav.count("aria-current=page") == 1
+        # One shared teacher navigation (demo2_ui_kit) replaced the per-page navs.
+        assert html.count('<nav class="rx-nav"') == 1 and 'class="workspace-nav' not in html
+        nav = re.search(r'<nav class="rx-nav".*?</nav>', html, re.S).group()
+        assert re.findall(r'>([^<>]+)</a>', nav) == ["首页", "上传任务", "学生名册", "学生测量", "课程评价",
+                                                     "课堂录制", "学校信息", "会员中心", "使用帮助"]
+        assert nav.count('aria-current="page"') == 1
     assert '<h1>提交课堂视频</h1>' in pages[0]
     assert ".page-heading h1 { font-size:22px; }" in pages[0]
     assert 'id="analysisLink" href="/demo2/analysis"' in pages[0]
@@ -300,7 +303,7 @@ const input=JSON.parse(fs.readFileSync(0,'utf8'));
         else await page.goto('http://workspace.test/demo2/'+name+(name==='video'?'?id=fixture-ready':''));
         if(name==='video')await page.waitForFunction(()=>document.getElementById('segmentCount').textContent==='3 个片段');
         assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),name+' overflow '+width);
-        const clipped=await page.locator('button:visible,h1:visible,.workspace-nav a:visible').evaluateAll(nodes=>nodes.filter(n=>n.scrollWidth>n.clientWidth+1).map(n=>n.textContent));
+        const clipped=await page.locator('button:visible,h1:visible,.rx-nav-link:visible').evaluateAll(nodes=>nodes.filter(n=>n.scrollWidth>n.clientWidth+1).map(n=>n.textContent));
         assert.deepEqual(clipped,[],name+' clipped controls '+width);
         if(width===1440||width===390)await page.screenshot({path:path.join(input.output,name+'-'+width+'.png'),fullPage:true});
       }

@@ -150,3 +150,42 @@ def test_standard_page_renders_from_backend_contract():
     assert '"weight_percent": 35' in html and '"min_observed": 2' in html
     assert "renderStandard" in html and "最低评分条件" in html and "评分原则" in html
     assert "provScore" not in html  # 未达条件时页面不显示任何暂定分数字
+
+
+def test_rejected_save_and_withdraw_are_logged_without_payload_text(env):
+    store, token, student_id, log_dir = env
+    from rehab_affect.demo2_measurement_store import MeasurementError
+
+    with pytest.raises(MeasurementError):
+        store.save(token, _payload(student_id, evidence=""))
+    with pytest.raises(MeasurementError):
+        store.withdraw(token, {"record_id": "missing-1", "expected_version": 1, "reason": "合成撤销原因"})
+    rejected = [e for e in _log_lines(log_dir) if e["operation"] == "measurement_rejected"]
+    assert [e["code"] for e in rejected] == ["save", "withdraw"]
+    assert rejected[0]["record_id"] == "score-1" and rejected[0]["source_type"] == "classroom_observation"
+    assert "task_id" in rejected[0] and rejected[0]["task_id"] is None
+    assert rejected[1]["result"] == "record_unavailable"
+    assert "合成撤销原因" not in json.dumps(rejected, ensure_ascii=False)
+
+
+def test_workspace_logs_info_when_trend_has_fewer_than_two_scored_points(env, caplog):
+    store, token, student_id, log_dir = env
+    store.save(token, _payload(student_id, reviewed=True))
+    with caplog.at_level("INFO", logger="rehab_affect.measurement_flow"):
+        store.workspace(token)
+    trend_lines = []
+    for path in sorted(log_dir.glob("measurement_trend_*.jsonl")):
+        trend_lines += [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    mine = [e for e in trend_lines if e["student_id"] == student_id]
+    assert mine and mine[-1]["level"] == "INFO" and mine[-1]["scored_points"] == 1 and mine[-1]["required"] == 2
+    assert any("trend_insufficient" in r.getMessage() and r.levelname == "INFO" for r in caplog.records)
+    # The per-record audit log keeps one line per save step only.
+    assert all(e["operation"] != "trend_insufficient" for e in _log_lines(log_dir))
+
+    store.save(token, _payload(student_id, record_id="score-2", lesson_id="lesson-2", lesson_date="2026-09-11", reviewed=True))
+    before = len(mine)
+    store.workspace(token)
+    trend_lines = []
+    for path in sorted(log_dir.glob("measurement_trend_*.jsonl")):
+        trend_lines += [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert len([e for e in trend_lines if e["student_id"] == student_id]) == before

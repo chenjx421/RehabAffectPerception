@@ -31,11 +31,34 @@ OPERATIONS = frozenset({
     "evaluation_withdraw",
     "evaluation_rejected",
     "dual_track_compute",
+    "evaluation_step_invalid",
+    "evaluation_step_enter",
+    "evaluation_edit",
+    "score_basis_compute",
+    "score_basis_view",
+    "score_basis_insufficient",
+    "score_basis_error",
+    "course_eval_suggest",
+    "course_eval_decision",
+    "course_eval_save",
+    "course_eval_lock",
+    "course_eval_basis_stale",
+    "course_eval_error",
+    "course_eval_adopt",
+    "course_eval_modify",
 })
+# Page-side events a teacher's browser may report through ``/evaluations/debug-event``.
+CLIENT_OPERATIONS = frozenset({"evaluation_step_invalid", "evaluation_step_enter", "evaluation_edit",
+                               "course_eval_adopt", "course_eval_modify"})
 _ID_FIELDS = ("evaluation_id", "record_id", "account_id", "task_id", "video_task_id", "course_id",
-              "template_id", "subject_id", "weight_policy", "rule_version", "status", "code", "phase")
+              "template_id", "subject_id", "weight_policy", "rule_version", "status", "code", "phase", "source",
+              "record_short", "basis_status", "basis_source", "detail_version", "viewer_role", "error",
+              "rubric_version", "task_short", "evaluation_short", "item_id", "suggestion_version",
+              "course_task_short")
 _SCORE_FIELDS = ("school_score", "enhanced_score", "evidence_delta", "weight_delta", "total_delta")
-_INT_FIELDS = ("version", "scored_items", "total_items")
+_INT_FIELDS = ("version", "scored_items", "total_items", "step", "item_count", "suggested_count",
+               "insufficient_count", "adopted_count", "modified_count", "missing_reason_count",
+               "measurement_count", "student_count", "course_task_version")
 _LOCK = threading.Lock()
 
 
@@ -99,9 +122,10 @@ def evaluation_debug_event(store: Any, operation: str, result: str, **fields: An
             entry[key] = _clean_id(value)
         elif key in _INT_FIELDS:
             entry[key] = value if isinstance(value, int) and not isinstance(value, bool) else "<invalid>"
-        elif key in {"reviewed", "locked"}:
+        elif key in {"reviewed", "locked", "matches_page", "stale"}:
             entry[key] = value if isinstance(value, bool) else "<invalid>"
-        elif key == "locked_fields":
+        elif key in {"locked_fields", "fields", "insufficient_items", "suggested_items", "stale_reasons",
+                     "modified_items", "missing_reason_items"}:
             entry[key] = [_clean_id(item) for item in value] if isinstance(value, (list, tuple)) else []
         elif key == "message":
             entry[key] = str(value)[:160]

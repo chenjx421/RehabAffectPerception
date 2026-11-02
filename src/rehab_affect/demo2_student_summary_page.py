@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .demo2_portal import _BOOK_ICON, _WORKSPACE_STYLE, _account_payload, _document
+from .demo2_portal import _WORKSPACE_STYLE, _account_payload, _document
+from .demo2_ui_kit import admin_header, teacher_header
 
 
 DOMAINS = (("cognition", "认知"), ("communication", "沟通"), ("motor", "运动"),
@@ -37,9 +38,14 @@ pre{font:13px/1.7 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere
 """
 
 
-def _shell(content: str, *, admin: bool = False) -> str:
+def _shell(content: str, *, admin: bool = False, account: Any | None = None) -> str:
     back, label = ("/demo2/admin", "返回公司后台") if admin else ("/demo2/students", "返回本校名册")
-    return f"""<header class="site-header"><div class="header-inner"><a class="brand" href="{back}">{_BOOK_ICON}<span class="brand-copy"><strong>RehabAffect</strong><span>授权学生摘要</span></span></a><nav class="summary-nav" aria-label="摘要导航"><a class="button quiet" href="{back}">{label}</a><button class="button" id="reloadButton" type="button">重新读取</button></nav></div></header>
+    actions = (f'<a class="button quiet" href="{back}">{label}</a>'
+               '<button class="button" id="reloadButton" type="button">重新读取</button>')
+    header = (admin_header("overview", account, logout_bound=False, extra_actions=actions, page="admin_student_summaries")
+              if admin else
+              teacher_header("students", account, logout_bound=False, extra_actions=actions, page="student_summary"))
+    return f"""{header}
 <main class="page-shell" id="mainContent" tabindex="-1"><div class="page-message" id="pageMessage" role="alert" tabindex="-1"></div>{content}<footer class="summary-section summary-note">仅限实际授权覆盖的教育支持摘要，不授予研究或模型训练权限。校方资料不会自动导入。本摘要不作诊断、专业结论或预测，也不代表预测能力已获验证。公开编号不等于匿名化，自由文字仍可能导致再识别；请勿录入姓名、联系方式或其他身份线索。撤回不代表已删除下载副本或所有备份。原视频仍按原有 60 天策略保存；本摘要授权与原视频授权分开管理。</footer></main>"""
 
 
@@ -338,7 +344,7 @@ byId('commitButton').addEventListener('click',async()=>{
 byId('reloadButton').addEventListener('click',()=>{if(!loading&&!writing&&(!dirty||window.confirm('重新读取会重置学生核对与提交预览，未提交文字仍保留，继续吗？')))return load();});
 load();
 """
-    return _document(title="学生授权摘要 · RehabAffect", body=_shell(content), page_style=STYLE, script=script)
+    return _document(title="学生授权摘要", body=_shell(content, account=account), page_style=STYLE, script=script)
 
 
 def render_admin_student_summaries_html(account: Any | None = None) -> str:
@@ -408,7 +414,7 @@ byId('nextPage').addEventListener('click',()=>{if(!byId('nextPage').disabled)ret
 byId('reloadButton').addEventListener('click',()=>load());
 load();
 """
-    return _document(title="授权学生摘要归档 · RehabAffect", body=_shell(content, admin=True), page_style=STYLE, script=script)
+    return _document(title="授权学生摘要归档", body=_shell(content, admin=True, account=account), page_style=STYLE, script=script)
 
 
 __all__ = ["render_student_summary_html", "render_admin_student_summaries_html"]

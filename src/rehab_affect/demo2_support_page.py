@@ -1,8 +1,13 @@
 """Teacher-oriented upload readiness, support planning and model entry."""
 
 
-def render_support():
-    return HTML
+from .demo2_ui_kit import teacher_header, inject_kit
+
+
+def render_support(account=None):
+    header = teacher_header("upload", account, logout_bound=False, page="teaching_support",
+                            extra_actions='<a class="button" href="/demo2/analysis">返回课堂列表</a>')
+    return inject_kit(HTML, header=header, page="teaching_support")
 
 
 HTML=r'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>教学支持与上传测试</title><style>

@@ -244,12 +244,12 @@ class Demo2StudentSummaryStore:
             valid = (row['status'] == 'active' and expiry > _now() and data.get('reviewed') is True
                      and data.get('student_id') == student['student_id']
                      and data.get('record_id') == record_id and data.get('version') == row['version']
-                     and data.get('source_type') in {'classroom_observation', 'video_review'})
+                     and data.get('source_type') in {'classroom_observation', 'video_review', 'video'})
             if expected and (expected['version'] != row['version'] or expected['sha256'] != digest):
                 valid = False
             if not valid:
                 raise ValueError
-            if data['source_type'] == 'video_review':
+            if data['source_type'] in {'video_review', 'video'}:
                 account = {'account_id': student['owner_account_id'], 'role': 'school_uploader'}
                 task = self.identities._task(db, account, data['task_id'])
                 context = self.identities._context(task.get('school_context_json'), required=False)

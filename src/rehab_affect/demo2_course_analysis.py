@@ -5,6 +5,7 @@ import json
 
 from .assessment_rubric import DIMENSION_WEIGHTS, RUBRIC_VERSION
 from .evaluation_report_contract import build_linkage, build_task_report
+from .score_basis import measurement_basis_sentence
 
 DIMENSIONS = {'accuracy':'任务正确性','independence':'独立完成','consistency':'表现稳定性','transfer':'情境迁移'}
 STATES = {'unknown':'无法判断','participating':'参与任务','repeat_prompt':'需要重复提示',
@@ -109,7 +110,7 @@ def build_report(work):
             examples.append(f'{names.get(r["student_id"],"学生")}在{r["start_sec"]:g}至{r["end_sec"]:g}秒的'
                 f'“{_excerpt(r["goal_id"],24)}”目标中，教师记录“{_excerpt(r["evidence"],70)}”；'
                 f'支持方式为{SUPPORT.get(r.get("support_level"),"未记录")}，'
-                + (f'本目标参考得分{score:.2f}/10。' if score is not None else '本目标证据尚不足以形成总分。'))
+                + (f'本目标参考得分{score:.2f}/10（{measurement_basis_sentence(r)}）。' if score is not None else '本目标证据尚不足以形成总分。'))
         add('目标与课堂证据', ''.join(examples)+'上述为部分证据摘要；完整原文、修订版本及片段位置保留在观察记录中。')
         first = evidence[0]
         known_states = sum(r.get('observed_state','unknown')!='unknown' for r in evidence)

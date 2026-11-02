@@ -282,3 +282,45 @@ def test_chunk_failure_and_resume_are_logged(flow) -> None:
     resume = [e for e in entries if e["operation"] == "upload_resume" and e["result"] == "ok"]
     assert resume and resume[-1]["task_id"] == task_id and resume[-1]["verified_chunks"] == 0
     assert resume[-1]["channel_id"] == "channel_1" and resume[-1]["byte_size"] == 6
+
+
+def test_upload_task_cards_show_plain_chinese_failure_reasons_and_short_codes() -> None:
+    import shutil
+    if not shutil.which("node"):
+        pytest.skip("Node.js required")
+    from test_demo2_portal_html import _run_page_js
+    _run_page_js(render_demo2_upload_html({"role": "school_uploader", "username": "t1", "bound_channel_id": "channel_1"}),
+        "location.search='';replies.push({context:{city:'C',district:'D',school_name:'S'}},{account:{username:'t1',bound_channel_id:'channel_1'}});",
+        r"""
+        byId('courseId').value='course-1';
+        const failedTask=code=>({...baseTask,task_id:'abcdef0123456789abcdef0123456789',analysis_status:'failed',processing_error:{code,message:'English detail'}});
+        replies.push({workspace:{course_id:'course-1',remaining_slots:3,used_slots:2,max_slots:5,tasks:[failedTask('missing_dependency')]}});
+        await loadWorkspace();
+        let html=byId('taskList').innerHTML;
+        assert.match(html,/服务器缺少视频处理组件，请联系管理员/);assert.doesNotMatch(html,/missing_dependency|English detail/);
+        assert.match(html,/<code class="rx-id-code">abcdef01<\/code>/);assert.match(html,/data-rx-copy="abcdef0123456789abcdef0123456789"/);
+        assert.match(html,/rx-badge-danger">失败/);assert.match(html,/数学/);
+        assert.equal(failureReason(failedTask('processing_failed')),'视频分析未完成，可重新上传或联系管理员');
+        assert.equal(failureReason(failedTask('something_new')),'视频分析未完成，可重新上传或联系管理员');
+        assert.match(byId('slotRail').innerHTML,/已用/);assert.equal((byId('slotRail').innerHTML.match(/<small>剩余<\/small>/g)||[]).length,3);
+        byId('courseName').value='语'.repeat(201);await uploadVideo();
+        assert.equal(byId('courseNameError').hidden,false);assert.match(byId('courseNameError').textContent,/课程名称不能超过 200 个字符/);
+        byId('courseId').value='c'.repeat(121);await loadWorkspace();
+        assert.equal(byId('courseIdError').hidden,false);assert.match(byId('courseIdError').textContent,/课程批次号不能超过 120 个字符/);
+        """)
+
+
+def test_active_bound_channel_rejects_other_school_channel(flow) -> None:
+    # The workspace lists every channel for display; only the bound channel may receive uploads.
+    status, _, body = _request(flow["port"], "GET", "/api/v1/demo2/upload/workspace?course_id=cross-course",
+                               cookie=flow["cookie"])
+    assert status == 200 and body["workspace"]["bound_channel_id"] == "channel_1"
+    assert {item["channel_id"] for item in body["workspace"]["channels"]} >= {"channel_2"}
+    status, body = _create_task(flow, course_id="cross-course", channel_id="channel_2")
+    assert status == 403 and body["error"]["code"] == "channel_forbidden"
+    with sqlite3.connect(flow["store"].db_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM video_analysis_tasks").fetchone()[0] == 0
+    rejected = [e for e in _read_log(flow["log_dir"]) if e["operation"] == "upload_rejected"]
+    assert rejected[-1]["code"] == "channel_forbidden" and rejected[-1]["channel_id"] == "channel_2"
+    status, body = _create_task(flow, course_id="cross-course")
+    assert status == 200 and body["task"]["channel_id"] == "channel_1"

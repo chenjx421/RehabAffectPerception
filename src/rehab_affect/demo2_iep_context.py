@@ -55,6 +55,15 @@ NOT_LINKED_MESSAGE = '本课未关联该学生的授权资料，分析不读取 
 AMBIGUOUS_MESSAGE = '存在多份当前有效的 IEP 或资料引用，系统不自动选择，请教师先明确对应的 IEP 版本。'
 
 
+def _excerpt_field(value, label: str) -> str:
+    """IEP 摘要字段可能已自带同名标签（Word/PDF 摘要确认后写入）和句末标点，拼句前去掉，避免「支持方式：支持方式：」「。。」。"""
+    text = str(value or '').strip()
+    if text.startswith(label + '：'):
+        text = text[len(label) + 1:].lstrip()
+    text = text.rstrip('。；;. ')
+    return text or '未填写'
+
+
 def _unavailable_reason(records, reference):
     """Name the first reason a stale reference may no longer feed analysis."""
     if reference.get('withdrawn') or reference.get('status') == 'withdrawn':
@@ -152,8 +161,8 @@ def attach_iep_context(records, token, workspace):
             excerpts = []
             for doc in documents:
                 summary = doc['summary']
-                excerpts.append('学习目标：' + str(summary.get('learning_goals') or '未填写')
-                                + '；支持方式：' + str(summary.get('support_methods') or '未填写'))
+                excerpts.append('学习目标：' + _excerpt_field(summary.get('learning_goals'), '学习目标')
+                                + '；支持方式：' + _excerpt_field(summary.get('support_methods'), '支持方式'))
             lines.append(f"{person['display_name']}：" + '。'.join(excerpts)
                          + '。仅作为本课目标与支持条件的背景，不自动证明目标已达成。')
         elif available:
@@ -176,8 +185,10 @@ def attach_iep_context(records, token, workspace):
 def snapshot_report(report):
     """Snapshots keep reference IDs, never reusable plaintext IEP summaries."""
     result = dict(report)
+    # IEP plaintext (the dossier excerpt and the teacher-side support points) is
+    # re-read live for teachers and never stored in a snapshot.
     result['sections'] = [dict(section) for section in report.get('sections', [])
-                          if section.get('source') != 'authorized_iep']
+                          if section.get('source') not in {'authorized_iep', 'iep_support_points'}]
     result['full_text'] = '\n\n'.join(section['title'] + '\n' + section['text'] for section in result['sections'])
     result['character_count'] = sum(len(section.get('text', '')) for section in result['sections'])
     return result

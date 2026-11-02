@@ -34,11 +34,17 @@ OPERATIONS = frozenset({
     "admin_analysis_guide",
     "admin_analysis_open",
     "admin_analysis_denied",
+    "admin_channel_list",
+    "admin_channel_update",
+    "admin_dossier_summary",
+    "admin_measurement_summary",
 })
 _ID_FIELDS = ("admin_account", "account_id", "task_id", "report_id", "course_id", "channel_id",
-              "status", "code", "fmt", "asset", "role", "analysis_status", "upload_status", "filter_status")
+              "status", "code", "fmt", "asset", "role", "analysis_status", "upload_status", "filter_status",
+              "report_short", "channel_status")
 _INT_FIELDS = ("http_status", "account_count", "channel_count", "task_total", "storage_bytes",
-               "result_count", "report_count", "page", "total", "query_length", "byte_size")
+               "result_count", "report_count", "page", "total", "query_length", "byte_size",
+               "course_upload_limit", "changed_count", "page_count", "duration_ms")
 _LOCK = threading.Lock()
 
 
@@ -76,6 +82,8 @@ def admin_debug_event(store: Any, operation: str, result: str, **fields: Any) ->
             entry[key] = value if isinstance(value, bool) else "<invalid>"
         elif key == "message":
             entry[key] = str(value)[:160]
+    if isinstance(entry.get("report_id"), str) and entry["report_id"] != "<invalid>" and "report_short" not in entry:
+        entry["report_short"] = entry["report_id"][:8]
     line = json.dumps(entry, ensure_ascii=False, separators=(",", ":"))
     DEBUG_LOGGER.debug(line)
     try:

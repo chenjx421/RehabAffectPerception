@@ -20,6 +20,7 @@ from typing import Any
 from urllib.parse import urlencode
 from uuid import uuid4
 
+from .demo2_identity_debug import BOX_SOURCES, CLIENT_OPERATIONS, identity_debug_event
 from .student_record_store import MAX_PROCESSING_RESULT_BYTES, SCHOOL_CONTEXT_LIMITS, _iso
 
 
@@ -234,6 +235,22 @@ class Demo2IdentityStore:
                 "can_edit": bool(scope), "needs_school_context": not bool(scope)}
 
     def create_student(self, token, payload) -> dict[str, Any]:
+        """Create one roster student; every attempt leaves a name-free debug line."""
+        # Imported lazily: the dossier store imports this module.
+        from .demo2_dossier_store import debug_event
+
+        try:
+            student = self._create_student(token, payload)
+        except IdentityError as error:
+            debug_event(self.record_store, "student_create", "rejected", code=error.code, http_status=error.status)
+            raise
+        except Exception as error:
+            debug_event(self.record_store, "student_create", "error", error_type=type(error).__name__)
+            raise
+        debug_event(self.record_store, "student_create", "created", student_id=student.get("student_id"))
+        return student
+
+    def _create_student(self, token, payload) -> dict[str, Any]:
         account = self._account(token, write=True)
         if not isinstance(payload, dict) or "display_name" not in payload or set(payload) - set(STUDENT_FIELDS):
             raise IdentityError(400, "invalid_student", "请仅提交学生姓名、校内编号、班级和备注")
@@ -534,7 +551,73 @@ class Demo2IdentityStore:
         # committing the write transaction to avoid locking our own session.
         return self.workspace(token, task["task_id"])
 
+    @staticmethod
+    def _frame_position(frames, frame_key) -> int | None:
+        keys = list(frames)
+        return keys.index(frame_key) + 1 if frame_key in frames else None
+
+    def _logged(self, operation, method, token, payload):
+        """Run one identity write and leave a name-free debug line for every outcome."""
+        trace: dict[str, Any] = {}
+        if isinstance(payload, dict):
+            task_id = payload.get("task_id")
+            trace["task_id"] = task_id if isinstance(task_id, str) else None
+            frame_key = payload.get("frame_key")
+            trace["frame_key"] = frame_key if isinstance(frame_key, str) else None
+            role = payload.get("role")
+            trace["role"] = role if isinstance(role, str) else None
+        try:
+            result = method(token, payload, trace)
+        except IdentityError as error:
+            identity_debug_event(self.record_store, operation, "rejected", code=error.code,
+                                 http_status=error.status, **trace)
+            raise
+        except Exception as error:
+            identity_debug_event(self.record_store, operation, "error", code=type(error).__name__, **trace)
+            raise
+        identity_debug_event(self.record_store, operation, "revoked" if operation == "identity_revoke" else "confirmed",
+                             binding_id=result.get("binding_id"), **trace)
+        return result
+
     def save_binding(self, token, payload):
+        return self._logged("identity_confirm", self._save_binding, token, payload)
+
+    def revoke_binding(self, token, payload):
+        return self._logged("identity_revoke", self._revoke_binding, token, payload)
+
+    def client_debug_event(self, token, payload) -> dict[str, Any]:
+        """Record one page-side identity action (manual box, re-detect, ...) for a task the teacher owns."""
+        allowed = {"operation", "task_id", "frame_key", "frame_index", "frame_total", "role", "result",
+                   "box_source", "candidate_count", "next_frame_index"}
+        if not isinstance(payload, dict) or not {"operation", "task_id", "result"} <= set(payload) or set(payload) - allowed:
+            raise IdentityError(400, "invalid_debug_event", "调试事件字段无效")
+        operation = payload["operation"]
+        if operation not in CLIENT_OPERATIONS:
+            raise IdentityError(400, "invalid_debug_event", "调试事件类型无效")
+        result = payload["result"]
+        if not isinstance(result, str) or not re.fullmatch(r"[a-z_]{1,40}", result):
+            raise IdentityError(400, "invalid_debug_event", "调试事件结果无效")
+        for key in ("frame_index", "frame_total", "candidate_count", "next_frame_index"):
+            value = payload.get(key)
+            if value is not None and (type(value) is not int or not 0 <= value <= 100000):
+                raise IdentityError(400, "invalid_debug_event", "调试事件数值无效")
+        role = payload.get("role")
+        if role is not None and role not in {"student", "teacher", "unknown"}:
+            raise IdentityError(400, "invalid_debug_event", "调试事件角色无效")
+        source = payload.get("box_source")
+        if source is not None and source not in BOX_SOURCES:
+            raise IdentityError(400, "invalid_debug_event", "调试事件来源无效")
+        frame_key = payload.get("frame_key")
+        if frame_key is not None and (not isinstance(frame_key, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", frame_key)):
+            raise IdentityError(400, "invalid_debug_event", "调试事件采样帧无效")
+        account = self._account(token, write=True)
+        with self.record_store._connect() as connection:
+            task = self._task(connection, account, payload["task_id"])
+        fields = {key: payload.get(key) for key in allowed - {"operation", "result", "task_id"}}
+        return identity_debug_event(self.record_store, operation, result, task_id=task["task_id"],
+                                    source="client", **fields)
+
+    def _save_binding(self, token, payload, trace):
         account = self._account(token, write=True)
         required = {"task_id", "frame_key", "frame_revision", "role", "bbox"}
         if not isinstance(payload, dict) or not required <= set(payload) or set(payload) - required - {"student_id", "overlap_confirmed"}:
@@ -558,6 +641,7 @@ class Demo2IdentityStore:
             context = self._context(task.get("school_context_json"))
             scope = self._scope(task["account_id"], context)
             frame, _ = self._frame(task, payload["frame_key"], payload["frame_revision"])
+            trace["frame_index"] = self._frame_position(self._frames(task), frame["frame_key"])
             if role == "student":
                 if connection.execute("""SELECT 1 FROM demo2_identity_students
                     WHERE student_id = ? AND owner_account_id = ? AND scope_key = ?""",
@@ -595,7 +679,7 @@ class Demo2IdentityStore:
                          "overlap_confirmed": bool(overlapping_ids), "overlapping_binding_ids": overlapping_ids})
         return self._public_binding(binding, payload["frame_revision"], {frame["frame_key"]})
 
-    def revoke_binding(self, token, payload):
+    def _revoke_binding(self, token, payload, trace):
         account = self._account(token, write=True)
         if not isinstance(payload, dict) or set(payload) != {"task_id", "binding_id", "reason"}:
             raise IdentityError(400, "invalid_revocation", "请提供任务、绑定编号和撤销原因")
@@ -609,15 +693,18 @@ class Demo2IdentityStore:
                 (binding_id, task["task_id"], account["account_id"])).fetchone()
             if row is None:
                 raise IdentityError(404, "binding_unavailable", "未找到指定绑定")
+            trace.update(frame_key=row["frame_key"], role=row["role"])
             if row["status"] != "revoked":
                 connection.execute("""UPDATE demo2_identity_bindings SET status = 'revoked', revoked_by = ?,
                     revoked_at = ?, revoked_reason = ? WHERE binding_id = ?""", (account["username"], _iso(), reason, binding_id))
                 self._audit(connection, account, "identity_binding_revoked", binding_id, {"task_id": task["task_id"], "reason": reason})
             row = connection.execute("SELECT * FROM demo2_identity_bindings WHERE binding_id = ?", (binding_id,)).fetchone()
             try:
-                keys = set(self._frames(task)) if task["analysis_status"] == "evidence_ready" else set()
+                frames = self._frames(task) if task["analysis_status"] == "evidence_ready" else {}
             except IdentityError:
-                keys = set()
+                frames = {}
+            keys = set(frames)
+            trace["frame_index"] = self._frame_position(frames, row["frame_key"])
             return self._public_binding(row, self._revision(task), keys)
 
     def frame_file(self, token, task_id, frame_key, frame_revision):

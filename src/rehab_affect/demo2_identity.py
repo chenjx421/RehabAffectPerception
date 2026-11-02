@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .demo2_portal import _BOOK_ICON, _account_payload, _document
+from .demo2_portal import _account_payload, _document
+from .demo2_ui_kit import header_for
 
 
 STYLE = r"""
@@ -18,6 +19,10 @@ body { background:#fff; font-size:15px; }
 [hidden] { display:none !important; }
 .header-inner,.page-shell { width:min(1720px,calc(100% - 48px)); }
 .header-inner { min-height:64px; }
+.rx-header .rx-header-inner { width:min(1720px,calc(100% - 48px)); gap:16px; }
+.rx-header .rx-nav-link { padding:0 8px; }
+.rx-nav { overflow-x:auto; scrollbar-width:none; }
+.rx-nav::-webkit-scrollbar { display:none; }
 .page-shell { padding-top:20px; }
 .page-heading { margin-bottom:16px; align-items:center; }
 .page-heading>div { min-width:0; }
@@ -72,6 +77,13 @@ details[open]>summary { margin-bottom:8px; }
 .time-jump { display:flex; align-items:end; gap:10px; margin-block:8px; }.time-jump .field { flex:1; }
 .side-pane h2 { margin:0 0 10px; }
 .candidate-list { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 18px; }
+.roi.candidate.excluded { border-color:#8f9daa; opacity:.85; }
+.roi.candidate.excluded span { background:#5f6f7d; }
+.candidate-list button.excluded { color:#5f6f7d; border-style:dashed; }
+.excluded-toggle { display:flex; align-items:center; gap:6px; margin:-8px 0 14px; color:var(--muted); font-size:13px; }
+.excluded-toggle input { width:16px; height:16px; min-height:0; padding:0; margin:0; border:0; box-shadow:none; flex:0 0 auto; appearance:auto; }
+.excluded-toggle[hidden] { display:none; }
+.excluded-toggle span { min-width:0; overflow-wrap:anywhere; }
 .candidate-list button { min-height:44px; padding:8px 12px; background:#fff; color:var(--blue-deep); border:1px solid var(--line); border-radius:4px; font-size:14px; }
 .candidate-list button[aria-pressed=true] { border-color:var(--blue); background:var(--blue-soft); }
 .annotation-form { display:grid; gap:12px; margin-top:12px; }
@@ -122,8 +134,27 @@ dialog h2 { margin-bottom:12px; }dialog .field { margin-block:16px; }dialog .too
 .save-gate .button { margin-top:8px; }
 .annotation-advanced { margin-top:12px; border-top:1px solid var(--line); }
 .annotation-advanced .coordinate-grid { margin:12px 0; }
-.identity-steps { margin:0 0 12px; font-size:14px; color:var(--muted); }
-.identity-steps strong { color:var(--blue-deep); font-weight:600; }
+.guide-steps { list-style:none; margin:0 0 14px; padding:0; display:grid; gap:8px; }
+.guide-steps li { display:grid; grid-template-columns:32px minmax(0,1fr); gap:10px; align-items:start; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:#F7F8FA; color:#8A929C; transition:background-color .15s ease, border-color .15s ease; }
+.guide-steps li b { display:grid; place-items:center; width:32px; height:32px; border-radius:50%; background:#E1E5EA; color:#6B7480; font-size:16px; }
+.guide-steps li strong { display:block; font-size:16px; line-height:1.5; color:inherit; }
+.guide-steps li small { display:block; margin-top:2px; font-size:13px; line-height:1.55; overflow-wrap:anywhere; }
+.guide-steps li[data-state=current] { background:var(--blue-soft); border-color:var(--blue); color:var(--blue-deep); box-shadow:0 0 0 1px var(--blue) inset; }
+.guide-steps li[data-state=current] b { background:var(--blue); color:#fff; }
+.guide-steps li[data-state=done] { background:#EDF7F1; border-color:#B7DEC8; color:#1D6A48; }
+.guide-steps li[data-state=done] b { background:var(--success); color:#fff; }
+.guide-steps li[data-state=blocked] { background:#FFF8EE; border-color:#F0D3A6; color:#805014; }
+.guide-steps li[data-state=blocked] b { background:#E9B872; color:#fff; }
+.draw-hint { margin:0 0 10px; padding:10px 12px; border-radius:6px; background:#FFF8EE; border-left:3px solid var(--warning); color:#805014; font-size:14px; line-height:1.6; }
+#drawButton.attention { border-color:var(--warning); box-shadow:0 0 0 3px #F5C98A; color:#7a4a0c; font-weight:600; }
+.missing-step { margin-top:2px; padding:8px 10px; border-radius:6px; font-size:14px; line-height:1.6; }
+.missing-step[data-state=missing] { background:#FFF8EE; color:#805014; }
+.missing-step[data-state=ready] { background:#EDF7F1; color:#1D6A48; font-weight:600; }
+.toolbar-hint { font-size:13px; color:var(--muted); }
+.identity-toast { position:fixed; left:50%; bottom:28px; z-index:50; transform:translateX(-50%); display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; max-width:min(640px,calc(100% - 32px)); padding:12px 14px 12px 18px; border-radius:10px; background:#1F5E3F; color:#fff; font-size:15px; box-shadow:0 10px 30px rgba(0,0,0,.22); }
+.identity-toast strong { font-weight:600; overflow-wrap:anywhere; }
+.identity-toast .button { min-height:36px; padding:6px 12px; background:#fff; color:#1F5E3F; border-color:#fff; font-size:13px; }
+.identity-toast .button.icon-button { width:36px; height:36px; padding:8px; background:transparent; color:#fff; border-color:#ffffff66; }
 #continueToResults { width:100%; margin:8px 0 4px; }
 .result-shortcut-note { margin:0 0 14px; color:var(--muted); font-size:13px; line-height:1.6; }
 .student-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:8px; }
@@ -155,13 +186,16 @@ _ICON_PATHS = {
 }
 
 
-def _shell(content: str) -> str:
+def _shell(content: str, account: Any | None = None, active: str = "students") -> str:
     for name, paths in _ICON_PATHS.items():
         content = content.replace(f"__ICON_{name}__", f'<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{paths}</svg>')
-    return f"""<header class="site-header"><div class="header-inner">
-<a class="brand" id="brandLink" href="/demo2/login">{_BOOK_ICON}<span class="brand-copy"><strong>课堂学习分析平台</strong><span id="accountLabel">学校名册与画面确认</span></span></a>
-<nav class="identity-nav" aria-label="工作台导航"><a class="button quiet" id="backLink" href="/demo2/login">返回登录</a><a class="button quiet" id="secondaryLink" href="/demo2/school" hidden>学校信息</a><button class="button quiet" id="logoutButton" type="button">退出</button></nav>
-</div></header><main class="page-shell" id="mainContent">{content}</main>"""
+    header = header_for(
+        account, active, admin_active="tasks", page=f"identity:{active or 'task'}",
+        account_id="accountLabel", brand_id="brandLink",
+        extra_actions=('<a class="button quiet" id="backLink" href="/demo2/login">返回登录</a>'
+                       '<a class="button quiet" id="secondaryLink" href="/demo2/school" hidden>学校信息</a>'),
+    )
+    return f"""{header}<main class="page-shell" id="mainContent">{content}</main>"""
 
 
 COMMON = r"""
@@ -197,24 +231,82 @@ $('logoutButton').addEventListener('click',async()=>{if(!allowLeave())return;try
 """
 
 
+ROSTER_STYLE = r"""
+.roster-toolbar { display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px; margin-top:16px; }
+.roster-toolbar .roster-search { flex:1 1 260px; margin:0; }
+.roster-toolbar .button.primary { flex:none; min-height:44px; }
+.roster-count-line { margin-top:10px; font-size:13px; color:var(--muted); }
+.roster-list { gap:0; margin-top:12px; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+.roster-list .empty-state,.roster-list .rx-empty { border:0; border-radius:0; }
+.student-row { display:grid; grid-template-columns:40px minmax(0,1fr) auto; gap:14px; align-items:center; padding:14px 16px; border-bottom:1px solid var(--line); background:#fff; transition:background-color .6s ease, box-shadow .6s ease; scroll-margin-top:96px; }
+.student-row:last-child { border-bottom:0; }
+.student-row:hover { background:#FAFBFD; }
+.student-row.is-new { background:#EAF7F0; box-shadow:inset 4px 0 0 var(--success); }
+.student-main { min-width:0; }
+.student-title { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; }
+.student-title strong { font-size:16px; color:var(--ink); overflow-wrap:anywhere; }
+.student-code { font-family:"Cascadia Code",SFMono-Regular,Consolas,monospace; }
+.student-meta { display:block; margin-top:4px; font-size:13px; color:var(--muted); overflow-wrap:anywhere; }
+.student-note { display:block; margin-top:2px; font-size:13px; color:var(--muted); overflow-wrap:anywhere; }
+.student-actions-inline { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
+.student-actions-inline .button { min-height:40px; font-size:14px; }
+mark.roster-hit { background:#FFF1C2; color:inherit; padding:0 1px; border-radius:2px; }
+.create-drawer-backdrop { position:fixed; inset:0; z-index:150; background:#20252B66; }
+.create-drawer { position:fixed; top:0; right:0; bottom:0; z-index:160; width:min(420px,100%); display:flex; flex-direction:column; background:#fff; border-left:1px solid var(--line); box-shadow:-12px 0 32px rgba(23,43,77,.14); animation:drawer-in .2s ease-out; }
+@keyframes drawer-in { from { transform:translateX(24px); opacity:0; } to { transform:none; opacity:1; } }
+.drawer-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:20px 20px 12px; border-bottom:1px solid var(--line); }
+.drawer-head h2 { margin:0; }
+.drawer-head .identity-copy { margin-top:4px; }
+.drawer-body { flex:1; overflow:auto; padding:4px 20px 24px; }
+.drawer-body .roster-form { margin-top:12px; }
+@media(max-width:760px) { .student-row { grid-template-columns:40px minmax(0,1fr); }.student-actions-inline { grid-column:1/-1; justify-content:flex-start; } }
+@media(prefers-reduced-motion:reduce) { .create-drawer { animation:none; }.student-row { transition:none; } }
+"""
+
+
 def render_students(account: Any | None = None) -> str:
     body = """
-<div class="page-heading"><div><h1>本校学生名册</h1><p class="lead">姓名、校内编号与班级</p></div><div class="tool-row"><a class="button" id="returnTaskLink" hidden>__ICON_previous__返回画面身份确认</a><button class="button" id="refreshRoster" type="button">__ICON_refresh__刷新名册</button></div></div>
+<div class="page-heading"><div><h1>本校学生名册</h1><p class="lead">姓名、校内编号与班级；同名学生请凭编号徽标区分</p></div><div class="tool-row"><a class="button" id="returnTaskLink" hidden>__ICON_previous__返回画面身份确认</a><button class="button" id="refreshRoster" type="button">__ICON_refresh__刷新名册</button></div></div>
 <div class="scope-band"><span>当前学校：<strong id="schoolName">正在读取</strong></span><span id="rosterCount" role="status">正在读取本校名单</span></div>
 <div id="pageMessage" class="page-message" role="alert" tabindex="-1"></div>
 <details class="scope-details"><summary><span class="permission-state" id="permissionState" role="status">正在核验权限</span> · 学校与名册边界</summary><p class="scope-warning" id="scopeNotice" role="status">正在核验学校归属与编辑权限。</p><p class="identity-copy">加入名册不代表已确认视频中的身份。同名学生请核对校内编号和班级；这里只显示本校接口返回的记录，不预置演示学生。</p></details>
-<div class="roster-layout"><section aria-labelledby="rosterTitle"><h2 id="rosterTitle">已有名单</h2><div class="field roster-search"><label for="rosterSearch">查找姓名、校内编号或班级</label><input id="rosterSearch" type="search" autocomplete="off" placeholder="输入姓名或编号" disabled></div><div class="roster-list" id="rosterList" aria-live="polite"><div class="empty-state">正在读取本校名册…</div></div></section>
-<section class="side-pane" aria-labelledby="createTitle"><h2 id="createTitle">新增本校学生</h2><p class="identity-copy">仅填写课堂工作必需的信息，请勿在备注中填写诊断或其他敏感资料。</p><form id="studentForm" class="roster-form"><fieldset id="studentFields" disabled><div class="roster-form"><div class="field"><label for="displayName">学生姓名（必填）</label><input id="displayName" required maxlength="80" autocomplete="off"></div><div class="field"><label for="studentCode">校内编号</label><input id="studentCode" maxlength="64" autocomplete="off"><small>建议填写，便于区分同名学生。</small></div><div class="field"><label for="className">班级</label><input id="className" maxlength="80" autocomplete="off"></div><div class="field"><label for="studentNote">备注（可选）</label><textarea id="studentNote" maxlength="500"></textarea></div><button class="button primary" id="createStudent" type="submit">创建学生</button></div></fieldset><p class="form-status" id="createStatus" role="status">正在核验编辑权限。</p></form></section></div>
+<section aria-labelledby="rosterTitle"><h2 id="rosterTitle">已有名单</h2>
+<div class="roster-toolbar"><div class="field roster-search"><label for="rosterSearch">查找姓名、校内编号或班级</label><input id="rosterSearch" type="search" autocomplete="off" placeholder="输入姓名、编号或班级，即时筛选" disabled></div><button class="button primary" id="openCreateDrawer" type="button" aria-controls="createDrawer" aria-expanded="false" disabled>+ 新建学生</button></div>
+<p class="roster-count-line" id="rosterFilterNote" role="status"></p>
+<div class="roster-list" id="rosterList" aria-live="polite"><div class="empty-state">正在读取本校名册…</div></div></section>
+<div class="create-drawer-backdrop" id="createDrawerBackdrop" hidden></div>
+<aside class="create-drawer" id="createDrawer" role="dialog" aria-modal="true" aria-labelledby="createTitle" hidden><div class="drawer-head"><div><h2 id="createTitle">新增本校学生</h2><p class="identity-copy">仅填写课堂工作必需的信息，请勿在备注中填写诊断或其他敏感资料。</p></div><button class="button icon-button" id="closeCreateDrawer" type="button" aria-label="关闭新建学生">__ICON_close__</button></div>
+<div class="drawer-body"><form id="studentForm" class="roster-form"><fieldset id="studentFields" disabled><div class="roster-form"><div class="field"><label for="displayName">学生姓名（必填）</label><input id="displayName" required maxlength="80" autocomplete="off"></div><div class="field"><label for="studentCode">校内编号</label><input id="studentCode" maxlength="64" autocomplete="off"><small>建议填写，便于区分同名学生。</small></div><div class="field"><label for="className">班级</label><input id="className" maxlength="80" autocomplete="off"></div><div class="field"><label for="studentNote">备注（可选）</label><textarea id="studentNote" maxlength="500"></textarea></div><button class="button primary" id="createStudent" type="submit">创建学生</button></div></fieldset><p class="form-status" id="createStatus" role="status">正在核验编辑权限。</p></form></div></aside>
 """
     script = COMMON.replace("__ACCOUNT__", _account_payload(account)) + r"""
 const returnTask=new URLSearchParams(location.search).get('returntask')||'';
-let roster=null,rosterLoading=false,canEditRoster=false,uncertainWrite=false;
+let roster=null,rosterLoading=false,canEditRoster=false,uncertainWrite=false,drawerOpen=false,drawerAutoOpened=false,highlightId='';
 if(returnTask){$('returnTaskLink').href='/demo2/identity?task_id='+encodeURIComponent(returnTask);$('returnTaskLink').hidden=false;}
-function rosterControls(){$('studentFields').disabled=!canEditRoster||rosterLoading||writing||uncertainWrite;$('refreshRoster').disabled=rosterLoading||writing;$('rosterSearch').disabled=!roster;$('createStudent').textContent=writing?'正在创建':'创建学生';$('permissionState').textContent=rosterLoading?'正在核验学校':writing?'正在创建学生':uncertainWrite?'创建结果待核对':canEditRoster?'本校名册可编辑':isAdmin?'管理员只读':'名册只读 / 学校待核对';$('permissionState').dataset.state=canEditRoster&&!uncertainWrite?'editable':'readonly';}
+const nameKey=value=>String(value||'').trim().replace(/\s+/g,'').toLocaleLowerCase();
+const initial=value=>Array.from(String(value||'').trim())[0]||'?';
+const tone=value=>{let h=0;for(const c of String(value||''))h=(h*31+c.codePointAt(0))>>>0;return String(h%5);};
+function mark(text,query){const raw=String(text??'');if(!query)return esc(raw);const at=raw.toLocaleLowerCase().indexOf(query);return at<0?esc(raw):esc(raw.slice(0,at))+'<mark class="roster-hit">'+esc(raw.slice(at,at+query.length))+'</mark>'+esc(raw.slice(at+query.length));}
+function rosterControls(){$('studentFields').disabled=!canEditRoster||rosterLoading||writing||uncertainWrite;$('refreshRoster').disabled=rosterLoading||writing;$('rosterSearch').disabled=!roster;$('openCreateDrawer').disabled=!canEditRoster||rosterLoading||uncertainWrite;$('createStudent').textContent=writing?'正在创建':'创建学生';$('permissionState').textContent=rosterLoading?'正在核验学校':writing?'正在创建学生':uncertainWrite?'创建结果待核对':canEditRoster?'本校名册可编辑':isAdmin?'管理员只读':'名册只读 / 学校待核对';$('permissionState').dataset.state=canEditRoster&&!uncertainWrite?'editable':'readonly';}
+function setDrawer(open,{force=false}={}){
+  if(!open&&drawerOpen&&!force){if(writing){notice('正在创建，请稍候。');return false;}if(dirty&&!window.confirm('新建学生的内容尚未保存，关闭会清空表单，确定吗？'))return false;$('studentForm').reset();dirty=false;}
+  drawerOpen=open;$('createDrawer').hidden=!open;$('createDrawerBackdrop').hidden=!open;$('openCreateDrawer').setAttribute('aria-expanded',String(open));
+  if(open)setTimeout(()=>{if(!$('studentFields').disabled)$('displayName').focus();},0);else $('openCreateDrawer').focus({preventScroll:true});
+  return true;
+}
 function renderRoster(){
-  const students=Array.isArray(roster?.students)?roster.students:[];const query=$('rosterSearch').value.trim().toLocaleLowerCase();const filtered=students.filter(s=>studentName(s).toLocaleLowerCase().includes(query));
-  $('rosterCount').textContent=`本校名册 ${students.length} 人`;
-  $('rosterList').innerHTML=filtered.length?filtered.map(s=>`<article class="record-row"><div><strong>${esc(s.display_name||'未命名学生')}</strong><small>${esc(s.student_code?'校内编号 '+s.student_code:'未填校内编号')} · ${esc(s.class_name||'未填班级')}</small>${s.note?`<small>${esc(s.note)}</small>`:''}</div>${isTeacher?`<div class="tool-row"><a class="button" href="/demo2/dossier?student_id=${encodeURIComponent(s.student_id)}">资料与授权</a><a class="button" href="/demo2/student-summary?student_id=${encodeURIComponent(s.student_id)}">公司留存摘要</a></div>`:''}</article>`).join(''):`<div class="empty-state">${query?'没有找到匹配学生，请更换姓名、编号或班级查询。':'本校名册为空。请先新增学生，再回到采样帧确认画面中的身份。'}</div>`;
+  const students=Array.isArray(roster?.students)?roster.students:[];const query=$('rosterSearch').value.trim().toLocaleLowerCase();
+  const nameCount=new Map();students.forEach(s=>{const key=nameKey(s.display_name);if(key)nameCount.set(key,(nameCount.get(key)||0)+1);});
+  const filtered=students.filter(s=>[s.display_name,s.student_code,s.class_name].some(value=>String(value||'').toLocaleLowerCase().includes(query)));
+  const duplicateCount=students.filter(s=>nameCount.get(nameKey(s.display_name))>1).length;
+  $('rosterCount').textContent=`本校名册 ${students.length} 人`+(duplicateCount?` · ${duplicateCount} 人同名`:'');
+  $('rosterFilterNote').textContent=query?`筛选出 ${filtered.length} / ${students.length} 人`:duplicateCount?'带「同名」徽标的学生请凭校内编号与班级区分。':'';
+  $('rosterList').innerHTML=filtered.length?filtered.map(s=>{const same=nameCount.get(nameKey(s.display_name))>1;return `<article class="student-row${s.student_id===highlightId?' is-new':''}" data-student-row="${esc(s.student_id)}"><span class="rx-avatar" data-tone="${tone(s.student_id)}" aria-hidden="true">${esc(initial(s.display_name))}</span><div class="student-main"><div class="student-title"><strong>${mark(s.display_name||'未命名学生',query)}</strong>${s.student_code?`<span class="rx-badge rx-badge-info student-code" title="校内编号">编号 ${mark(s.student_code,query)}</span>`:'<span class="rx-badge rx-badge-neutral">未填编号</span>'}${same?'<span class="rx-badge rx-badge-warning" title="名册中有同名学生，请核对编号和班级">同名</span>':''}</div><small class="student-meta">${s.class_name?mark(s.class_name,query):'未填班级'}</small>${s.note?`<small class="student-note">${esc(s.note)}</small>`:''}</div>${isTeacher?`<div class="student-actions-inline"><a class="button" href="/demo2/dossier?student_id=${encodeURIComponent(s.student_id)}">资料与授权</a><a class="button" href="/demo2/student-summary?student_id=${encodeURIComponent(s.student_id)}">公司留存摘要</a></div>`:''}</article>`;}).join(''):`<div class="empty-state">${query?'没有找到匹配学生，请更换姓名、编号或班级查询。':'本校名册为空。请点击「+ 新建学生」，再回到采样帧确认画面中的身份。'}</div>`;
+}
+function highlight(studentId){
+  highlightId=studentId;if($('rosterSearch').value){$('rosterSearch').value='';}renderRoster();
+  const row=[...document.querySelectorAll('[data-student-row]')].find(node=>node.dataset.studentRow===studentId);
+  if(row){row.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});row.setAttribute('tabindex','-1');row.focus({preventScroll:true});}
+  setTimeout(()=>{if(highlightId===studentId){highlightId='';document.querySelectorAll('.student-row.is-new').forEach(node=>node.classList.remove('is-new'));}},6000);
 }
 async function loadRoster(){
   if(rosterLoading||writing||!allowLeave())return;rosterLoading=true;canEditRoster=false;clearNotice();rosterControls();
@@ -225,23 +317,25 @@ async function loadRoster(){
     else $('scopeNotice').textContent=isAdmin?'管理员只读查看名册，不在此创建或绑定学生。':canEditRoster?'名册归属当前学校；创建学生不会将其自动绑定到任何视频。':'当前学校名册为只读，请返回工作台核对学校归属与权限。';
     uncertainWrite=false;dirty=false;$('createStatus').textContent=canEditRoster?'填写姓名，核对编号与班级后创建。':'当前不可新增学生。';
   }catch(error){canEditRoster=false;notice(error.message);$('createStatus').textContent='尚未确认学校归属，已停止新增。请刷新名册重试。';if(!roster){$('rosterCount').textContent='读取失败';$('rosterList').innerHTML='<div class="empty-state">无法读取名册，不能据此判断本校没有学生。</div>';}}
-  finally{rosterLoading=false;rosterControls();}
+  finally{rosterLoading=false;rosterControls();if(canEditRoster&&roster&&!drawerAutoOpened&&!roster.students.length){drawerAutoOpened=true;setDrawer(true);}if(!canEditRoster&&drawerOpen)setDrawer(false,{force:true});}
 }
 $('rosterSearch').addEventListener('input',renderRoster);$('refreshRoster').addEventListener('click',loadRoster);
+$('openCreateDrawer').addEventListener('click',()=>setDrawer(true));$('closeCreateDrawer').addEventListener('click',()=>setDrawer(false));$('createDrawerBackdrop').addEventListener('click',()=>setDrawer(false));
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&drawerOpen){event.preventDefault();setDrawer(false);}});
 $('studentForm').addEventListener('input',()=>{dirty=true;});
 $('studentForm').addEventListener('submit',async event=>{
   event.preventDefault();if(!canEditRoster||writing||rosterLoading||uncertainWrite)return;
   const payload={display_name:$('displayName').value.trim(),student_code:$('studentCode').value.trim(),class_name:$('className').value.trim(),note:$('studentNote').value.trim()};
   if(!payload.display_name){notice('请填写学生姓名。');$('displayName').focus();return;}
-  const same=roster.students.filter(s=>s.display_name===payload.display_name);if(same.length&&!window.confirm('已有同名学生：\n'+same.map(studentName).join('\n')+'\n请核对编号与班级。仍要新建吗？'))return;
+  const same=roster.students.filter(s=>nameKey(s.display_name)===nameKey(payload.display_name));if(same.length&&!window.confirm('已有同名学生：\n'+same.map(studentName).join('\n')+'\n请核对编号与班级。仍要新建吗？'))return;
   writing=true;clearNotice();rosterControls();
-  try{const data=await request('/students',payload);if(!data.student?.student_id)throw new Error('创建结果尚未确认，请刷新名册核对。');roster.students.push(data.student);$('studentForm').reset();dirty=false;renderRoster();notice('学生已加入本校名册，尚未绑定任何视频画面。','success');}
-  catch(error){notice(error.message);if(!error.status){uncertainWrite=true;$('createStatus').textContent='创建结果尚未确认，请先刷新名册核对，避免重复创建。';}if([403,409].includes(error.status))canEditRoster=false;}
+  try{const data=await request('/students',payload);if(!data.student?.student_id)throw new Error('创建结果尚未确认，请刷新名册核对。');roster.students.push(data.student);$('studentForm').reset();dirty=false;writing=false;setDrawer(false,{force:true});highlight(data.student.student_id);const message='已创建学生「'+(data.student.display_name||payload.display_name)+'」，尚未绑定任何视频画面。';if(window.RxUI)RxUI.toast(message,'success',3600);else notice(message,'success');$('createStatus').textContent='已创建，可继续新建下一位学生。';}
+  catch(error){notice(error.message);if(!error.status){uncertainWrite=true;$('createStatus').textContent='创建结果尚未确认，请先刷新名册核对，避免重复创建。';}if([403,409].includes(error.status)&&error.code!=='student_code_conflict')canEditRoster=false;if(error.code==='student_code_conflict')$('studentCode').focus();}
   finally{writing=false;rosterControls();}
 });
 loadRoster();
 """
-    return _document(title="本校学生名册 · 课堂学习分析平台", body=_shell(body), page_style=STYLE, script=script)
+    return _document(title="本校学生名册", body=_shell(body, account, "students"), page_style=STYLE + ROSTER_STYLE, script=script)
 
 
 def render_identity(account: Any | None = None) -> str:
@@ -251,37 +345,80 @@ def render_identity(account: Any | None = None) -> str:
 <div class="page-message" id="pageMessage" role="alert" tabindex="-1"></div>
 <details class="scope-details"><summary><span class="permission-state" id="permissionState" role="status">正在核验任务权限</span> · 权限与确认边界</summary><p class="scope-warning" id="scopeNotice" role="status">正在核验任务学校与当前账号权限。</p><p class="identity-copy">检测只定位人脸候选，不会自动识别姓名。确认仅对应当前采样帧，不代表整段跟踪；全画面的动作变化和音轨不归因于所选学生。保存教师确认的框、角色及本校学生标识，不在浏览器生成或保存人脸模板。原片或采样图不可用时停止新增，保留记录以服务器返回内容为准。</p></details>
 <section class="school-confirmation" id="schoolConfirmation" aria-labelledby="schoolConfirmationTitle" hidden><h2 id="schoolConfirmationTitle">确认旧视频的学校归属</h2><p class="identity-copy">此旧任务未记录学校。请先核对视频实际归属，再决定是否使用当前账号填写的学校；系统不会自动补齐，也不会迁移已有学校快照。</p><dl id="confirmationSchoolDetails"><div><dt>城市</dt><dd id="confirmationCity">正在读取</dd></div><div><dt>区县</dt><dd id="confirmationDistrict">正在读取</dd></div><div><dt>学校</dt><dd id="confirmationSchoolName">正在读取</dd></div></dl><p class="form-status" id="schoolConfirmationStatus" role="status">正在读取当前学校信息。</p><div class="tool-row"><button class="button primary" id="confirmTaskSchool" type="button" disabled hidden>确认此视频属于上述学校</button><a class="button" id="completeSchoolLink" href="/demo2/school" hidden>先填写或核对学校信息</a></div></section>
+<section id="identitySwitch" class="identity-switch-host" hidden></section>
 <div class="work-layout"><section aria-labelledby="frameTitle"><div class="tool-row"><h2 id="frameTitle">原始课堂采样帧</h2><a class="button quiet" id="videoLink" hidden>查看视频证据</a></div>
-<div class="frame-navigation"><button class="button icon-button" id="previousFrame" type="button" aria-label="上一帧" title="上一帧" disabled>__ICON_previous__</button><div class="field"><label for="frameSelect">采样时间</label><select id="frameSelect" disabled><option value="">尚无采样帧</option></select></div><button class="button icon-button" id="nextFrame" type="button" aria-label="下一帧" title="下一帧" disabled>__ICON_next__</button></div>
-<div class="viewer-toolbar" role="toolbar" aria-label="画面查看工具"><div class="zoom-tools"><button class="button icon-button" id="zoomOut" type="button" title="缩小画面" aria-label="缩小画面" disabled>__ICON_zoom_out__</button><output class="zoom-value" id="zoomValue" aria-live="polite">100%</output><button class="button icon-button" id="zoomIn" type="button" title="放大画面" aria-label="放大画面" disabled>__ICON_zoom_in__</button><button class="button icon-button" id="resetZoom" type="button" title="复位画面" aria-label="复位画面" disabled>__ICON_reset__</button></div><button class="button" id="previewButton" type="button" aria-haspopup="dialog" disabled>__ICON_image__原片彩色高清参考</button></div>
+<div class="frame-navigation"><button class="button icon-button" id="previousFrame" type="button" aria-label="上一帧" title="上一帧（键盘 ←）" aria-keyshortcuts="ArrowLeft" disabled>__ICON_previous__</button><div class="field"><label for="frameSelect">采样时间</label><select id="frameSelect" disabled><option value="">尚无采样帧</option></select></div><button class="button icon-button" id="nextFrame" type="button" aria-label="下一帧" title="下一帧（键盘 →）" aria-keyshortcuts="ArrowRight" disabled>__ICON_next__</button></div>
+<div class="viewer-toolbar" role="toolbar" aria-label="画面查看工具"><div class="zoom-tools"><button class="button icon-button" id="zoomOut" type="button" title="缩小画面（键盘 -）" aria-label="缩小画面" aria-keyshortcuts="-" disabled>__ICON_zoom_out__</button><output class="zoom-value" id="zoomValue" aria-live="polite">100%</output><button class="button icon-button" id="zoomIn" type="button" title="放大画面（键盘 +）" aria-label="放大画面" aria-keyshortcuts="+" disabled>__ICON_zoom_in__</button><button class="button icon-button" id="resetZoom" type="button" title="恢复 100%（键盘 0）" aria-label="恢复原始大小" aria-keyshortcuts="0" disabled>__ICON_reset__</button></div><span class="toolbar-hint" id="toolbarHint">← → 切换采样帧 · 放大/缩小看清人物</span><button class="button" id="previewButton" type="button" aria-haspopup="dialog" disabled>__ICON_image__原片彩色高清参考</button></div>
 <div class="frame-viewport" id="frameViewport" tabindex="0" role="region" aria-label="采样帧标注画面"><div class="frame-empty" id="frameEmpty" role="status">正在读取任务采样帧…</div><div class="frame-surface" id="frameSurface" hidden><img id="frameImage" alt="当前任务的原始课堂采样帧" draggable="false"><div class="frame-overlay" id="frameOverlay" aria-hidden="true"></div></div></div>
 <div class="frame-caption"><strong id="frameTime">--:--</strong><span id="framePeriod">采样片段时间待返回</span><span id="framePosition"></span></div><div class="legend" aria-label="标注图例"><span><i class="candidate"></i>检测候选（未确认）</span><span><i></i>当前选择（未保存）</span><span><i class="confirmed"></i>本帧已确认</span></div>
 <details><summary>按秒数定位</summary><div class="time-jump"><div class="field"><label for="jumpTime">最近采样帧（秒）</label><input id="jumpTime" type="number" min="0" step="0.1" disabled></div><button class="button" id="jumpFrame" type="button" disabled>定位采样帧</button></div></details>
 </section>
-<aside class="side-pane" aria-labelledby="confirmTitle"><h2 id="confirmTitle">匹配学生姓名</h2><p class="identity-steps"><strong>选中人</strong> → 选姓名 → 确认</p><p class="form-status" id="detectionStatus" role="status">读取采样帧后显示候选。</p><div class="candidate-list" id="candidateList"></div><div class="tool-row"><button class="button" id="drawButton" type="button" aria-pressed="false" disabled>手动画框</button><button class="button" id="retryDetection" type="button" disabled>重新检测</button><button class="button icon-button" id="clearSelection" type="button" aria-label="取消选择" title="取消选择" disabled>__ICON_close__</button></div><p class="selection-note" id="selectionStatus" role="status">先选中画面中的一人。</p><a class="button primary" id="continueToResults" href="#" hidden>下一步：查看学生状态</a><p class="result-shortcut-note" id="resultShortcutNote" hidden>姓名绑定可以跳过。结果页会直接展示本视频中检测到的人物及各自的课堂状态。</p>
+<aside class="side-pane" aria-labelledby="confirmTitle"><h2 id="confirmTitle">匹配学生姓名</h2><ol class="guide-steps" id="identityGuide" aria-label="确认步骤"><li id="guideStep1" data-state="current" aria-current="step"><b aria-hidden="true">1</b><div><strong>在画面中点选或框选人物</strong><small id="guideStep1Note">点击画面里的虚线候选框，或点「手动画框」自己框出一个人。</small></div></li><li id="guideStep2" data-state="todo"><b aria-hidden="true">2</b><div><strong>选择学生姓名</strong><small id="guideStep2Note">先完成第 1 步。</small></div></li><li id="guideStep3" data-state="todo"><b aria-hidden="true">3</b><div><strong>点击确认</strong><small id="guideStep3Note">完成前两步后才能确认。</small></div></li></ol><p class="form-status" id="detectionStatus" role="status">读取采样帧后显示候选。</p><p class="draw-hint" id="drawHint" role="status" hidden>没有自动找到人物，可点击「手动画框」自己框选。</p><div class="candidate-list" id="candidateList"></div><label class="excluded-toggle" id="excludedToggleWrap" hidden><input type="checkbox" id="showExcludedCandidates"><span id="excludedToggleText">显示已排除候选</span></label><div class="tool-row"><button class="button" id="drawButton" type="button" aria-pressed="false" disabled>手动画框</button><button class="button" id="retryDetection" type="button" disabled>重新检测</button><button class="button icon-button" id="clearSelection" type="button" aria-label="取消选择" title="取消选择" disabled>__ICON_close__</button></div><p class="selection-note" id="selectionStatus" role="status">先选中画面中的一人。</p><a class="button primary" id="continueToResults" href="#" hidden>下一步：查看学生状态</a><p class="result-shortcut-note" id="resultShortcutNote" hidden>姓名绑定可以跳过。结果页会直接展示本视频中检测到的人物及各自的课堂状态。</p>
 <div class="save-gate" id="saveGate" role="status"><p id="saveGateReason">正在核验编辑权限。</p><button class="button" id="schoolGateLink" type="button" hidden>核对并确认学校</button></div>
-<form class="annotation-form" id="bindingForm"><fieldset id="bindingFields" disabled><div class="annotation-form"><div id="studentChoice"><div class="field"><label for="studentSearch">查找本校学生</label><input id="studentSearch" type="search" autocomplete="off" placeholder="姓名、编号或班级"></div><div class="field"><label for="studentSelect">学生姓名</label><select id="studentSelect"><option value="">请选择本校学生</option></select></div><div class="student-actions"><button class="button quiet" id="addStudent" type="button" disabled>新增本校学生</button></div></div><button class="button primary" id="saveBinding" type="submit" disabled>确认姓名</button></div></fieldset><p class="form-status" id="saveStatus" role="status">尚未确认编辑权限。</p>
+<form class="annotation-form" id="bindingForm"><fieldset id="bindingFields" disabled><div class="annotation-form"><div id="studentChoice"><div class="field"><label for="studentSearch">查找本校学生</label><input id="studentSearch" type="search" autocomplete="off" placeholder="姓名、编号或班级"></div><div class="field"><label for="studentSelect">学生姓名</label><select id="studentSelect"><option value="">请选择本校学生</option></select></div><div class="student-actions"><button class="button quiet" id="addStudent" type="button" disabled>新增本校学生</button></div></div><button class="button primary" id="saveBinding" type="submit" aria-describedby="saveStatus" disabled>确认姓名</button></div></fieldset><p class="form-status missing-step" id="saveStatus" role="status" data-state="missing">尚未确认编辑权限。</p>
 <details class="annotation-advanced" id="annotationAdvanced"><summary>高级：坐标与其他人员角色</summary><p class="selection-note" id="drawingHelp">可在图中拖动画框，也可填写相对原图的百分比坐标。</p><div class="coordinate-grid"><div class="field"><label for="bboxX">左侧 x %</label><input id="bboxX" type="number" min="0" max="100" step="0.1" placeholder="0" disabled></div><div class="field"><label for="bboxY">顶部 y %</label><input id="bboxY" type="number" min="0" max="100" step="0.1" placeholder="0" disabled></div><div class="field"><label for="bboxWidth">宽度 %</label><input id="bboxWidth" type="number" min="0.1" max="100" step="0.1" placeholder="0" disabled></div><div class="field"><label for="bboxHeight">高度 %</label><input id="bboxHeight" type="number" min="0.1" max="100" step="0.1" placeholder="0" disabled></div></div><div class="field"><label for="personRole">人员角色</label><select id="personRole" disabled><option value="student" selected>学生</option><option value="teacher">教师</option><option value="unknown">身份未知</option></select><small>未知不必选姓名；教师不会挂入学生档案。</small></div></details></form><details><summary>本校名册</summary><p class="identity-copy" id="rosterNotice"></p><a class="button" id="rosterLink" href="/demo2/students" hidden>打开本校名册</a></details>
 </aside></div>
 <section class="frame-records" id="recordsSection" aria-labelledby="bindingsTitle"><div class="tool-row"><h2 id="bindingsTitle" tabindex="-1">身份确认记录</h2><button class="button quiet" id="backToFrame" type="button">__ICON_up__返回当前画面</button></div><fieldset class="record-filters"><legend class="sr-only">记录范围</legend><label><input class="sr-only" id="recordsCurrent" type="radio" name="recordFilter" value="current" checked>当前帧记录</label><label><input class="sr-only" id="recordsAll" type="radio" name="recordFilter" value="all">全部历史</label></fieldset><p class="form-status" id="recordCount" role="status"></p><details><summary>记录与撤销边界</summary><p class="identity-copy">同一学生可在多帧分别确认；撤销仅影响所选记录，需要填写原因。历史版本不会叠加到当前采样画面。</p></details><div class="binding-list" id="bindingList"><div class="empty-state">正在读取记录…</div></div></section>
+<div class="identity-toast" id="identityToast" role="status" aria-live="polite" hidden><strong id="toastText"></strong><button class="button" id="toastStay" type="button" hidden>回到刚才的帧继续确认</button><button class="button icon-button" id="toastClose" type="button" aria-label="关闭提示" title="关闭提示">__ICON_close__</button></div>
 <dialog class="preview-dialog" id="previewDialog" aria-labelledby="previewTitle" aria-describedby="previewBoundary"><div class="tool-row"><h2 id="previewTitle">原片彩色高清参考 · 只读</h2><button class="button icon-button" id="closePreview" type="button" aria-label="关闭原片参考" title="关闭原片参考" autofocus>__ICON_close__</button></div><p class="preview-caption" id="previewCaption"></p><p class="identity-copy" id="previewBoundary">按相近时刻解码，未必与采样帧逐帧一致。时间戳与画面名称仅标记当前参考来源；不显示或沿用采样框，此处不能保存身份确认。</p><p class="preview-status" id="previewStatus" role="status" aria-live="polite"></p><img class="preview-image" id="previewImage" alt="原片彩色高清只读参考" draggable="false" hidden></dialog>
 <dialog id="revokeDialog" aria-labelledby="revokeTitle"><form id="revokeForm"><h2 id="revokeTitle">撤销一条身份确认</h2><p class="identity-copy" id="revokeTarget"></p><div class="field"><label for="revokeReason">撤销原因（必填）</label><textarea id="revokeReason" required maxlength="500"></textarea></div><p id="revokeError" class="form-status" role="alert"></p><div class="tool-row"><button class="button" id="cancelRevoke" type="button">保留记录</button><button class="button danger" id="confirmRevoke" type="submit">确认撤销本条记录</button></div></form></dialog>
 <dialog id="newStudentDialog" aria-labelledby="newStudentTitle"><form id="newStudentForm"><h2 id="newStudentTitle">新增本校学生</h2><p class="identity-copy" id="newStudentSchool"></p><div class="field"><label for="inlineStudentName">学生姓名（必填）</label><input id="inlineStudentName" required maxlength="80" autocomplete="off"></div><details><summary>校内编号与班级</summary><div class="field"><label for="inlineStudentCode">校内编号</label><input id="inlineStudentCode" maxlength="64" autocomplete="off"></div><div class="field"><label for="inlineStudentClass">班级</label><input id="inlineStudentClass" maxlength="80" autocomplete="off"></div></details><p class="form-status" id="newStudentError" role="alert"></p><div class="tool-row"><button class="button" id="cancelNewStudent" type="button">取消</button><button class="button primary" id="confirmNewStudent" type="submit">加入名册并选中</button></div></form></dialog>
 <dialog class="track-dialog" id="trackDialog" aria-labelledby="trackTitle" aria-describedby="trackBoundary"><div class="tool-row"><h2 id="trackTitle">后续 5 秒位置建议</h2><button class="button icon-button" id="closeTrack" type="button" aria-label="关闭后续建议" title="关闭后续建议">__ICON_close__</button></div><p class="identity-copy" id="trackBoundary">姓名仅来自已确认的起始帧，不是自动识别。建议尚未保存，须逐帧核对并确认。</p><p class="form-status" id="trackStatus" role="status"></p><div class="track-view" id="trackView" hidden><div class="frame-navigation"><button class="button icon-button" id="previousTrackPoint" type="button" aria-label="上一个建议时刻" title="上一个建议时刻">__ICON_previous__</button><p id="trackPointTime"></p><button class="button icon-button" id="nextTrackPoint" type="button" aria-label="下一个建议时刻" title="下一个建议时刻">__ICON_next__</button></div><div class="frame-surface" id="trackSurface"><img id="trackImage" alt="后续采样帧的位置建议" draggable="false"><div class="frame-overlay" id="trackOverlay" aria-hidden="true"></div></div><p class="form-status" id="trackPointStatus" role="status"></p><button class="button primary" id="adoptTrackPoint" type="button" disabled>在此时刻核对</button></div></dialog>
 """
     script = COMMON.replace("__ACCOUNT__", _account_payload(account)) + IDENTITY_SCRIPT
-    return _document(title="逐帧身份确认 · 课堂学习分析平台", body=_shell(body), page_style=STYLE, script=script)
+    return _document(title="逐帧身份确认", body=_shell(body, account, "upload"), page_style=STYLE, script=script)
 
 
 IDENTITY_SCRIPT = r"""
 const taskId=new URLSearchParams(location.search).get('task_id')||'';
-let workspace=null,frames=[],frameIndex=-1,box=null,selectedCandidate='',candidates=[],imageReady=false;
+let workspace=null,frames=[],frameIndex=-1,box=null,selectedCandidate='',candidates=[],imageReady=false,allCandidates=[];
+const isExcludedCandidate=face=>Boolean(face?.filter_status&&face.filter_status!=='student');
+const visibleCandidates=()=>$('showExcludedCandidates')?.checked?allCandidates.slice():allCandidates.filter(face=>!isExcludedCandidate(face));
+function renderCandidateList(){$('candidateList').innerHTML=candidates.map((face,index)=>`<button type="button" data-candidate="${index}" aria-pressed="false" class="${isExcludedCandidate(face)?'excluded':''}" title="选中候选 ${index+1}${isExcludedCandidate(face)?'（'+esc(face.filter_status_zh||'已排除')+'）':''}">候选 ${index+1}${isExcludedCandidate(face)?' · '+esc(face.filter_status_zh||'已排除'):''}</button>`).join('');const hidden=allCandidates.filter(isExcludedCandidate),teachers=hidden.filter(face=>face.filter_status==='teacher').length;$('excludedToggleWrap').hidden=!hidden.length;$('excludedToggleText').textContent=`显示已排除候选（疑似老师 ${teachers} / 无效 ${hidden.length-teachers}）`;}
 let loading=false,editable=false,canRevoke=false,uncertainWrite=false,drawing=false,drag=null,detectionLoading=false,frameEpoch=0,detectController=null,revokeBinding=null;
 let confirmationRoster=null,schoolConfirmationError='',rosterReadFailed=false,workspaceVerified=false;
 let zoom=1,previewController=null,previewUrl='',previewEpoch=0;
 let inlineUncertain=false,inlineDirty=false,inlinePreviousDirty=false;
 let trackController=null,trackEpoch=0,trackResult=null,trackSeed=null,trackIndex=0,trackImageReady=false;
+let boxSource='none',toastTimer=null,toastReturnIndex=-1,manualDetect=false;
 const QUICK_TEST_PROFILES=[['A','测试学生A'],['B','测试学生B'],['C','测试学生C']];
+// Name-free page-side trace (frame position, role category, outcome) for later troubleshooting.
+function logEvent(operation,result,extra={}){
+  if(!isTeacher||!taskId)return;
+  const item=frame(),payload={operation,task_id:taskId,result,frame_total:frames.length,...extra};
+  if(item&&payload.frame_key===undefined)payload.frame_key=item.frame_key;
+  if(item&&payload.frame_index===undefined)payload.frame_index=frameIndex+1;
+  try{fetch('/api/v1/demo2/identity/debug-event',{method:'POST',credentials:'same-origin',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(()=>{});}catch(_){}
+}
+function hideToast(){clearTimeout(toastTimer);toastTimer=null;$('identityToast').hidden=true;toastReturnIndex=-1;}
+function showToast(text,returnIndex=-1){
+  clearTimeout(toastTimer);$('toastText').textContent=text;toastReturnIndex=returnIndex;$('toastStay').hidden=returnIndex<0;
+  if(returnIndex>=0)$('toastStay').textContent='回到第 '+(returnIndex+1)+' 帧继续确认';
+  $('identityToast').hidden=false;toastTimer=setTimeout(hideToast,8000);
+}
+function shortName(item){if(item.role==='teacher')return '教师';if(item.role==='unknown')return '身份未知';const student=(workspace?.students||[]).find(s=>s.student_id===item.student_id);return student?.display_name||'该学生';}
+function pendingFrameAfter(index){
+  const done=new Set(bindings().filter(currentBinding).map(b=>b.frame_key));
+  for(let step=1;step<frames.length;step++){const next=(index+step)%frames.length;if(!done.has(frames[next].frame_key))return next;}
+  return -1;
+}
+function renderGuide(canSubmit,gateReason){
+  const role=$('personRole').value,hasBox=validBox(box);
+  const named=role!=='student'||(workspace?.students||[]).some(s=>s.student_id===$('studentSelect').value);
+  const set=(n,state,note)=>{const node=$('guideStep'+n);node.dataset.state=state;if(state==='current')node.setAttribute('aria-current','step');else node.removeAttribute('aria-current');$('guideStep'+n+'Note').textContent=note;};
+  const sourceText={candidate:'已选中自动候选框',manual:'已手动画框',coordinates:'已按坐标框选',track:'已采用位置建议'}[boxSource]||'已选中一人';
+  if(hasBox)set(1,'done',sourceText+'，可在画面上重新点选更换。');
+  else if(!canDraft())set(1,'blocked',gateReason||'采样画面还没有准备好。');
+  else set(1,'current',drawing?'画框已开启：在画面中按住鼠标拖出一个框。':candidates.length?'点击画面里的虚线候选框，或点「手动画框」自己框出一个人。':'没有自动找到人物，可点击「手动画框」自己框选。');
+  if(!hasBox)set(2,'todo','先完成第 1 步：选中画面中的一个人。');
+  else if(role!=='student')set(2,'done',role==='teacher'?'已标为教师，不需要选择学生姓名。':'已标为身份未知，不需要选择姓名。');
+  else if(named)set(2,'done','已选择：'+($('studentSelect').selectedOptions?.[0]?.textContent||'本校学生'));
+  else if(!canSubmit)set(2,'blocked',gateReason||'当前不能选择姓名。');
+  else set(2,'current','在下方「学生姓名」里选择这位学生；名册里没有可点「新增本校学生」。');
+  if(!hasBox||!named)set(3,'todo','还差第 '+(!hasBox?'1':'2')+' 步，完成后才能确认。');
+  else if(!canSubmit)set(3,'blocked',gateReason||'当前不能保存。');
+  else set(3,'current',writing?'正在保存…':'点击「'+$('saveBinding').textContent+'」保存这一帧的身份。');
+}
 function installQuickTestProfiles(){
  const actions=$('addStudent')?.parentElement;if(!actions||$('quickTestProfiles'))return;
  const wrap=document.createElement('div');wrap.id='quickTestProfiles';wrap.className='quick-test-profiles';
@@ -400,7 +537,10 @@ function controls(){
   $('saveBinding').disabled=!canSubmit||!validBox(box)||!studentValid;$('saveBinding').textContent=writing?'正在保存':$('personRole').value==='student'?'确认姓名':'确认角色';
   const reason=loading?'正在核验任务，请稍候。':writing?'正在保存，请稍候。':!workspaceVerified?'未能核验任务，请刷新记录。':isAdmin?'管理员只读，请由学校教师确认。':!isTeacher?'当前账号无权确认身份。':!imageReady||workspace?.media_available!==true?'采样图不可用，不能画框或新增确认。':workspace.needs_school_confirmation?'可画草稿；确认学校后才能选择姓名并保存。':!editable?'可画草稿；当前任务无保存权限，请核对学校归属。':uncertainWrite?'上次保存结果待核对，请刷新记录后再保存。':'';
   $('saveGate').hidden=!reason;$('saveGateReason').textContent=reason;$('schoolGateLink').hidden=!(isTeacher&&workspace?.needs_school_confirmation);$('schoolGateLink').disabled=locked;
-  if(!reason)$('saveStatus').textContent=!validBox(box)?'请先选中一人，或手动画框。':!studentValid?'请选择这位学生的姓名。':'已选中，可确认。';else $('saveStatus').textContent=reason;
+  if(!reason)$('saveStatus').textContent=!validBox(box)?'还差第 1 步：请先在画面中点选一个人，或点「手动画框」框选。':!studentValid?'还差第 2 步：请选择这位学生的姓名。':'三步已就绪，可以点击确认。';else $('saveStatus').textContent=reason;
+  $('saveStatus').dataset.state=!reason&&validBox(box)&&studentValid?'ready':'missing';
+  renderGuide(canSubmit,reason);
+  $('drawButton').classList.toggle('attention',canDraw&&!box&&!drawing&&!detectionLoading&&!candidates.length&&!$('drawHint').hidden);
   $('candidateList').querySelectorAll('button').forEach(button=>button.disabled=!canPreview());
   $('bindingList').querySelectorAll('[data-revoke]').forEach(button=>button.disabled=locked||uncertainWrite||!canRevoke);
   $('bindingList').querySelectorAll('[data-frame]').forEach(button=>button.disabled=locked);
@@ -414,10 +554,10 @@ function controls(){
 }
 function paint(){
   const rect=(bbox,kind,label)=>validBox(bbox)?`<div class="roi ${kind}" style="left:${bbox.x*100}%;top:${bbox.y*100}%;width:${bbox.width*100}%;height:${bbox.height*100}%">${label?`<span>${esc(label)}</span>`:''}</div>`:'';
-  $('frameOverlay').innerHTML=candidates.map((candidate,index)=>rect(candidate.bbox,'candidate',String(index+1))).join('')+bindings().filter(item=>currentBinding(item)&&item.frame_key===frame()?.frame_key).map(item=>rect(item.bbox,'confirmed',bindingName(item))).join('')+rect(box,'selected','');
+  $('frameOverlay').innerHTML=candidates.map((candidate,index)=>rect(candidate.bbox,isExcludedCandidate(candidate)?'candidate excluded':'candidate',isExcludedCandidate(candidate)?`${index+1} · ${candidate.filter_status_zh||'已排除'}`:String(index+1))).join('')+bindings().filter(item=>currentBinding(item)&&item.frame_key===frame()?.frame_key).map(item=>rect(item.bbox,'confirmed',bindingName(item))).join('')+rect(box,'selected','');
 }
-function setBox(value,candidate=''){box=validBox(value)?{x:value.x,y:value.y,width:value.width,height:value.height}:null;selectedCandidate=candidate;coordinateIds.forEach((id,index)=>$(id).value=box?String(Math.round(box[['x','y','width','height'][index]]*1000)/10):'');dirty=isTeacher&&!!box;$('selectionStatus').textContent=box?(editable?'已选中一人，尚未保存。':'已框选草稿；仅预览，确认学校及权限后才能保存。'):'先选中画面中的一人。';$('candidateList').querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.candidate===candidate)));paint();controls();}
-function clearSelection(){box=null;dirty=false;selectedCandidate='';drawing=false;drag=null;$('frameSurface').classList.remove('is-drawing');$('drawButton').setAttribute('aria-pressed','false');coordinateIds.forEach(id=>$(id).value='');$('personRole').value='student';$('studentSelect').value='';$('studentChoice').hidden=false;$('selectionStatus').textContent='先选中画面中的一人。';paint();controls();}
+function setBox(value,candidate='',source=candidate!==''?'candidate':'manual'){box=validBox(value)?{x:value.x,y:value.y,width:value.width,height:value.height}:null;boxSource=box?source:'none';selectedCandidate=candidate;coordinateIds.forEach((id,index)=>$(id).value=box?String(Math.round(box[['x','y','width','height'][index]]*1000)/10):'');dirty=isTeacher&&!!box;$('selectionStatus').textContent=box?(editable?'已选中一人，尚未保存。':'已框选草稿；仅预览，确认学校及权限后才能保存。'):'先选中画面中的一人。';$('candidateList').querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.candidate===candidate)));paint();controls();}
+function clearSelection(){box=null;boxSource='none';dirty=false;selectedCandidate='';drawing=false;drag=null;$('frameSurface').classList.remove('is-drawing');$('drawButton').setAttribute('aria-pressed','false');coordinateIds.forEach(id=>$(id).value='');$('personRole').value='student';$('studentSelect').value='';$('studentChoice').hidden=false;$('selectionStatus').textContent='先选中画面中的一人。';paint();controls();}
 function renderStudents(){const query=$('studentSearch').value.trim().toLocaleLowerCase();const previous=$('studentSelect').value;const students=(workspace?.students||[]).filter(s=>studentName(s).toLocaleLowerCase().includes(query));$('studentSelect').innerHTML='<option value="">请选择本校学生</option>'+students.map(s=>`<option value="${esc(s.student_id)}">${esc(studentName(s))}</option>`).join('');if(students.some(s=>s.student_id===previous))$('studentSelect').value=previous;controls();}
 function renderBindings(){
   const all=bindings();const confirmed=all.filter(currentBinding);$('bindingSummary').textContent=`当前版本 ${confirmed.length} 条确认 · ${new Set(confirmed.map(b=>b.frame_key)).size} 个已确认帧`;
@@ -427,16 +567,18 @@ function renderBindings(){
   paint();controls();
 }
 async function detectFrame(){
-  if(!frame()||!canPreview())return;detectController?.abort();const controller=new AbortController();detectController=controller;const epoch=frameEpoch;detectionLoading=true;controls();$('detectionStatus').textContent='正在检测本帧人脸位置，不识别姓名…';
+  if(!frame()||!canPreview())return;const manual=manualDetect;manualDetect=false;$('drawHint').hidden=true;detectController?.abort();const controller=new AbortController();detectController=controller;const epoch=frameEpoch;detectionLoading=true;controls();$('detectionStatus').textContent='正在检测本帧人脸位置，不识别姓名…';
   try{const data=await request('/detect?task_id='+encodeURIComponent(taskId)+'&frame_key='+encodeURIComponent(frame().frame_key)+'&frame_revision='+encodeURIComponent(workspace.frame_revision),undefined,controller.signal);if(epoch!==frameEpoch||controller.signal.aborted)return;
-    const detection=data.detection;if(!detection)throw new Error('未返回候选结果，可手动画框。');candidates=detection.available===true&&Array.isArray(detection.faces)?detection.faces.filter(face=>validBox(face.bbox)):[];
-    $('detectionStatus').textContent=detection.available!==true?detectionReason(detection.reason):candidates.length?`本帧 ${candidates.length} 个候选，均未确认姓名。`+(editable?'':'仅供位置预览，当前不能保存身份绑定。'): '本帧未检测到人脸候选，不代表学生缺席。'+(editable?'可手动画框，未知身份无需强行选名。':'当前仅可预览位置，不能保存身份绑定。');
-    $('candidateList').innerHTML=candidates.map((face,index)=>`<button type="button" data-candidate="${index}" aria-pressed="false">候选 ${index+1}</button>`).join('');paint();
-  }catch(error){if(epoch!==frameEpoch||controller.signal.aborted)return;candidates=[];$('candidateList').innerHTML='';$('detectionStatus').textContent=/[\u3400-\u9fff]/.test(error.message)?error.message+(editable?' 可手动画框，或重新检测。':' 可重新检测位置；当前不可保存身份绑定。'):detectionReason(error.code||error.message);paint();}
+    const detection=data.detection;if(!detection)throw new Error('未返回候选结果，可手动画框。');allCandidates=detection.available===true&&Array.isArray(detection.faces)?detection.faces.filter(face=>validBox(face.bbox)):[];candidates=visibleCandidates();const hiddenCount=allCandidates.length-candidates.length;
+    $('detectionStatus').textContent=detection.available!==true?detectionReason(detection.reason):candidates.length?`本帧 ${candidates.length} 个候选，均未确认姓名。`+(hiddenCount>0?`已默认隐藏疑似老师/无效候选 ${hiddenCount} 个，可勾选下方显示。`:'')+(editable?'':'仅供位置预览，当前不能保存身份绑定。'):hiddenCount>0?`本帧只检测到被排除的候选（疑似老师/无效 ${hiddenCount} 个），已默认隐藏；可勾选下方显示，或手动画框。`: '本帧未检测到人脸候选，不代表学生缺席。'+(editable?'可手动画框，未知身份无需强行选名。':'当前仅可预览位置，不能保存身份绑定。');
+    renderCandidateList();paint();applySwitchTarget();
+    $('drawHint').hidden=candidates.length>0||!isTeacher;
+    if(manual)logEvent('redetect',detection.available!==true?'unavailable':candidates.length?'detected':'no_candidates',{candidate_count:candidates.length});
+  }catch(error){if(epoch!==frameEpoch||controller.signal.aborted)return;if(switchTarget&&switchTarget.frame===frameIndex&&!switchTarget.retried){switchTarget.retried=true;const retryEpoch=frameEpoch;setTimeout(()=>{if(retryEpoch===frameEpoch&&switchTarget&&switchTarget.frame===frameIndex)detectFrame();},2300);}candidates=[];allCandidates=[];$('excludedToggleWrap').hidden=true;$('candidateList').innerHTML='';$('drawHint').hidden=!isTeacher;if(manual)logEvent('redetect','failed',{candidate_count:0});$('detectionStatus').textContent=/[\u3400-\u9fff]/.test(error.message)?error.message+(editable?' 可手动画框，或重新检测。':' 可重新检测位置；当前不可保存身份绑定。'):detectionReason(error.code||error.message);paint();}
   finally{if(epoch===frameEpoch){detectionLoading=false;controls();}}
 }
 function displayFrame(index){
-  closeReference();closeTrack();frameEpoch++;detectController?.abort();detectionLoading=false;frameIndex=index;imageReady=false;candidates=[];$('candidateList').innerHTML='';clearSelection();setZoom(1,true);renderBindings();
+  $('drawHint').hidden=true;closeReference();closeTrack();frameEpoch++;detectController?.abort();detectionLoading=false;frameIndex=index;imageReady=false;candidates=[];allCandidates=[];$('candidateList').innerHTML='';$('excludedToggleWrap').hidden=true;clearSelection();setZoom(1,true);renderBindings();
   const item=frame();$('frameSelect').value=String(index);$('frameSurface').hidden=true;$('frameEmpty').hidden=false;
   if(!item){$('frameImage').removeAttribute('src');$('frameTime').textContent='--:--';$('framePeriod').textContent='没有可用采样帧';$('framePosition').textContent='';$('recordsAll').checked=true;renderBindings();$('frameEmpty').textContent=workspace?.media_available===false?'原片或采样图不可用；不能新增确认，可查看服务器保留的记录。':'任务尚无可用采样帧，请先查看视频证据及处理状态。';$('detectionStatus').textContent=workspace?.media_available===false?'原片或采样图已不可用，无法检测；可复核保留记录。':'没有可用采样帧，无法检测。';controls();return;}
   $('frameTime').textContent=seconds(item.time_sec);$('framePeriod').textContent=`来源片段 ${seconds(item.segment_start_sec)} – ${seconds(item.segment_end_sec)}`;$('framePosition').textContent=`第 ${index+1} / ${frames.length} 帧`;$('jumpTime').value=String(item.time_sec);$('detectionStatus').textContent=isAdmin?'管理员仅查看已确认记录，不进行检测或绑定。':'正在读取原始采样图…';
@@ -479,17 +621,28 @@ $('confirmTaskSchool').addEventListener('click',async()=>{
   finally{writing=false;renderSchoolConfirmation();controls();}
   if(saved){await loadWorkspace(true,true);if(workspace?.needs_school_confirmation===false&&workspace?.scope_key&&!schoolConfirmationError)notice('学校已确认，请为框选的人选择姓名。','success');else{editable=false;schoolConfirmationError=schoolConfirmationError||'确认请求已提交，但工作区尚未确认更新。请刷新核对后再绑定姓名。';renderSchoolConfirmation();controls();}}
 });
-coordinateIds.forEach(id=>$(id).addEventListener('input',()=>{const values=coordinateIds.map(key=>$(key).value);const candidate=Object.fromEntries(['x','y','width','height'].map((key,index)=>[key,Number(values[index])/100]));box=values.every(v=>v.trim()!=='')&&validBox(candidate)?candidate:null;selectedCandidate='';dirty=values.some(v=>v!=='');$('selectionStatus').textContent=box?'当前坐标有效，尚未保存。':'请填写有效坐标：宽高大于 0，且框不能超出原图 100%。';paint();controls();}));
+coordinateIds.forEach(id=>$(id).addEventListener('input',()=>{const values=coordinateIds.map(key=>$(key).value);const candidate=Object.fromEntries(['x','y','width','height'].map((key,index)=>[key,Number(values[index])/100]));box=values.every(v=>v.trim()!=='')&&validBox(candidate)?candidate:null;boxSource=box?'coordinates':'none';selectedCandidate='';dirty=values.some(v=>v!=='');$('selectionStatus').textContent=box?'当前坐标有效，尚未保存。':'请填写有效坐标：宽高大于 0，且框不能超出原图 100%。';paint();controls();}));
 $('personRole').addEventListener('change',()=>{$('studentChoice').hidden=$('personRole').value!=='student';if($('personRole').value!=='student')$('studentSelect').value='';dirty=dirty||!!box;controls();});
 $('studentSearch').addEventListener('input',renderStudents);$('studentSelect').addEventListener('change',()=>{dirty=dirty||!!box;controls();});
+$('showExcludedCandidates').addEventListener('change',()=>{const selected=selectedCandidate!==''?candidates[Number(selectedCandidate)]:null;candidates=visibleCandidates();renderCandidateList();const keep=selected?candidates.indexOf(selected):-1;if(selected&&keep<0)clearSelection();else if(keep>=0){selectedCandidate=String(keep);$('candidateList').querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.candidate===selectedCandidate)));}$('drawHint').hidden=candidates.length>0||!isTeacher;paint();controls();});
 $('candidateList').addEventListener('click',event=>{const button=event.target.closest('[data-candidate]');if(!button||!canPreview())return;const candidate=candidates[Number(button.dataset.candidate)];if(candidate)setBox(candidate.bbox,button.dataset.candidate);});
-$('retryDetection').addEventListener('click',detectFrame);$('clearSelection').addEventListener('click',()=>{if(!writing&&!loading)clearSelection();});
+$('retryDetection').addEventListener('click',()=>{if(!frame()||!canPreview())return;logEvent('redetect','requested');manualDetect=true;detectFrame();});$('clearSelection').addEventListener('click',()=>{if(!writing&&!loading)clearSelection();});
 $('drawButton').addEventListener('click',()=>{if(!canDraft())return;drawing=!drawing;$('frameSurface').classList.toggle('is-drawing',drawing);$('drawButton').setAttribute('aria-pressed',String(drawing));$('selectionStatus').textContent=drawing?'画框已开启，请在图中拖动选中一人。':box?'已保留当前框选草稿。':'先选中画面中的一人。';$('drawingHelp').textContent=drawing?'在原图内拖动，完成后退出画框模式；Escape 取消。':'可手动画框，或填写百分比坐标。';if(drawing)returnToFrame();controls();});
 function point(event){const bounds=$('frameSurface').getBoundingClientRect();return {x:clamp((event.clientX-bounds.left)/bounds.width),y:clamp((event.clientY-bounds.top)/bounds.height)};}
 $('frameSurface').addEventListener('pointerdown',event=>{if(!canDraft()||event.button!==0)return;if(!drawing){const p=point(event);const index=candidates.findIndex(c=>p.x>=c.bbox.x&&p.x<=c.bbox.x+c.bbox.width&&p.y>=c.bbox.y&&p.y<=c.bbox.y+c.bbox.height);if(index>=0)setBox(candidates[index].bbox,String(index));return;}event.preventDefault();drag={start:point(event),pointer:event.pointerId,previous:box};$('frameSurface').setPointerCapture(event.pointerId);});
 $('frameSurface').addEventListener('pointermove',event=>{if(!drag||drag.pointer!==event.pointerId)return;const end=point(event),start=drag.start;setBox({x:Math.min(start.x,end.x),y:Math.min(start.y,end.y),width:Math.abs(end.x-start.x),height:Math.abs(end.y-start.y)});});
-$('frameSurface').addEventListener('pointerup',event=>{if(!drag||drag.pointer!==event.pointerId)return;const end=point(event),start=drag.start;setBox({x:Math.min(start.x,end.x),y:Math.min(start.y,end.y),width:Math.abs(end.x-start.x),height:Math.abs(end.y-start.y)});drag=null;drawing=false;$('frameSurface').classList.remove('is-drawing');$('drawButton').setAttribute('aria-pressed','false');$('frameSurface').releasePointerCapture(event.pointerId);});
+$('frameSurface').addEventListener('pointerup',event=>{if(!drag||drag.pointer!==event.pointerId)return;const end=point(event),start=drag.start;setBox({x:Math.min(start.x,end.x),y:Math.min(start.y,end.y),width:Math.abs(end.x-start.x),height:Math.abs(end.y-start.y)});logEvent('manual_box',box?'drawn':'too_small',{box_source:'manual',candidate_count:candidates.length});drag=null;drawing=false;$('frameSurface').classList.remove('is-drawing');$('drawButton').setAttribute('aria-pressed','false');$('frameSurface').releasePointerCapture(event.pointerId);});
 $('frameSurface').addEventListener('pointercancel',()=>{if(drag)setBox(drag.previous);drag=null;drawing=false;$('frameSurface').classList.remove('is-drawing');$('drawButton').setAttribute('aria-pressed','false');});
+const anyDialogOpen=()=>['revokeDialog','previewDialog','newStudentDialog','trackDialog'].some(id=>$(id).open);
+document.addEventListener('keydown',event=>{
+  if(!['ArrowLeft','ArrowRight'].includes(event.key)||event.ctrlKey||event.metaKey||event.altKey||event.shiftKey||anyDialogOpen()||drag)return;
+  const target=event.target;if(target&&(target.closest?.('input,select,textarea,[contenteditable="true"]')||target.isContentEditable))return;
+  if(target===$('frameViewport')&&zoom>1)return;
+  const next=frameIndex+(event.key==='ArrowLeft'?-1:1);if(loading||writing||next<0||next>=frames.length)return;
+  event.preventDefault();changeFrame(next);
+});
+$('toastClose').addEventListener('click',hideToast);
+$('toastStay').addEventListener('click',()=>{const index=toastReturnIndex;hideToast();if(index>=0)changeFrame(index);returnToFrame();});
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!$('revokeDialog').open&&!$('previewDialog').open&&!$('newStudentDialog').open&&!$('trackDialog').open&&!writing){clearSelection();}});
 $('schoolGateLink').addEventListener('click',()=>{$('schoolConfirmation').scrollIntoView({block:'center'});(confirmationReady()?$('confirmTaskSchool'):$('completeSchoolLink')).focus({preventScroll:true});});
 $('addStudent').addEventListener('click',()=>{if(!mayAddStudent())return;inlinePreviousDirty=dirty;inlineDirty=false;$('newStudentForm').reset();$('newStudentError').textContent='';$('newStudentSchool').textContent=schoolName(workspace.school_context);$('confirmNewStudent').disabled=false;$('newStudentDialog').showModal();$('inlineStudentName').focus();});
@@ -525,7 +678,7 @@ $('adoptTrackPoint').addEventListener('click',()=>{
   if(!point||point.status!=='suggested'||!trackImageReady||!validBox(point.bbox)||!seed||!trackEligible(bindings().find(b=>b.binding_id===seed.binding_id))||trackResult.frame_revision!==workspace.frame_revision||!allowLeave())return;
   const index=frames.findIndex(f=>f.frame_key===point.frame_key);if(index<0)return;
   const bbox={...point.bbox},studentId=seed.student_id;closeTrack();if(index!==frameIndex)displayFrame(index);
-  setBox(bbox);$('personRole').value='student';$('studentSearch').value='';renderStudents();$('studentChoice').hidden=false;$('studentSelect').value=studentId;dirty=true;controls();returnToFrame();notice('已采用位置建议为草稿，请核对这位学生后点击“确认姓名”；尚未写入记录。','info');
+  setBox(bbox,'','track');$('personRole').value='student';$('studentSearch').value='';renderStudents();$('studentChoice').hidden=false;$('studentSelect').value=studentId;dirty=true;controls();returnToFrame();notice('已采用位置建议为草稿，请核对这位学生后点击“确认姓名”；尚未写入记录。','info');
 });
 $('previewButton').addEventListener('click',openReference);$('closePreview').addEventListener('click',()=>closeReference(true));
 $('previewDialog').addEventListener('cancel',event=>{event.preventDefault();closeReference(true);});
@@ -544,22 +697,41 @@ $('bindingForm').addEventListener('submit',async event=>{
   event.preventDefault();if($('saveBinding').disabled||!editable||!imageReady||!validBox(box)||writing||loading||uncertainWrite||!frame())return;
   const role=$('personRole').value;if(!['student','teacher','unknown'].includes(role))return;const studentId=role==='student'?$('studentSelect').value:null;if(role==='student'&&!(workspace.students||[]).some(s=>s.student_id===studentId)){notice('请选择本校名册中的学生。');return;}
   const payload={task_id:taskId,frame_key:frame().frame_key,frame_revision:workspace.frame_revision,role,student_id:studentId,bbox:normalizedBox(box)};writing=true;detectController?.abort();clearNotice();controls();
-  let saved=false,savedName='';try{
+  const savedIndex=frameIndex,source=boxSource;let saved=false,savedName='',savedShort='';try{
     let data;try{data=await request('/bindings',payload);}catch(error){
       if(error.status!==409||error.code!=='overlapping_student_binding'||role!=='student')throw error;
       if(!window.confirm('这个框与另一位学生的已确认区域高度重叠。请核对：确实是两位不同学生，且存在部分遮挡吗？\n确认后仅新增这条记录，不覆盖另一位学生。')){notice('未保存重叠区域，请核对姓名或重新框选。','info');return;}
       data=await request('/bindings',{...payload,overlap_confirmed:true});
     }
-    if(!data.binding?.binding_id)throw new Error('保存结果尚未确认，请刷新记录核对。');savedName=bindingName(data.binding);workspace.bindings=bindings().filter(b=>b.binding_id!==data.binding.binding_id).concat(data.binding);saved=true;dirty=false;box=null;renderBindings();
-  }catch(error){notice(error.status===409&&error.code==='indistinguishable_student_binding'?'两个框几乎相同，请框出各自可见部分或换一个时刻。完全遮挡时不能据此确认身份。':error.message);if(!error.status)uncertainWrite=true;if([403,409,410].includes(error.status)&&!(error.status===409&&['overlapping_student_binding','indistinguishable_student_binding'].includes(error.code)))editable=false;}
-  finally{writing=false;controls();}if(saved){await loadWorkspace(true);if(editable)notice('已确认「'+savedName+'」。可继续选择下一人；仅保存当前帧身份。','success');}
+    if(!data.binding?.binding_id)throw new Error('保存结果尚未确认，请刷新记录核对。');savedName=bindingName(data.binding);savedShort=shortName(data.binding);workspace.bindings=bindings().filter(b=>b.binding_id!==data.binding.binding_id).concat(data.binding);saved=true;dirty=false;box=null;renderBindings();
+  }catch(error){logEvent('identity_confirm',error.status?'rejected':'uncertain',{role,box_source:source});notice(error.status===409&&error.code==='indistinguishable_student_binding'?'两个框几乎相同，请框出各自可见部分或换一个时刻。完全遮挡时不能据此确认身份。':error.message);if(!error.status)uncertainWrite=true;if([403,409,410].includes(error.status)&&!(error.status===409&&['overlapping_student_binding','indistinguishable_student_binding'].includes(error.code)))editable=false;}
+  finally{writing=false;controls();}
+  if(saved){
+    logEvent('identity_confirm','confirmed',{role,box_source:source,frame_index:savedIndex+1});
+    await loadWorkspace(true);
+    if(editable){
+      const next=frameIndex===savedIndex?pendingFrameAfter(savedIndex):-1;
+      if(next>=0){displayFrame(next);returnToFrame();logEvent('frame_advance','advanced',{frame_index:savedIndex+1,next_frame_index:next+1});}
+      showToast('已确认：'+savedShort+'（第 '+(savedIndex+1)+' 帧）'+(next>=0?'，已前往第 '+(next+1)+' 帧':'，所有采样帧都已有确认记录'),next>=0?savedIndex:-1);
+      notice('已确认「'+savedName+'」（第 '+(savedIndex+1)+' 帧）。'+(next>=0?'已自动前往第 '+(next+1)+' 帧，可继续选择下一人；':'可继续选择下一人；')+'仅保存当前帧身份。','success');
+    }
+  }
 });
 $('bindingList').addEventListener('click',event=>{const button=event.target.closest('[data-revoke]');if(!button||!canRevoke||loading||writing||uncertainWrite||!allowLeave())return;revokeBinding=bindings().find(b=>b.binding_id===button.dataset.revoke&&['confirmed','active'].includes(b.status));if(!revokeBinding)return;clearSelection();$('revokeTarget').textContent=seconds(revokeBinding.time_sec)+' · '+bindingName(revokeBinding);$('revokeReason').value='';$('revokeError').textContent='';$('confirmRevoke').disabled=false;$('revokeDialog').showModal();$('revokeReason').focus();});
 $('cancelRevoke').addEventListener('click',()=>{if(!writing){$('revokeDialog').close();revokeBinding=null;}});$('revokeDialog').addEventListener('cancel',event=>{if(writing)event.preventDefault();});
 $('revokeForm').addEventListener('submit',async event=>{event.preventDefault();if(!canRevoke||!revokeBinding||writing||uncertainWrite)return;const reason=$('revokeReason').value.trim();if(!reason){$('revokeError').textContent='请填写撤销原因。';$('revokeReason').focus();return;}writing=true;controls();$('confirmRevoke').disabled=true;$('cancelRevoke').disabled=true;$('revokeReason').disabled=true;let saved=false;try{await request('/bindings/revoke',{task_id:taskId,binding_id:revokeBinding.binding_id,reason});saved=true;dirty=false;$('revokeDialog').close();}catch(error){$('revokeError').textContent=error.message;if(!error.status){uncertainWrite=true;$('revokeError').textContent+=' 操作结果尚未确认，请关闭弹窗后刷新记录核对。';}if([403,409].includes(error.status))canRevoke=false;}finally{writing=false;$('confirmRevoke').disabled=uncertainWrite||!canRevoke;$('cancelRevoke').disabled=false;$('revokeReason').disabled=false;controls();}if(saved){revokeBinding=null;await loadWorkspace(true);if(canRevoke)notice('该条身份确认已撤销，其余记录不受影响。','success');}});
-window.addEventListener('pagehide',()=>{closeReference();closeTrack();frameEpoch++;detectController?.abort();});
+window.addEventListener('pagehide',()=>{hideToast();closeReference();closeTrack();frameEpoch++;detectController?.abort();});
 window.addEventListener('pageshow',event=>{if(event.persisted&&!dirty&&!writing)loadWorkspace();});
-installQuickTestProfiles();loadWorkspace();
+// 统一「切换学生」条：点击学生 → 跳到该学生最清晰的一帧，并在检测完成后预选其人脸框。
+let lessonSwitch=null,switchTarget=null;
+function frameNear(sec){let best=-1,gap=Infinity;frames.forEach((f,i)=>{const d=Math.abs(Number(f.time_sec)-Number(sec));if(d<gap){gap=d;best=i;}});return best;}
+function applySwitchTarget(){if(!switchTarget||switchTarget.frame!==frameIndex)return;const i=candidates.findIndex(face=>face.matched_person===switchTarget.name);switchTarget=null;if(i>=0){setBox(candidates[i].bbox,String(i));dirty=false;}}
+function focusPerson(p){if(!p||p.anchor_time_sec==null||!frames.length)return;const index=frameNear(p.anchor_time_sec);if(index<0)return;switchTarget={name:p.display_name,frame:index};if(index===frameIndex)applySwitchTarget();else changeFrame(index);}
+async function loadIdentitySwitch(){if(!isTeacher||!taskId||!window.RxUI||!window.RxUI.studentSwitcher||!window.RxUI.loadLessonPersons)return;const data=await window.RxUI.loadLessonPersons(taskId);if(!data||!Array.isArray(data.persons)||!data.persons.length){if(data&&data.summary&&data.summary.low_student_notice){lessonSwitch=lessonSwitch||window.RxUI.studentSwitcher($('identitySwitch'),{page:'identity',taskId,param:'person_id'});lessonSwitch.setLow(data.summary.low_student_notice,'#frameTitle');}return;}
+  const items=data.persons.map(p=>({key:p.person_id,person_id:p.person_id,student_id:p.student_id||'',title:p.display_name,subtitle:p.student_name?'已绑定：'+p.student_name:p.included?'未绑定姓名':((p.reason_labels||[]).join('、')||'未纳入本课检测'),avatarUrl:window.RxUI.personAvatarUrl(taskId,p.avatar),status:p.binding,person:p}));
+  if(!lessonSwitch)lessonSwitch=window.RxUI.studentSwitcher($('identitySwitch'),{page:'identity',taskId,param:'person_id',label:'切换学生',note:'点击学生卡片会跳到该学生最清晰的一帧并预选其人脸框；仍需在右侧选择姓名后保存确认。',onSelect:(item,meta)=>{if(meta&&meta.trigger==='init')return;focusPerson(item.person);}});
+  lessonSwitch.setLow(data.summary&&data.summary.low_student_notice||null,'#frameTitle');lessonSwitch.update(items);}
+installQuickTestProfiles();loadWorkspace().then(loadIdentitySwitch).catch(()=>{});
 """
 
 

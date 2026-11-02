@@ -127,8 +127,20 @@ def _now() -> datetime:
     return datetime.now().astimezone()
 
 
+class SchoolReviewConflict(RuntimeError):
+    """Concurrent review of the same manual school (HTTP 409)."""
+
+
 class RegistrationRateLimitError(ValueError):
     """The public application endpoint has exhausted its submission budget."""
+
+
+class AccountInactiveError(ValueError):
+    """Correct credentials for an account that has been disabled.
+
+    Raised only after the password matches, so the distinct message never
+    reveals whether an unknown visitor guessed an existing username.
+    """
 
 
 class VideoUploadError(ValueError):
@@ -423,6 +435,29 @@ class Demo2StudentRecordStore:
                     details_json TEXT NOT NULL DEFAULT '{}',
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS demo2_school_directory (
+                    school_code TEXT PRIMARY KEY,
+                    school_name TEXT NOT NULL CHECK(length(trim(school_name)) BETWEEN 1 AND 200),
+                    province TEXT NOT NULL,
+                    city TEXT NOT NULL,
+                    district TEXT NOT NULL,
+                    province_code TEXT NOT NULL,
+                    city_code TEXT NOT NULL,
+                    district_code TEXT NOT NULL,
+                    school_type TEXT,
+                    status TEXT NOT NULL CHECK(status IN ('pending', 'approved', 'rejected')),
+                    origin TEXT NOT NULL DEFAULT 'manual',
+                    source_title TEXT NOT NULL DEFAULT '教师手动填写，管理员审核',
+                    submitted_by_account_id TEXT NOT NULL DEFAULT '',
+                    submitted_at TEXT NOT NULL,
+                    reviewed_by TEXT NOT NULL DEFAULT '',
+                    reviewed_at TEXT NOT NULL DEFAULT '',
+                    review_note TEXT NOT NULL DEFAULT '',
+                    version INTEGER NOT NULL DEFAULT 1,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_demo2_school_directory_status
+                    ON demo2_school_directory(status, submitted_at);
                 CREATE TABLE IF NOT EXISTS registration_requests (
                     request_id TEXT PRIMARY KEY,
                     name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 80),
@@ -683,22 +718,24 @@ class Demo2StudentRecordStore:
                 (normalized_username,),
             ).fetchone()
             authenticated = False
+            password_matches = False
             reason = "account_not_found"
             if row is not None:
                 account = dict(row)
+                try:
+                    salt = bytes.fromhex(account["password_salt"])
+                    candidate = _password_hash(
+                        supplied_password,
+                        salt,
+                        int(account["password_iterations"]),
+                    )
+                    password_matches = hmac.compare_digest(account["password_hash"], candidate)
+                except (TypeError, ValueError):
+                    password_matches = False
                 if account["status"] != "active":
                     reason = "account_inactive"
                 else:
-                    try:
-                        salt = bytes.fromhex(account["password_salt"])
-                        candidate = _password_hash(
-                            supplied_password,
-                            salt,
-                            int(account["password_iterations"]),
-                        )
-                        authenticated = hmac.compare_digest(account["password_hash"], candidate)
-                    except (TypeError, ValueError):
-                        authenticated = False
+                    authenticated = password_matches
                     reason = "success" if authenticated else "wrong_password"
             object_id = row["account_id"] if row is not None else normalized_username[:120]
             self._audit(
@@ -711,6 +748,8 @@ class Demo2StudentRecordStore:
             )
             if not authenticated:
                 connection.commit()
+                if reason == "account_inactive" and password_matches:
+                    raise AccountInactiveError("账号已停用")
                 raise ValueError("账号或密码错误，或账号不可用")
             return self._public_account(dict(row))
 
@@ -784,9 +823,21 @@ class Demo2StudentRecordStore:
             context = self._school_context_for_account(connection, account["account_id"])
             metadata = connection.execute("SELECT details_json FROM school_selection_metadata WHERE account_id=?", (account["account_id"],)).fetchone()
             has_students = self._has_scoped_students(connection, account["account_id"])
+            details = json.loads(metadata[0]) if metadata else {}
+            if details.get("selection_source") == "manual" and details.get("school_code"):
+                review = connection.execute(
+                    "SELECT status, review_note FROM demo2_school_directory WHERE school_code=?",
+                    (details["school_code"],)).fetchone()
+                if review is not None:
+                    details = {**details, "review_status": review["status"], "review_note": review["review_note"] or None}
+        from .demo2_school_directory import coverage as national_coverage
+        try:
+            national = national_coverage()
+        except (OSError, ValueError):
+            national = {"kind": "national", "complete": False, "entry_count": 0, "label": "全国学校目录暂不可用"}
         # Organization metadata only, not a tenant identifier or permission grant.
         return {"context": context, "options": [dict(context)] if context["school_name"] else [],
-                "details": json.loads(metadata[0]) if metadata else {}, "directory": school_directory(),
+                "details": details, "directory": school_directory(), "national_directory": national,
                 "selection_enabled": True, "context_change_allowed": not has_students}
 
     @staticmethod
@@ -808,10 +859,14 @@ class Demo2StudentRecordStore:
             previous = connection.execute("SELECT details_json FROM school_selection_metadata WHERE account_id=?", (account["account_id"],)).fetchone()
             if "selection_source" in payload:
                 from .school_directory import prepare_school_selection
-                selection = prepare_school_selection(payload, current_context=current, has_existing_students=has_students)
+                selection = prepare_school_selection(
+                    payload, current_context=current, has_existing_students=has_students,
+                    resolve_entry=lambda code: self._approved_directory_entry(connection, code))
                 context, details = selection["context"], selection["details"]
                 if details["selection_source"] == "existing" and previous:
                     details = json.loads(previous[0])
+                elif details["selection_source"] == "manual":
+                    details = self._register_manual_school(connection, account["account_id"], context, details)
             else:
                 if set(payload) != set(SCHOOL_CONTEXT_LIMITS):
                     raise ValueError("请仅提交城市、区县和学校名称")
@@ -835,6 +890,135 @@ class Demo2StudentRecordStore:
             self._audit(connection, account["username"], "school_context_saved",
                         "school_context", account["account_id"], {"organization_metadata_only": True})
         return self.account_school_context(session_token)
+
+    # ------------------------------------------------------------ school directory
+
+    @staticmethod
+    def _manual_entry_payload(row: Any) -> dict[str, Any]:
+        item = dict(row)
+        return {
+            "directory_id": item["school_code"], "school_code": item["school_code"],
+            "school_name": item["school_name"], "province": item["province"], "city": item["city"],
+            "district": item["district"], "province_code": item["province_code"],
+            "city_code": item["city_code"], "district_code": item["district_code"],
+            "school_type": item["school_type"] or "其他", "street": None, "address": None,
+            "address_status": "pending", "source_status": "approved_manual", "source_url": None,
+            "source_title": item["source_title"], "source_published_on": None,
+            "source_checked_on": (item["reviewed_at"] or "")[:10] or None,
+            "source_note": "教师手动填写，经管理员审核归入目录。", "origin": "manual", "initials": "",
+            "region_basis": "manual",
+        }
+
+    def _approved_directory_entry(self, connection: sqlite3.Connection, code: str) -> dict[str, Any] | None:
+        if not re.fullmatch(r"manual-[0-9a-f]{16}", str(code or "")):
+            return None
+        row = connection.execute("SELECT * FROM demo2_school_directory WHERE school_code=? AND status='approved'",
+                                 (code,)).fetchone()
+        return self._manual_entry_payload(row) if row is not None else None
+
+    def approved_manual_schools(self) -> list[dict[str, Any]]:
+        """Approved manual schools, merged into national search results."""
+        with self._connect() as connection:
+            return [self._manual_entry_payload(row) for row in connection.execute(
+                "SELECT * FROM demo2_school_directory WHERE status='approved' ORDER BY school_name")]
+
+    def _register_manual_school(self, connection: sqlite3.Connection, account_id: str,
+                                context: dict[str, str], details: dict[str, Any]) -> dict[str, Any]:
+        """Store a manual school as a pending directory row; re-saving reuses the same row."""
+        now = _iso()
+        row = connection.execute(
+            """SELECT school_code, status FROM demo2_school_directory
+               WHERE district_code=? AND school_name=? AND status IN ('pending','approved')
+               ORDER BY status='approved' DESC, submitted_at LIMIT 1""",
+            (details["district_code"], context["school_name"])).fetchone()
+        if row is not None:
+            code, status = row["school_code"], row["status"]
+        else:
+            code, status = "manual-" + secrets.token_hex(8), "pending"
+            connection.execute(
+                """INSERT INTO demo2_school_directory
+                   (school_code, school_name, province, city, district, province_code, city_code, district_code,
+                    status, submitted_by_account_id, submitted_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,'pending',?,?,?)""",
+                (code, context["school_name"], details["province"], context["city"], context["district"],
+                 details["province_code"], details["city_code"], details["district_code"], account_id, now, now))
+            self._audit(connection, account_id, "school_manual_submitted", "school_directory", code,
+                        {"organization_metadata_only": True})
+        return {**details, "school_code": code, "directory_id": code, "review_status": status,
+                "source_status": "approved_manual" if status == "approved" else "pending"}
+
+    def admin_school_reviews(self, session_token: str, status: str = "pending") -> dict[str, Any]:
+        admin = self.account_from_session(session_token)
+        if admin["role"] != "company_admin":
+            raise PermissionError("仅公司管理员可审核学校")
+        if status not in {"pending", "approved", "rejected", "all"}:
+            raise ValueError("审核状态无效")
+        with self._connect() as connection:
+            where = "" if status == "all" else "WHERE d.status=?"
+            rows = connection.execute(
+                f"""SELECT d.*, COALESCE(a.username,'') AS submitted_by FROM demo2_school_directory AS d
+                    LEFT JOIN platform_accounts AS a ON a.account_id=d.submitted_by_account_id
+                    {where} ORDER BY d.status='pending' DESC, d.submitted_at DESC LIMIT 200""",
+                () if status == "all" else (status,)).fetchall()
+            counts = {r["status"]: r["n"] for r in connection.execute(
+                "SELECT status, COUNT(*) AS n FROM demo2_school_directory GROUP BY status")}
+        return {
+            "schools": [{key: row[key] for key in (
+                "school_code", "school_name", "province", "city", "district", "province_code", "city_code",
+                "district_code", "school_type", "status", "submitted_by", "submitted_at", "reviewed_by",
+                "reviewed_at", "review_note", "version")} for row in rows],
+            "counts": {key: counts.get(key, 0) for key in ("pending", "approved", "rejected")},
+        }
+
+    def review_manual_school(self, session_token: str, payload: Any) -> dict[str, Any]:
+        """Approve (merge into the searchable directory) or reject a manual school.
+
+        Never rewrites any account context or task snapshot; only the review
+        status shown beside the account's saved school changes.
+        """
+        from .demo2_school_directory import SCHOOL_TYPES
+        admin = self.account_from_session(session_token)
+        if admin["role"] != "company_admin":
+            raise PermissionError("仅公司管理员可审核学校")
+        allowed = {"school_code", "decision", "school_type", "review_note", "expected_version"}
+        if not isinstance(payload, dict) or set(payload) - allowed or not {"school_code", "decision", "expected_version"} <= set(payload):
+            raise ValueError("审核字段无效")
+        code, decision = payload["school_code"], payload["decision"]
+        if not isinstance(code, str) or not re.fullmatch(r"manual-[0-9a-f]{16}", code):
+            raise ValueError("学校编号无效")
+        if decision not in {"approve", "reject"}:
+            raise ValueError("审核结果无效")
+        school_type = payload.get("school_type") or None
+        if decision == "approve" and school_type not in SCHOOL_TYPES:
+            raise ValueError("通过审核前请选择学校类型")
+        note = payload.get("review_note") or ""
+        if not isinstance(note, str) or len(note) > 200 or any(ord(c) < 32 for c in note):
+            raise ValueError("审核说明最多 200 字")
+        if decision == "reject" and not note.strip():
+            raise ValueError("驳回时请填写原因")
+        version = payload["expected_version"]
+        if type(version) is not int:
+            raise ValueError("版本号无效")
+        now = _iso()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT * FROM demo2_school_directory WHERE school_code=?", (code,)).fetchone()
+            if row is None:
+                raise LookupError("学校不存在")
+            if row["version"] != version:
+                raise SchoolReviewConflict("该学校已被其他管理员处理，请刷新后再试")
+            status = "approved" if decision == "approve" else "rejected"
+            connection.execute(
+                """UPDATE demo2_school_directory SET status=?, school_type=?, reviewed_by=?, reviewed_at=?,
+                   review_note=?, version=version+1, updated_at=? WHERE school_code=?""",
+                (status, school_type if decision == "approve" else row["school_type"], admin["username"], now,
+                 note.strip(), now, code))
+            self._audit(connection, admin["username"], f"school_manual_{status}", "school_directory", code,
+                        {"organization_metadata_only": True})
+            updated = connection.execute("SELECT * FROM demo2_school_directory WHERE school_code=?", (code,)).fetchone()
+        return {key: updated[key] for key in (
+            "school_code", "school_name", "province", "city", "district", "school_type", "status",
+            "reviewed_by", "reviewed_at", "review_note", "version")}
 
     def check_registration_rate_limit(self, client_address: str) -> None:
         """Consume a bounded attempt before reading a public registration body.
@@ -1130,7 +1314,7 @@ class Demo2StudentRecordStore:
             channel_rows = connection.execute(
                 """
                 SELECT c.*, a.account_id, a.username, a.status AS account_status,
-                       COUNT(t.task_id) AS task_count
+                       COUNT(t.task_id) AS task_count, MAX(t.created_at) AS last_upload_at
                 FROM video_upload_channels AS c
                 LEFT JOIN platform_accounts AS a ON a.bound_channel_id = c.channel_id
                 LEFT JOIN video_analysis_tasks AS t
@@ -1140,6 +1324,16 @@ class Demo2StudentRecordStore:
                 ORDER BY c.channel_no
                 """
             ).fetchall()
+            last_upload_by_account = {
+                row["account_id"]: row["last_upload_at"]
+                for row in connection.execute(
+                    """
+                    SELECT account_id, MAX(created_at) AS last_upload_at FROM video_analysis_tasks
+                    WHERE account_id IS NOT NULL AND upload_status NOT IN ('cancelled', 'expired')
+                    GROUP BY account_id
+                    """
+                )
+            }
             usage_rows = connection.execute(
                 """
                 SELECT t.account_id, a.username, t.course_id,
@@ -1249,7 +1443,11 @@ class Demo2StudentRecordStore:
         }
         return {
             "admin_account": admin,
-            "upload_accounts": [self._public_account(dict(row)) for row in uploader_rows],
+            "upload_accounts": [
+                {**self._public_account(dict(row)),
+                 "last_upload_at": last_upload_by_account.get(row["account_id"])}
+                for row in uploader_rows
+            ],
             "channels": [dict(row) for row in channel_rows],
             "course_usage": course_usage,
             "recent_uploads": recent_uploads,
@@ -2319,8 +2517,10 @@ class Demo2StudentRecordStore:
                         analysis.update(reason="analysis_refresh_failed", refresh_status="retry_wait",
                                         retry_after=cache["retry_after"],
                                         message="人物状态分析更新暂未完成，后台将稍后重试。")
+                from .demo2_person_filter import apply_person_filter, load_overrides
                 from .demo2_student_tracking import present_motion_analysis
-                analysis = _public_processing_data(present_motion_analysis(analysis))
+                analysis = _public_processing_data(present_motion_analysis(
+                    apply_person_filter(analysis, load_overrides(connection, task_id))))
             if isinstance(analysis, dict):
                 archives = []
                 if connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='demo2_simple_lesson_archives'").fetchone():
@@ -2550,7 +2750,8 @@ class Demo2StudentRecordStore:
             raise ValueError("归档内容格式无效")
         allowed = {"task_id", "person_id", "student_id", "binding_id", "main_state",
                    "average_score", "key_times_sec", "state_breakdown", "lesson_summary",
-                   "iep_support_summary"}
+                   "iep_support_summary", "iep_document_id", "iep_reference_id", "iep_manual_supplement",
+                   "iep_item_count"}
         if set(payload) - allowed or not {"task_id", "person_id", "student_id", "binding_id"} <= set(payload):
             raise ValueError("归档字段不完整")
         text_fields = ("task_id", "person_id", "student_id", "binding_id", "main_state",
@@ -2559,9 +2760,19 @@ class Demo2StudentRecordStore:
             value = payload.get(key, "")
             if not isinstance(value, str) or len(value) > (80 if key in text_fields[:5] else 1000):
                 raise ValueError("归档字段长度无效")
+        for key in ("iep_document_id", "iep_reference_id"):
+            value = payload.get(key, "")
+            if not isinstance(value, str) or (value and not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value)):
+                raise ValueError("IEP 资料编号无效")
+        if not isinstance(payload.get("iep_manual_supplement", ""), str) or len(payload.get("iep_manual_supplement", "")) > 1000:
+            raise ValueError("IEP 人工补充不能超过 1000 字")
+        item_count = payload.get("iep_item_count", 0)
+        if type(item_count) is not int or not 0 <= item_count <= 100:
+            raise ValueError("IEP 摘要条目数无效")
         if not payload.get("student_id") or not payload.get("binding_id"):
             raise ValueError("请先绑定学生姓名")
-        for value in (payload.get("lesson_summary", ""), payload.get("iep_support_summary", "")):
+        for value in (payload.get("lesson_summary", ""), payload.get("iep_support_summary", ""),
+                      payload.get("iep_manual_supplement", "")):
             if any(term in value.casefold() for term in ("诊断", "病理", "完整iep", "diagnosis", "medical diagnosis")):
                 raise ValueError("这里只能填写课堂支持摘要，不能录入诊断原文")
         score = payload.get("average_score")
@@ -2595,6 +2806,10 @@ class Demo2StudentRecordStore:
             from .demo2_media_analysis import SIMPLE_ANALYSIS_VERSION
             cached = self._read_simple_analysis_cache(task, SIMPLE_ANALYSIS_VERSION)
             analysis = cached['analysis'] if cached and cached['status'] == 'completed' else json.loads(task['processing_result_json']).get('simple_student_analysis', {})
+            from .demo2_person_filter import apply_person_filter, excluded_person_ids, load_overrides
+            if payload['person_id'] in excluded_person_ids(
+                    apply_person_filter(analysis, load_overrides(connection, task["task_id"]))):
+                raise ValueError("该人物已被排除（疑似老师或无效人选），请先恢复为学生后再归档")
             if not self._simple_binding_matches_analysis(analysis, dict(binding), payload['person_id']):
                 raise ValueError("人物分析已更新，请对当前人物截图重新确认姓名；原有学生档案不会删除")
             student = connection.execute("""SELECT display_name,class_name FROM demo2_identity_students
@@ -2610,22 +2825,35 @@ class Demo2StudentRecordStore:
                 iep_support_summary TEXT NOT NULL, created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL, UNIQUE(task_id, person_id, student_id)
             )""")
+            # Additive migration: the archive stores only IEP ids, counts and the teacher's own supplement;
+            # the confirmed system summary lives encrypted in the student dossier.
+            archive_columns = {row[1] for row in connection.execute("PRAGMA table_info(demo2_simple_lesson_archives)")}
+            for column, ddl in (("iep_document_id", "TEXT NOT NULL DEFAULT ''"), ("iep_reference_id", "TEXT NOT NULL DEFAULT ''"),
+                                ("iep_manual_supplement", "TEXT NOT NULL DEFAULT ''"), ("iep_item_count", "INTEGER NOT NULL DEFAULT 0")):
+                if column not in archive_columns:
+                    connection.execute(f"ALTER TABLE demo2_simple_lesson_archives ADD COLUMN {column} {ddl}")
             now = _iso()
             archive_id = "sla_" + uuid4().hex
             connection.execute("""INSERT INTO demo2_simple_lesson_archives
                 (archive_id,task_id,person_id,student_id,binding_id,owner_account_id,main_state,
-                 average_score,key_times_json,state_breakdown_json,lesson_summary,iep_support_summary,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 average_score,key_times_json,state_breakdown_json,lesson_summary,iep_support_summary,created_at,updated_at,
+                 iep_document_id,iep_reference_id,iep_manual_supplement,iep_item_count)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(task_id,person_id,student_id) DO UPDATE SET binding_id=excluded.binding_id,
                  main_state=excluded.main_state,average_score=excluded.average_score,key_times_json=excluded.key_times_json,
                  state_breakdown_json=excluded.state_breakdown_json,lesson_summary=excluded.lesson_summary,
-                 iep_support_summary=excluded.iep_support_summary,updated_at=excluded.updated_at""",
+                 iep_support_summary=excluded.iep_support_summary,updated_at=excluded.updated_at,
+                 iep_document_id=excluded.iep_document_id,iep_reference_id=excluded.iep_reference_id,
+                 iep_manual_supplement=excluded.iep_manual_supplement,iep_item_count=excluded.iep_item_count""",
                 (archive_id, task["task_id"], payload["person_id"], payload["student_id"], payload["binding_id"],
                  account["account_id"], payload.get("main_state", ""), score,
                  json.dumps(key_times, ensure_ascii=False), json.dumps(breakdown, ensure_ascii=False),
-                 payload.get("lesson_summary", "").strip(), payload.get("iep_support_summary", "").strip(), now, now))
+                 payload.get("lesson_summary", "").strip(), payload.get("iep_support_summary", "").strip(), now, now,
+                 payload.get("iep_document_id", ""), payload.get("iep_reference_id", ""),
+                 payload.get("iep_manual_supplement", "").strip(), item_count))
             row = connection.execute("""SELECT archive_id,task_id,person_id,student_id,main_state,average_score,
-                key_times_json,state_breakdown_json,lesson_summary,iep_support_summary,created_at,updated_at
+                key_times_json,state_breakdown_json,lesson_summary,iep_support_summary,created_at,updated_at,
+                iep_document_id,iep_reference_id,iep_manual_supplement,iep_item_count
                 FROM demo2_simple_lesson_archives WHERE task_id=? AND person_id=? AND student_id=?""",
                 (task["task_id"], payload["person_id"], payload["student_id"])).fetchone()
             self._audit(connection, account["username"], "simple_lesson_archived", "student_lesson_summary",
@@ -2642,6 +2870,7 @@ class Demo2StudentRecordStore:
         self, session_token: str, task_id: str, frame_name: str,
         crop_bbox: dict[str, float] | None = None,
         source_preview: bool = False,
+        avatar: bool = False,
     ) -> tuple[Path, str]:
         account = self.account_from_session(session_token)
         if not isinstance(frame_name, str) or not re.fullmatch(r"frame_[0-9]{6}\.jpg", frame_name):
@@ -2685,8 +2914,10 @@ class Demo2StudentRecordStore:
                         or values["x"] + values["width"] > 1
                         or values["y"] + values["height"] > 1):
                     raise ValueError("人物截图框无效")
-                if source_preview:
+                if source_preview or avatar:
                     path = self._simple_person_preview(task, result, directory, path, values)
+                if avatar:
+                    return self._simple_avatar_crop(connection, account, task_id, directory, path, values), "image/jpeg"
                 digest = hashlib.sha256(
                     json.dumps(
                         {"version": PERSON_CROP_VERSION, "bbox": values, "source": path.name},
@@ -2737,6 +2968,357 @@ class Demo2StudentRecordStore:
             self._audit(connection, account["username"], "read_media", "video_analysis_task", task_id,
                         {"asset": "simple_analysis_person_crop" if crop_bbox is not None else "simple_analysis_frame"})
         return path, "image/jpeg"
+
+    def _simple_avatar_crop(self, connection, account, task_id, directory, source, values) -> Path:
+        """Square face portrait: face box + 40% margin, high-quality resize to >=160px.
+
+        The source is the full-resolution colour preview when available, so the
+        thumbnail is no longer cut from the low-resolution 1 fps evidence frame.
+        """
+        from .demo2_person_filter import person_filter_config
+        config = person_filter_config()
+        side = int(config["avatar_side"])
+        expand = float(config["avatar_expand"])
+        digest = hashlib.sha256(json.dumps(
+            {"version": "avatar_v1", "bbox": values, "source": source.name, "side": side, "expand": expand},
+            sort_keys=True, separators=(",", ":")).encode("ascii")).hexdigest()[:16]
+        crop_dir = self._controlled_video_path(directory / "person_avatars", "analysis")
+        crop_dir.mkdir(parents=True, exist_ok=True)
+        crop_path = self._controlled_video_path(crop_dir / f"avatar_{digest}.jpg", "analysis")
+        if not crop_path.is_file():
+            try:
+                import cv2
+                import numpy as np
+                image = cv2.imdecode(np.frombuffer(source.read_bytes(), dtype=np.uint8), cv2.IMREAD_COLOR)
+                if image is None or image.ndim != 3:
+                    raise ValueError
+                height, width = image.shape[:2]
+                box_w, box_h = values["width"] * width, values["height"] * height
+                center_x = values["x"] * width + box_w / 2
+                center_y = values["y"] * height + box_h / 2
+                crop_side = min(float(min(width, height)), max(box_w, box_h) * (1 + 2 * expand))
+                left = int(round(min(max(center_x - crop_side / 2, 0), width - crop_side)))
+                top = int(round(min(max(center_y - crop_side / 2, 0), height - crop_side)))
+                size = max(4, int(round(crop_side)))
+                cropped = image[top:top + size, left:left + size]
+                if cropped.shape[0] < 4 or cropped.shape[1] < 4:
+                    raise ValueError
+                interpolation = cv2.INTER_LANCZOS4 if cropped.shape[0] < side else cv2.INTER_AREA
+                portrait = cv2.resize(cropped, (side, side), interpolation=interpolation)
+                ok, encoded = cv2.imencode(".jpg", portrait, [cv2.IMWRITE_JPEG_QUALITY, 92])
+                if not ok:
+                    raise ValueError
+                with crop_path.open("xb") as handle:
+                    handle.write(encoded.tobytes())
+            except FileExistsError:
+                pass
+            except (ImportError, OSError, ValueError):
+                raise ValueError("人物头像生成失败") from None
+        self._audit(connection, account["username"], "read_media", "video_analysis_task", task_id,
+                    {"asset": "simple_analysis_person_avatar"})
+        return crop_path
+
+    def _stored_simple_analysis(self, task: dict[str, Any]) -> dict[str, Any] | None:
+        """Current tracker output for a task (stored result or refreshed cache), unfiltered."""
+        from .demo2_media_analysis import SIMPLE_ANALYSIS_VERSION
+        try:
+            result = json.loads(task.get("processing_result_json") or "null")
+        except (TypeError, ValueError):
+            result = None
+        stored = result.get("simple_student_analysis") if isinstance(result, dict) else None
+        if self._current_simple_analysis(stored, SIMPLE_ANALYSIS_VERSION):
+            return stored
+        cache = self._read_simple_analysis_cache(task, SIMPLE_ANALYSIS_VERSION)
+        if cache and cache["status"] == "completed":
+            return cache["analysis"]
+        return stored if isinstance(stored, dict) else None
+
+    def account_person_filter_view(self, session_token: str, task_id: str) -> dict[str, Any] | None:
+        """Filtered candidates (students + excluded) for the identity page; None if unavailable."""
+        from .demo2_person_filter import apply_person_filter, has_filter, load_overrides
+        account = self.account_from_session(session_token)
+        with self._connect() as connection:
+            task = self._authorized_video_task(connection, account, task_id)
+            if task.get("analysis_status") not in {"evidence_ready", "completed"}:
+                return None
+            analysis = self._stored_simple_analysis(task)
+            if not has_filter(analysis):
+                return None
+            return apply_person_filter(analysis, load_overrides(connection, task_id))
+
+    def account_person_filter_decision(self, session_token: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Teacher adjusts who is detected as a student in one lesson.
+
+        ``mark_teacher`` / ``exclude`` (取消纳入本课检测) remove the person's lesson
+        archive, revoke the student binding created from it, withdraw the
+        system-linked video measurements (version kept) and the classroom IEP
+        reference, so the data leaves the timeline, measurement, evaluation and
+        report.  What was withdrawn is kept in ``demo2_person_filter_suspended`` so
+        ``restore`` / ``include`` brings exactly those rows back.
+        """
+        from .demo2_person_filter import (
+            DECISION_OPERATIONS, DECISIONS, STATUS_STUDENT, apply_person_filter, ensure_table, load_overrides,
+            person_filter_debug_event, valid_person_id,
+        )
+        if not isinstance(payload, dict) or set(payload) != {"task_id", "person_id", "decision"}:
+            raise ValueError("请求字段无效")
+        task_id, person_id, decision = payload["task_id"], payload["person_id"], payload["decision"]
+        if not isinstance(task_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,120}", task_id):
+            raise ValueError("课堂任务编号无效")
+        if not valid_person_id(person_id):
+            raise ValueError("人物编号无效")
+        if decision not in DECISIONS:
+            raise ValueError("不支持的筛查操作")
+        operation = DECISION_OPERATIONS[decision]
+        account = self.account_from_session(session_token)
+        counts = dict(archives_removed=0, bindings_revoked=0, measurements_withdrawn=0, references_withdrawn=0,
+                      archives_restored=0, bindings_restored=0, measurements_restored=0, references_restored=0)
+        try:
+            with self._connect() as connection:
+                task = self._authorized_video_task(connection, account, task_id)
+                if account.get("role") != "school_uploader" or task.get("account_id") != account.get("account_id"):
+                    raise PermissionError("当前账号无权调整此课堂的学生筛查")
+                analysis = self._stored_simple_analysis(task)
+                current = apply_person_filter(analysis, load_overrides(connection, task_id))
+                people = {p.get("person_id"): p for p in
+                          (current or {}).get("persons", []) + (current or {}).get("excluded_persons", [])
+                          if isinstance(p, dict)} if isinstance(current, dict) else {}
+                if person_id not in people or not isinstance(people[person_id].get("person_filter"), dict):
+                    raise LookupError("人物编号不属于该课堂任务，请刷新结果")
+                target = DECISIONS[decision]
+                previous = people[person_id]["person_filter"]["status"]
+                ensure_table(connection)
+                connection.execute(
+                    "INSERT INTO demo2_person_filter_overrides(task_id,person_id,owner_account_id,decision,updated_by,updated_at) "
+                    "VALUES(?,?,?,?,?,?) ON CONFLICT(task_id,person_id) DO UPDATE SET decision=excluded.decision,"
+                    "updated_by=excluded.updated_by,updated_at=excluded.updated_at",
+                    (task_id, person_id, account["account_id"], target, account["username"], _iso()))
+                if target != STATUS_STUDENT:
+                    reason = ("教师取消纳入本课检测" if decision == "exclude" else "人物被教师标记为老师/非学生")
+                    counts.update(self._suspend_person_lesson_data(connection, account, task_id, person_id, reason))
+                else:
+                    counts.update(self._resume_person_lesson_data(connection, account, task_id, person_id))
+                self._audit(connection, account["username"], "person_filter_" + decision, "video_analysis_task",
+                            task_id, {"person_id": person_id, "previous": previous, "status": target, **counts})
+                updated = apply_person_filter(analysis, load_overrides(connection, task_id))
+        except (PermissionError, LookupError, ValueError) as error:
+            person_filter_debug_event(operation, "rejected", store=self, task_id=task_id, person_id=person_id,
+                                      decision=decision, code=type(error).__name__)
+            if isinstance(error, LookupError):
+                raise LookupError(str(error)) from None
+            raise ValueError(str(error)) from None
+        except sqlite3.Error as error:
+            person_filter_debug_event("person_filter_error", "failed", store=self, task_id=task_id,
+                                      person_id=person_id, decision=decision, code=type(error).__name__)
+            raise
+        summary = updated.get("person_filter_summary", {}) if isinstance(updated, dict) else {}
+        person_filter_debug_event(
+            operation, "ok", store=self, task_id=task_id, person_id=person_id, decision=decision,
+            status=target, auto_status=people[person_id]["person_filter"].get("auto_status"),
+            student_count=summary.get("student_count"), excluded_teacher=summary.get("excluded_teacher"),
+            excluded_blank=summary.get("excluded_blank"), excluded_by_teacher=summary.get("excluded_by_teacher"),
+            **counts)
+        return {"task_id": task_id, "person_id": person_id, "decision": decision, "status": target,
+                "included": target == STATUS_STUDENT, "previous_status": previous, **counts, "summary": summary}
+
+    def _suspend_person_lesson_data(self, connection, account, task_id: str, person_id: str,
+                                    reason: str) -> dict[str, int]:
+        """Cascade-withdraw everything derived from one person and remember it for a later restore."""
+        has_archives = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='demo2_simple_lesson_archives'").fetchone()
+        rows = [dict(row) for row in connection.execute(
+            "SELECT * FROM demo2_simple_lesson_archives WHERE task_id=? AND person_id=? AND owner_account_id=?",
+            (task_id, person_id, account["account_id"])).fetchall()] if has_archives else []
+        measurement_ids = self._withdraw_person_video_measurements(connection, account, task_id, person_id, reason)
+        reference_ids = self._withdraw_person_iep_references(connection, account, task_id, person_id, rows)
+        binding_ids: list[str] = []
+        for row in rows:
+            revoked = connection.execute(
+                "UPDATE demo2_identity_bindings SET status='revoked', revoked_by=?, revoked_at=?, "
+                "revoked_reason=? WHERE binding_id=? AND task_id=? AND owner_account_id=? AND status='confirmed'",
+                (account["username"], _iso(), reason, row["binding_id"], task_id, account["account_id"]))
+            if revoked.rowcount:
+                binding_ids.append(row["binding_id"])
+        archives_removed = connection.execute(
+            "DELETE FROM demo2_simple_lesson_archives WHERE task_id=? AND person_id=? AND owner_account_id=?",
+            (task_id, person_id, account["account_id"])).rowcount if has_archives else 0
+        existing = connection.execute(
+            "SELECT * FROM demo2_person_filter_suspended WHERE task_id=? AND person_id=? AND owner_account_id=?",
+            (task_id, person_id, account["account_id"])).fetchone()
+        merged = {"archives_json": rows, "measurement_ids_json": measurement_ids,
+                  "reference_ids_json": reference_ids, "binding_ids_json": binding_ids}
+        if existing is not None:
+            for column in merged:
+                try:
+                    earlier = json.loads(existing[column] or "[]")
+                except (TypeError, ValueError):
+                    earlier = []
+                merged[column] = (earlier if isinstance(earlier, list) else []) + merged[column]
+        if any(merged.values()):
+            connection.execute(
+                "INSERT INTO demo2_person_filter_suspended(task_id,person_id,owner_account_id,archives_json,"
+                "measurement_ids_json,reference_ids_json,binding_ids_json,suspended_by,suspended_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(task_id,person_id) DO UPDATE SET "
+                "archives_json=excluded.archives_json,measurement_ids_json=excluded.measurement_ids_json,"
+                "reference_ids_json=excluded.reference_ids_json,binding_ids_json=excluded.binding_ids_json,"
+                "suspended_by=excluded.suspended_by,suspended_at=excluded.suspended_at",
+                (task_id, person_id, account["account_id"],
+                 *(json.dumps(merged[key], ensure_ascii=False) for key in
+                   ("archives_json", "measurement_ids_json", "reference_ids_json", "binding_ids_json")),
+                 account["username"], _iso()))
+        return {"archives_removed": archives_removed, "bindings_revoked": len(binding_ids),
+                "measurements_withdrawn": len(measurement_ids), "references_withdrawn": len(reference_ids)}
+
+    def _resume_person_lesson_data(self, connection, account, task_id: str, person_id: str) -> dict[str, int]:
+        """Bring back exactly what ``_suspend_person_lesson_data`` withdrew (new versions, history kept)."""
+        snapshot = connection.execute(
+            "SELECT * FROM demo2_person_filter_suspended WHERE task_id=? AND person_id=? AND owner_account_id=?",
+            (task_id, person_id, account["account_id"])).fetchone()
+        result = {"archives_restored": 0, "bindings_restored": 0, "measurements_restored": 0,
+                  "references_restored": 0}
+        if snapshot is None:
+            return result
+
+        def _list(column: str) -> list[Any]:
+            try:
+                value = json.loads(snapshot[column] or "[]")
+            except (TypeError, ValueError):
+                return []
+            return value if isinstance(value, list) else []
+
+        live_bindings: set[str] = set()
+        for binding_id in _list("binding_ids_json"):
+            try:
+                connection.execute("SAVEPOINT person_binding_restore")
+                changed = connection.execute(
+                    "UPDATE demo2_identity_bindings SET status='confirmed', revoked_by=NULL, revoked_at=NULL, "
+                    "revoked_reason='' WHERE binding_id=? AND task_id=? AND owner_account_id=? AND status='revoked'",
+                    (binding_id, task_id, account["account_id"])).rowcount
+                connection.execute("RELEASE SAVEPOINT person_binding_restore")
+            except sqlite3.IntegrityError:
+                # Another confirmed binding now holds this student on the same frame: keep that one.
+                connection.execute("ROLLBACK TO SAVEPOINT person_binding_restore")
+                connection.execute("RELEASE SAVEPOINT person_binding_restore")
+                changed = 0
+            if changed:
+                live_bindings.add(binding_id)
+                result["bindings_restored"] += 1
+                self._audit(connection, account["username"], "identity_binding_restored", "identity_binding",
+                            binding_id, {"task_id": task_id, "person_id": person_id, "reason": "person_included"})
+        archives = [row for row in _list("archives_json") if isinstance(row, dict)]
+        if archives and connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='demo2_simple_lesson_archives'").fetchone():
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(demo2_simple_lesson_archives)")}
+            for row in archives:
+                binding_id = row.get("binding_id")
+                still_live = binding_id in live_bindings or connection.execute(
+                    "SELECT 1 FROM demo2_identity_bindings WHERE binding_id=? AND status='confirmed'",
+                    (binding_id,)).fetchone() is not None
+                if not still_live:
+                    continue
+                values = {key: value for key, value in row.items() if key in columns}
+                values["updated_at"] = _iso()
+                inserted = connection.execute(
+                    f"INSERT OR IGNORE INTO demo2_simple_lesson_archives({','.join(values)}) "
+                    f"VALUES({','.join('?' * len(values))})", tuple(values.values())).rowcount
+                result["archives_restored"] += inserted
+        if connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='demo2_dossier_references'").fetchone():
+            for reference_id in _list("reference_ids_json"):
+                changed = connection.execute(
+                    "UPDATE demo2_dossier_references SET withdrawn_at='' WHERE reference_id=? AND task_id=? "
+                    "AND owner_account_id=? AND COALESCE(withdrawn_at,'')<>''",
+                    (reference_id, task_id, account["account_id"])).rowcount
+                if changed:
+                    result["references_restored"] += 1
+                    self._audit(connection, account["username"], "dossier_reference_restored", "dossier_reference",
+                                reference_id, {"task_id": task_id, "reason": "person_included"})
+        if connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='demo2_measurements'").fetchone():
+            now = _iso()
+            for record_id in _list("measurement_ids_json"):
+                row = connection.execute(
+                    "SELECT version, payload_json FROM demo2_measurements WHERE record_id=? AND owner_account_id=? "
+                    "AND status='withdrawn'", (record_id, account["account_id"])).fetchone()
+                if row is None:
+                    continue
+                data = json.loads(row["payload_json"])
+                if data.get("task_id") != task_id or data.get("person_id") != person_id:
+                    continue
+                version = int(row["version"]) + 1
+                data.pop("withdrawal_reason", None)
+                data.update(status="active", version=version, updated_at=now)
+                content = json.dumps(data, ensure_ascii=False)
+                connection.execute("UPDATE demo2_measurements SET status='active', version=?, payload_json=?, "
+                                   "updated_at=? WHERE record_id=?", (version, content, now, record_id))
+                connection.execute("INSERT INTO demo2_measurement_versions VALUES(?,?,?,?,?)",
+                                   (record_id, version, content, account["username"], now))
+                self._audit(connection, account["username"], "measurement_restored", "measurement", record_id,
+                            {"version": version, "task_id": task_id, "reason": "person_included"})
+                result["measurements_restored"] += 1
+        connection.execute("DELETE FROM demo2_person_filter_suspended WHERE task_id=? AND person_id=? "
+                           "AND owner_account_id=?", (task_id, person_id, account["account_id"]))
+        return result
+
+    def _withdraw_person_video_measurements(self, connection, account, task_id: str, person_id: str,
+                                            reason: str = "人物被教师标记为老师/非学生") -> list[str]:
+        """Withdraw the system-linked video measurements of a person the teacher removed from the lesson.
+
+        Records keep their version history; withdrawn records leave the measurement
+        tabs, completeness check, evaluation context and classroom report.
+        """
+        if not connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='demo2_measurements'").fetchone():
+            return []
+        rows = connection.execute(
+            "SELECT record_id, version, payload_json FROM demo2_measurements WHERE owner_account_id=? AND status='active' "
+            "AND json_extract(payload_json,'$.task_id')=? AND json_extract(payload_json,'$.source_type')='video' "
+            "AND json_extract(payload_json,'$.person_id')=?",
+            (account["account_id"], task_id, person_id)).fetchall()
+        now = _iso()
+        for row in rows:
+            data = json.loads(row["payload_json"])
+            version = int(row["version"]) + 1
+            data.update(status="withdrawn", withdrawal_reason=reason, version=version, updated_at=now)
+            content = json.dumps(data, ensure_ascii=False)
+            connection.execute("UPDATE demo2_measurements SET status='withdrawn', version=?, payload_json=?, updated_at=? "
+                               "WHERE record_id=?", (version, content, now, row["record_id"]))
+            connection.execute("INSERT INTO demo2_measurement_versions VALUES(?,?,?,?,?)",
+                               (row["record_id"], version, content, account["username"], now))
+            self._audit(connection, account["username"], "measurement_withdrawn", "measurement", row["record_id"],
+                        {"version": version, "task_id": task_id, "reason": "person_removed_from_lesson"})
+        return [row["record_id"] for row in rows]
+
+    def _withdraw_person_iep_references(self, connection, account, task_id: str, person_id: str,
+                                        archives: list[dict[str, Any]]) -> list[str]:
+        """Withdraw the classroom IEP reference created by this person's archive.
+
+        Kept when another (still student) person in the same task is archived for the
+        same student, so a valid binding never loses its IEP context.
+        """
+        if not connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='demo2_dossier_references'").fetchone():
+            return []
+        withdrawn: list[str] = []
+        for archive in archives:
+            reference_id = archive.get("iep_reference_id") or ""
+            if not reference_id:
+                continue
+            shared = connection.execute(
+                "SELECT 1 FROM demo2_simple_lesson_archives WHERE task_id=? AND owner_account_id=? AND student_id=? "
+                "AND person_id<>? AND iep_reference_id=?",
+                (task_id, account["account_id"], archive.get("student_id"), person_id, reference_id)).fetchone()
+            if shared is not None:
+                continue
+            changed = connection.execute(
+                "UPDATE demo2_dossier_references SET withdrawn_at=? WHERE reference_id=? AND task_id=? "
+                "AND owner_account_id=? AND COALESCE(withdrawn_at,'')=''",
+                (_iso(), reference_id, task_id, account["account_id"])).rowcount
+            if changed:
+                self._audit(connection, account["username"], "dossier_reference_withdrawn", "dossier_reference",
+                            reference_id, {"task_id": task_id, "reason": "person_removed_from_lesson"})
+                withdrawn.append(reference_id)
+        return withdrawn
 
     def _simple_person_preview(self, task, result, directory, evidence, bbox):
         """Higher-resolution viewing aid; never replace stored evidence or bindings."""
@@ -3217,7 +3799,10 @@ class Demo2StudentRecordStore:
         document = json.loads(raw)
         has_cache = bool(cache and cache["status"] == "completed")
         selected = cache["analysis"] if has_cache else document.get("simple_student_analysis")
-        presented = present_motion_analysis(selected)
+        from .demo2_person_filter import apply_person_filter, load_overrides
+        with self._connect() as connection:
+            overrides = load_overrides(connection, normalized_task_id)
+        presented = present_motion_analysis(apply_person_filter(selected, overrides))
         if has_cache or presented != selected:
             document["simple_student_analysis"] = presented
             encoded = _processing_json(document, max_bytes=MAX_PROCESSING_RESULT_BYTES)
@@ -3227,6 +3812,7 @@ class Demo2StudentRecordStore:
             exported = self._controlled_video_path(
                 cache_path.with_name(f"simple_export_{SIMPLE_ANALYSIS_VERSION}_{digest}.json"), "analysis")
             if not exported.is_file():
+                exported.parent.mkdir(parents=True, exist_ok=True)
                 temporary = self._controlled_video_path(exported.with_suffix(f".{uuid4().hex}.tmp"), "analysis")
                 try:
                     with temporary.open("x", encoding="utf-8") as handle:

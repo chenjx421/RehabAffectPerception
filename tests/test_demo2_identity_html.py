@@ -55,7 +55,9 @@ def test_upload_and_video_entry_distinguish_planning_from_confirmed_identity():
     video = render_video_review(TEACHER)
     assert "计划关注学生" in upload
     assert 'id="channelSelect"' in upload
-    assert "/demo2/students" not in upload
+    # The roster is reachable only through the shared teacher navigation, not
+    # from the upload workflow body itself.
+    assert upload.count("/demo2/students") == 1 and 'href="/demo2/students" id="studentRosterLink"' in upload
     assert "/demo2/identity?task_id=" in upload
     assert "确认画面中的学生" in upload and "查看视频证据" in upload
     assert "workspace?.available_students" not in upload
@@ -136,8 +138,12 @@ await context.route('**/*',async route=>{
  if(url.pathname==='/demo2/upload')return route.fulfill({contentType:'text/html',body:'<h1>测试上传入口</h1>'});
  if(url.pathname==='/demo2/login')return route.fulfill({contentType:'text/html',body:'<h1>测试登录入口</h1>'});
  if(url.pathname==='/demo2/simple-result')return route.fulfill({contentType:'text/html',body:'<h1 id="studentStatusResult">student-status-result</h1>'});
+ if(url.pathname.endsWith('/identity/debug-event'))return json({ok:true,event:{}});
+ if(url.pathname.endsWith('/ui/client-error'))return json({ok:true});
  if(url.pathname.endsWith('/identity/roster'))return json({ok:true,roster:rosterMissing?null:{scope_key:currentScope,school_context:currentSchoolContext,students,can_edit:canEdit&&rosterCanEdit}});
- if(url.pathname.endsWith('/school/context')){if(request.method()==='POST'){currentSchoolContext={...data};currentScope='scope-updated';rosterMissing=false;canConfirmSchool=['city','district','school_name'].every(key=>!!data[key]);}return json({ok:true,context:currentSchoolContext,options:[]});}
+ if(url.pathname.endsWith('/schools/regions')){const tree={'':[{code:'11',name:'测试省'}],'11':[{code:'1101',name:'测试城市'}],'1101':[{code:'110101',name:'测试区县'}]};return json({ok:true,regions:tree[url.searchParams.get('parent')||'']||[]});}
+ if(url.pathname.endsWith('/schools/search'))return json({ok:true,items:[],total:0,page:1,page_size:20,total_pages:1});
+ if(url.pathname.endsWith('/school/context')){if(request.method()==='POST'){const saved=data.selection_source==='manual'?{city:'测试城市',district:'测试区县',school_name:data.school_name}:{city:data.city,district:data.district,school_name:data.school_name};currentSchoolContext={...saved};currentScope='scope-updated';rosterMissing=false;canConfirmSchool=['city','district','school_name'].every(key=>!!saved[key]);}const ctx={city:'',district:'',school_name:'',...currentSchoolContext};return json({ok:true,context:ctx,details:{},options:[],selection_enabled:true,context_change_allowed:true,national_directory:{label:'全国学校目录（测试夹具）'}});}
  if(url.pathname.endsWith('/identity/task-school')){if(writeMode==='disconnect')return route.abort('internetdisconnected');if(writeMode==='stale'||data.expected_scope_key!==currentScope)return json({error:{message:'当前学校归属已变化，请刷新核对'}},409);assert.equal(needsSchoolConfirmation,true);assert.equal(data.confirmed,true);needsSchoolConfirmation=false;taskSchoolContext={...currentSchoolContext};taskScope=currentScope;return json({ok:true});}
  if(url.pathname.endsWith('/identity/workspace'))return workspaceStatus===200?json({ok:true,workspace:workspace()}):workspaceStatus===0?route.abort('internetdisconnected'):json({error:{message:workspaceStatus===409?'请刷新帧版本':'服务返回的具体错误'}},workspaceStatus);
  if(url.pathname.endsWith('/identity/frame')){const portrait=url.searchParams.get('frame_key')==='s1_f0';return route.fulfill({contentType:'image/svg+xml',body:`<svg xmlns="http://www.w3.org/2000/svg" width="${portrait?600:1280}" height="${portrait?900:720}"><rect width="100%" height="100%" fill="#eaf2fa"/><path d="M0 0L600 600M0 600L600 0" stroke="#cad7e6"/><text x="30" y="60" fill="#365779" font-size="22">TEST GEOMETRY FRAME (NOT CLASSROOM DATA)</text></svg>`});}
@@ -171,7 +177,8 @@ const selectRole=async role=>{await advanced();await page.locator('#personRole')
 const coordinateBox=async()=>{await advanced();for(const [id,value]of Object.entries({bboxX:'10',bboxY:'20',bboxWidth:'25',bboxHeight:'30'}))await page.locator('#'+id).fill(value);};
 const drawDraft=async()=>{await imageReady();await page.locator('#drawButton').click();await page.locator('#frameViewport').evaluate(el=>{el.scrollTop=0;el.scrollLeft=0;el.scrollIntoView({block:'center'});});const b=await page.locator('#frameImage').boundingBox();await page.mouse.move(b.x+b.width*.3,b.y+b.height*.2);await page.mouse.down();await page.mouse.move(b.x+b.width*.5,b.y+b.height*.4);await page.mouse.up();};
 const saved=async(count)=>{await page.waitForFunction(n=>document.getElementById('bindingSummary').textContent.includes(n+' 条确认'),count);await page.waitForFunction(()=>!document.getElementById('refreshWorkspace').disabled);};
-const postCalls=()=>calls.filter(c=>c.method==='POST');
+const postCalls=()=>calls.filter(c=>c.method==='POST'&&!c.path.endsWith('/identity/debug-event')&&!c.path.endsWith('/ui/client-error'));
+const debugEvents=()=>calls.filter(c=>c.path.endsWith('/identity/debug-event')).map(c=>c.data);
 const previewCalls=()=>calls.filter(c=>c.path.endsWith('/identity/preview'));
 const noOverflow=async()=>{const sizes=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth}));assert.ok(sizes.scroll<=sizes.width,JSON.stringify(sizes));};
 const capture=async name=>{if(input.screenshot_dir){fs.mkdirSync(input.screenshot_dir,{recursive:true});await page.screenshot({path:require('path').join(input.screenshot_dir,name+'.png'),fullPage:true});}};
@@ -229,7 +236,12 @@ def test_browser_student_default_and_direct_candidate_selection():
     assert.equal(await page.locator('#bboxX').inputValue(),'10');assert.equal(await page.locator('#saveBinding').isEnabled(),false);
     await page.locator('#studentSelect').selectOption('s2');await page.locator('#saveBinding').click();await saved(1);
     assert.equal(postCalls()[0].data.role,'student');assert.equal(postCalls()[0].data.student_id,'s2');assert.match(await page.locator('#pageMessage').textContent(),/测试同名.*继续选择下一人/);
-    assert.match(await page.locator('.roi.confirmed').textContent(),/B02/);assert.equal(await page.locator('#frameSelect').inputValue(),'0');
+    assert.equal(await page.locator('#identityToast').isVisible(),true);assert.match(await page.locator('#toastText').textContent(),/^已确认：测试同名（第 1 帧），已前往第 2 帧$/);
+    assert.equal(await page.locator('#frameSelect').inputValue(),'1');assert.equal(await page.locator('#guideStep1').getAttribute('data-state'),'current');
+    const confirmEvent=debugEvents().find(e=>e.operation==='identity_confirm');assert.equal(confirmEvent.result,'confirmed');assert.equal(confirmEvent.frame_index,1);assert.equal(confirmEvent.role,'student');assert.equal(confirmEvent.box_source,'candidate');
+    assert.ok(!JSON.stringify(debugEvents()).includes('测试同名'));assert.ok(debugEvents().some(e=>e.operation==='frame_advance'&&e.next_frame_index===2));
+    await page.locator('#toastStay').click();await imageReady();assert.equal(await page.locator('#frameSelect').inputValue(),'0');
+    assert.match(await page.locator('.roi.confirmed').textContent(),/B02/);
     assert.equal(await page.locator('#studentSelect').inputValue(),'');assert.equal(await page.locator('#saveBinding').isEnabled(),false);
     await capture('simple-student-desktop');await page.setViewportSize({width:320,height:900});await noOverflow();await capture('simple-student-320');
     """)
@@ -449,7 +461,8 @@ def test_browser_zoom_keeps_original_coordinates_and_supports_keyboard_touch():
     await page.locator('#clearSelection').click();await page.locator('#nextFrame').click();await chooseCandidate();await page.locator('#zoomIn').click();
     const image=await page.locator('#frameImage').boundingBox(),roi=await page.locator('.roi.selected').boundingBox();
     assert.ok(Math.abs(image.width/image.height-600/900)<.01);assert.ok(Math.abs(roi.height/image.height-.3)<.01);
-    await selectRole('unknown');await page.locator('#saveBinding').click();await saved(1);assert.equal(await page.locator('#frameSelect').inputValue(),'1');
+    await selectRole('unknown');await page.locator('#saveBinding').click();await saved(1);assert.equal(await page.locator('#frameSelect').inputValue(),'0');
+    assert.match(await page.locator('#toastText').textContent(),/已确认：身份未知（第 2 帧），已前往第 1 帧/);
     assert.equal(await page.locator('#zoomValue').textContent(),'100%');assert.equal(postCalls()[0].data.bbox.width,.25);
     """)
 
@@ -499,10 +512,11 @@ def test_browser_confirm_same_student_on_multiple_frames_and_revoke():
     assert.equal(await page.locator('#saveBinding').isEnabled(),false);
     assert.ok((await page.locator('#studentSelect').textContent()).includes('B02 · 二班'));
     await page.locator('#studentSelect').selectOption('s1');await page.locator('#saveBinding').click();await saved(1);
-    assert.equal(await page.locator('#frameSelect').inputValue(),'0');
+    assert.equal(await page.locator('#frameSelect').inputValue(),'1');
     assert.equal(postCalls()[0].data.student_id,'s1');assert.equal(postCalls()[0].data.frame_revision,'rev-1');assert.equal(postCalls()[0].data.bbox.x,.1);
     assert.ok(!(await page.locator('#bindingList').textContent()).includes('不可信的错误姓名'));
-    await page.locator('#nextFrame').click();await chooseCandidate();await selectRole('student');await page.locator('#studentSelect').selectOption('s1');await page.locator('#saveBinding').click();await saved(2);
+    await chooseCandidate();await selectRole('student');await page.locator('#studentSelect').selectOption('s1');await page.locator('#saveBinding').click();await saved(2);
+    assert.equal(await page.locator('#frameSelect').inputValue(),'1');assert.match(await page.locator('#toastText').textContent(),/所有采样帧都已有确认记录/);
     await page.reload();await saved(2);assert.equal(bindings.length,2);assert.equal(bindings[1].frame_key,'s1_f0');
     await page.locator('[data-revoke]').first().click();await page.locator('#cancelRevoke').click();assert.equal(postCalls().length,2);
     await page.locator('[data-revoke]').first().click();await page.locator('#confirmRevoke').click();assert.equal(postCalls().length,2);
@@ -685,7 +699,7 @@ def test_school_returntask_is_only_a_valid_task_id():
     html = render_school(TEACHER)
     assert "/^[A-Za-z0-9_-]{1,128}$/" in html
     assert "'/demo2/identity?task_id='+encodeURIComponent(returnTask)" in html
-    assert "location.assign(schoolNextUrl)" in html
+    assert "location.assign(nextUrl)" in html
     assert "/identity/task-school" not in html
     assert "不会自动补齐任务的学校记录" in html
 
@@ -703,13 +717,16 @@ def test_browser_school_confirmation_school_page_returns_without_confirming_vide
     assert.equal(await page.locator('#confirmTaskSchool').isEnabled(),false);assert.equal(await page.locator('#bindingFields').evaluate(el=>el.disabled),true);assert.equal(await page.locator('#saveBinding').isEnabled(),false);
     assert.match(await page.locator('#schoolConfirmationStatus').textContent(),/信息不完整/);assert.doesNotMatch(await page.locator('#schoolConfirmationStatus').textContent(),/当前任务不允许/);assert.equal(postCalls().length,0);
     await page.setViewportSize({width:320,height:820});await noOverflow();await page.locator('#completeSchoolLink').click();await page.waitForURL('**/demo2/school?returntask=task-1');
-    await page.waitForFunction(()=>!document.getElementById('schoolButton').disabled);await page.locator('#city').fill('测试城市');await page.locator('#district').fill('测试区县');await page.locator('#schoolName').fill('完整测试学校');
+    await page.waitForFunction(()=>!document.getElementById('schoolButton').disabled);await page.locator('#selectionSource').selectOption('manual');
+    await page.locator('#province').selectOption('11');await page.waitForFunction(()=>document.getElementById('city').options.length>1);await page.locator('#city').selectOption('1101');
+    await page.waitForFunction(()=>document.getElementById('district').options.length>1);await page.locator('#district').selectOption('110101');await page.locator('#schoolName').fill('完整测试学校');await page.locator('#confirmed').check();
     assert.ok((await page.locator('#schoolButton').textContent()).includes('返回视频身份确认'));await page.locator('#schoolButton').click();await page.waitForURL('**/demo2/identity?task_id=task-1');await candidatesReady();
     assert.equal(needsSchoolConfirmation,true);assert.equal(await page.locator('#confirmTaskSchool').isEnabled(),true);assert.equal(await page.locator('#saveBinding').isEnabled(),false);
     assert.ok((await page.locator('#confirmationSchoolName').textContent()).includes('完整测试学校'));assert.equal(postCalls().length,1);assert.ok(postCalls()[0].path.endsWith('/school/context'));
     for(const value of ['', '//external.test','../task-1','a'.repeat(129),'task-1&next=external']){
       await page.goto('http://identity.test/demo2/school?returntask='+encodeURIComponent(value));await page.waitForFunction(()=>!document.getElementById('schoolButton').disabled);
-      assert.equal(await page.locator('#schoolButton').textContent(),'进入课程工作台');await page.locator('#schoolButton').click();await page.waitForURL('http://identity.test/demo2/upload');
+      assert.equal(await page.locator('#schoolButton').textContent(),'保存学校信息');assert.equal(await page.locator('#continueLink').getAttribute('href'),'/demo2/upload');
+      await page.locator('#continueLink').click();await page.waitForURL('http://identity.test/demo2/upload');
     }
     assert.ok(!postCalls().some(c=>c.path.endsWith('/identity/task-school')));
     """)

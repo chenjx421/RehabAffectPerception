@@ -10,21 +10,26 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import threading
+import time
 from typing import Any
 from uuid import uuid4
 
+from .demo2_course_task_store import course_task_debug_event, course_task_stale_reasons
 from .demo2_identity_store import Demo2IdentityStore, IdentityError
 from .demo2_dossier_store import material_access_state
 from .demo2_iep_context import snapshot_report
+from .demo2_measurement_link import measurement_table_markdown, teacher_iep_section
 from .demo2_report_debug import report_debug_event
+from .demo2_ui_kit import BRAND_FULL_NAME
 from .evaluation_report_contract import generated_report_id, school_id_from_context
 from .student_record_store import _iso
 
 
 REPORT_PAGE_SIZE = 20
-STALE_MESSAGE = "报告已过期：生成后评分、视频版本或引用的学生资料授权已变化，请重新生成课堂报告后再查看或下载"
+STALE_MESSAGE = "报告已过期：生成后评分、视频版本、课程任务版本或引用的学生资料授权已变化，请重新生成课堂报告后再查看或下载"
 STATUS_LABELS = {"saved": "可下载", "evidence_pending": "证据待补充", "stale": "已过期"}
-ADMIN_REDACTED_KEYS = frozenset({"iep_links"})
+ADMIN_REDACTED_KEYS = frozenset({"iep_links", "iep_support", "iep_document_ref", "iep_points_index"})
 
 
 class ReportError(ValueError):
@@ -138,6 +143,9 @@ class Demo2ReportStore:
                 if current is None or current["status"] != "active" or current["version"] != version.get("version"):
                     reasons.append(f"{label}:{record_id}")
         reasons.extend(self._dossier_stale_reasons(connection, report))
+        # A newly confirmed course-task version replaces the goals this snapshot cited.
+        reasons.extend(course_task_stale_reasons(connection, row["owner_account_id"], row["course_id"],
+                                                 report.get("course_task")))
         return reasons
 
     @staticmethod
@@ -225,6 +233,8 @@ class Demo2ReportStore:
             "course_name": row["course_name"],
             "evaluation_id": _first(evaluation_ids),
             "evaluation_ids": evaluation_ids,
+            "course_task_doc_id": str((report.get("course_task") or {}).get("course_task_doc_id") or ""),
+            "course_task_version": (report.get("course_task") or {}).get("version"),
             "frame_revision": row["frame_revision"],
             "source_sha256": row["source_sha256"],
             "version_fingerprint": _fingerprint(row),
@@ -242,18 +252,81 @@ class Demo2ReportStore:
             "updated_at": row["updated_at"],
         }
 
-    def _payload_for_role(self, payload, *, admin, report_id=""):
-        """Keep dossier linkage out of company-admin report responses."""
+    def _payload_for_role(self, payload, *, admin, report_id="", row=None):
+        """Keep dossier linkage and student names out of company-admin report responses.
+
+        Company admins audit classroom reports but never see who the students
+        are: display names are replaced with neutral labels (学生1、学生2…) in
+        every string of the snapshot, so the Markdown/JSON downloads built from
+        the redacted payload carry no names either.
+        """
         if not admin:
-            return payload
+            return self._with_teacher_iep(payload, row)
         removed: list[str] = []
         result = _strip_keys(payload, ADMIN_REDACTED_KEYS, removed)
+        aliases = self._admin_student_aliases(result, row)
+        replaced = [0]
+        if aliases:
+            result = _replace_names(result, aliases, replaced)
         report_debug_event(
-            self.records, "report_admin_redact", "redacted" if removed else "nothing_to_redact",
+            self.records, "report_admin_redact",
+            "redacted" if removed or replaced[0] else "nothing_to_redact",
             report_id=report_id, role="company_admin", removed_fields=sorted(set(removed)),
-            removed_count=len(removed),
+            removed_count=len(removed), student_count=len(aliases),
+            pseudonymized_count=replaced[0],
         )
         return result
+
+    def _with_teacher_iep(self, payload, row):
+        """Teacher views/downloads re-attach the live, still-authorized IEP support chapter."""
+        if row is None or not isinstance(payload, dict) or not isinstance(payload.get("report"), dict):
+            return payload
+        report = payload["report"]
+        if not report.get("student_measurements"):
+            return payload
+        names = {s.get("student_id"): s.get("display_name") or "学生"
+                 for s in payload.get("students") or [] if isinstance(s, dict)}
+        section = teacher_iep_section(self.records, row["owner_account_id"], row["task_id"], names)
+        if section is None:
+            return payload
+        sections = [s for s in report.get("sections", []) if s.get("source") != "iep_support_points"]
+        anchor = next((i for i, s in enumerate(sections) if s.get("source") == "student_measurement"), len(sections) - 1)
+        sections.insert(anchor + 1, section)
+        report = {**report, "sections": sections,
+                  "character_count": sum(len(s.get("text", "")) for s in sections)}
+        if "full_text" in report:
+            report["full_text"] = "\n\n".join(s["title"] + "\n" + s["text"] for s in sections)
+        return {**payload, "report": report}
+
+    def _admin_student_aliases(self, payload, row) -> list[tuple[str, str]]:
+        """(display_name, 学生N) pairs, longest name first so substrings never win."""
+        names: list[str] = []
+        students = payload.get("students") if isinstance(payload, dict) else None
+        for item in students if isinstance(students, list) else []:
+            name = item.get("display_name") if isinstance(item, dict) else None
+            if isinstance(name, str) and name.strip() and name.strip() not in names:
+                names.append(name.strip())
+        student_ids = []
+        if row is not None:
+            try:
+                student_ids = [sid for sid in json.loads(row["student_ids_json"] or "[]")
+                               if isinstance(sid, str) and sid]
+            except (TypeError, ValueError, KeyError):
+                student_ids = []
+        if student_ids:
+            with self.records._connect() as connection:
+                if connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                                      "AND name='demo2_identity_students'").fetchone():
+                    placeholders = ",".join("?" for _ in student_ids)
+                    found = {r[0]: r[1] for r in connection.execute(
+                        f"SELECT student_id, display_name FROM demo2_identity_students "
+                        f"WHERE student_id IN ({placeholders})", student_ids)}
+                    for sid in student_ids:
+                        name = found.get(sid)
+                        if isinstance(name, str) and name.strip() and name.strip() not in names:
+                            names.append(name.strip())
+        aliases = [(name, f"学生{index}") for index, name in enumerate(names, start=1)]
+        return sorted(aliases, key=lambda pair: len(pair[0]), reverse=True)
 
     def _iep_document_ids(self, report) -> list[str]:
         """IEP versions named by the snapshot's iep_links; professional material is excluded."""
@@ -328,9 +401,14 @@ class Demo2ReportStore:
                 "report_scope": workspace.get("report_scope", ""),
             }
             existing = connection.execute(
-                "SELECT report_id FROM demo2_reports WHERE task_id = ? AND frame_revision = ?",
+                "SELECT * FROM demo2_reports WHERE task_id = ? AND frame_revision = ?",
                 (task_id, revision),
             ).fetchone()
+            # Freshness of the snapshot being replaced, so the page can say the
+            # report was rebuilt because its sources or scores changed.
+            previous_reasons = self._stale_reasons(connection, dict(existing)) if existing else []
+            if existing and not previous_reasons and existing["status"] == "stale":
+                previous_reasons = ["awaiting_regeneration"]
             now = _iso()
             actor_name = account.get("username") or account.get("account_id") or "unknown"
             if existing:
@@ -389,9 +467,19 @@ class Demo2ReportStore:
                 "SELECT * FROM demo2_reports WHERE report_id = ?", (report_id,)
             ).fetchone()
             meta = self._public_meta(dict(row))
+        meta["previous_stale"] = bool(previous_reasons)
+        meta["previous_stale_codes"] = stale_reason_codes(previous_reasons)
+        course_task = report.get("course_task") if isinstance(report.get("course_task"), dict) else None
+        if course_task:
+            course_task_debug_event(
+                self.records, "course_task_link_report", "regenerated" if existing else "created",
+                account_id=account["account_id"], course_id=meta["course_id"], task_id=task_id,
+                course_task_doc_id=course_task.get("course_task_doc_id"), version=course_task.get("version"),
+                goal_count=course_task.get("goal_count"), report_id=report_id, status=status)
         stats = meta["stats"]
         report_debug_event(
             self.records, "report_generate", "regenerated" if existing else "created",
+            previous_stale=bool(previous_reasons), stale_reasons=previous_reasons,
             report_id=report_id, content_report_id=meta["content_report_id"], task_id=task_id,
             course_id=meta["course_id"], evaluation_id=meta["evaluation_id"],
             evaluation_ids=evaluation_ids,
@@ -426,6 +514,48 @@ class Demo2ReportStore:
         report_debug_event(self.records, "report_list", "ok", task_id=task_id, role="teacher",
                            account_id=account["account_id"], report_count=len(reports))
         return {"reports": reports}
+
+    def teacher_task_reports(self, token, task_ids) -> dict[str, dict[str, Any]]:
+        """Latest report status per task for the teacher's 「我的课堂分析」 list.
+
+        Only the caller's own snapshots are read; freshness is re-checked so
+        an outdated report shows 「已过期」 before the teacher opens it.
+        """
+        account = self._account(token)
+        if not isinstance(task_ids, (list, tuple)) or len(task_ids) > 200:
+            raise ReportError(400, "invalid_request", "任务编号列表无效")
+        wanted = [item for item in task_ids
+                  if isinstance(item, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,120}", item)]
+        result: dict[str, dict[str, Any]] = {}
+        stale_count = 0
+        if wanted:
+            with self.records._connect() as connection:
+                placeholders = ",".join("?" for _ in wanted)
+                rows = connection.execute(
+                    f"SELECT * FROM demo2_reports WHERE owner_account_id = ? AND task_id IN ({placeholders}) "
+                    "ORDER BY generated_at DESC, rowid DESC",
+                    (account["account_id"], *wanted),
+                ).fetchall()
+                for row in rows:
+                    if row["task_id"] in result:
+                        continue
+                    row = dict(row)
+                    reasons = self._check_current(connection, row, role="teacher", operation="task_list")
+                    stale = bool(reasons) or row["status"] == "stale"
+                    stale_count += int(stale)
+                    result[row["task_id"]] = {
+                        "report_id": row["report_id"],
+                        "report_short": row["report_id"][:8],
+                        "status": "stale" if stale else row["status"],
+                        "status_label": STATUS_LABELS["stale"] if stale else STATUS_LABELS.get(row["status"], row["status"]),
+                        "stale": stale,
+                        "stale_codes": stale_reason_codes(reasons),
+                        "generated_at": row["generated_at"],
+                    }
+        report_debug_event(self.records, "analysis_task_list", "ok", role="teacher",
+                           account_id=account["account_id"], report_count=len(result),
+                           task_count=len(wanted), stale_count=stale_count)
+        return result
 
     def list_admin(self, token, *, page: int = 1) -> dict[str, Any]:
         account = self._account(token, admin=True)
@@ -484,6 +614,59 @@ class Demo2ReportStore:
                            account_id=account["account_id"], report_count=len(rows))
         return grouped
 
+    def admin_overview(self, token, task_id) -> dict[str, Any]:
+        """Company-admin 「课程总览」: read from the latest report snapshot only.
+
+        Admins never open the teacher workspace; the snapshot passes through the
+        same redaction as report views (学生1/学生2…, no iep_links), then student
+        codes, class names and teacher-side links are dropped as well.
+        """
+        from .demo2_course_overview import admin_view, short_id
+
+        account = self._account(token, admin=True)
+        if not isinstance(task_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,120}", task_id):
+            raise ReportError(400, "invalid_task", "课堂任务编号无效")
+        try:
+            with self.records._connect() as connection:
+                if connection.execute("SELECT 1 FROM video_analysis_tasks WHERE task_id=?", (task_id,)).fetchone() is None:
+                    raise ReportError(404, "task_unavailable", "课堂任务不存在或已删除")
+                row = connection.execute(
+                    "SELECT * FROM demo2_reports WHERE task_id = ? ORDER BY generated_at DESC, rowid DESC LIMIT 1",
+                    (task_id,),
+                ).fetchone()
+                if row is None:
+                    raise ReportError(404, "overview_unavailable", "教师尚未打开该课堂的分析页，暂无课程总览快照")
+                row = dict(row)
+                reasons = self._check_current(connection, row, role="company_admin", operation="course_overview")
+        except ReportError as exc:
+            report_debug_event(self.records, "course_overview_admin_view", str(exc.status), code=exc.code,
+                               role="company_admin", account_id=account["account_id"],
+                               task_id=task_id, task_short=short_id(task_id))
+            raise
+        payload = self._payload_for_role(json.loads(row["payload_json"] or "{}"), admin=True,
+                                         report_id=row["report_id"], row=row)
+        overview = (payload.get("report") or {}).get("course_overview")
+        if not isinstance(overview, dict):
+            report_debug_event(self.records, "course_overview_admin_view", "404", code="overview_unavailable",
+                               role="company_admin", account_id=account["account_id"], task_id=task_id,
+                               task_short=short_id(task_id), report_id=row["report_id"])
+            raise ReportError(404, "overview_unavailable", "该课堂报告生成于课程总览上线之前，请教师重新打开课堂分析页后再查看")
+        overview = admin_view(overview)
+        conclusion = overview.get("conclusion") or {}
+        with self.records._connect() as connection:
+            self.records._audit(connection, account["username"], "course_overview_admin_viewed",
+                                "demo2_report", row["report_id"], {"task_id": task_id})
+        report_debug_event(
+            self.records, "course_overview_admin_view", "stale" if reasons else "ok", role="company_admin",
+            account_id=account["account_id"], task_id=task_id, task_short=short_id(task_id),
+            report_id=row["report_id"], student_count=int(overview.get("student_count") or 0),
+            grade=(conclusion.get("grade") or {}).get("key") if conclusion.get("available") else "none",
+            stale=bool(reasons), viewer="company_admin",
+        )
+        return {"overview": overview, "report_id": row["report_id"], "report_short": row["report_id"][:8],
+                "generated_at": row["generated_at"], "stale": bool(reasons),
+                "stale_codes": stale_reason_codes(reasons)}
+
     def _load_current(self, token, report_id, operation):
         """Authorize, re-check freshness and return (account, admin, row).
 
@@ -514,7 +697,7 @@ class Demo2ReportStore:
         account, admin, role, row = self._load_current(token, report_id, "report_view")
         meta = self._public_meta(row)
         meta["payload"] = self._payload_for_role(
-            json.loads(row["payload_json"] or "{}"), admin=admin, report_id=row["report_id"]
+            json.loads(row["payload_json"] or "{}"), admin=admin, report_id=row["report_id"], row=row
         )
         if not admin:
             # Dossier linkage stays teacher-side, like iep_links.
@@ -528,14 +711,17 @@ class Demo2ReportStore:
         )
         return meta
 
-    def download(self, token, report_id, *, fmt: str = "md") -> tuple[str, str, str]:
-        if fmt not in {"md", "json"}:
-            raise ReportError(400, "invalid_format", "报告下载格式仅支持 md 或 json")
+    def download(self, token, report_id, *, fmt: str = "md") -> tuple[Any, str, str]:
+        """Word/PDF are the readable reports; md/json stay as data exports for technical staff."""
+        if fmt not in {"md", "json", "docx", "pdf"}:
+            raise ReportError(400, "invalid_format", "报告下载格式仅支持 docx、pdf、md 或 json")
         account, admin, role, row = self._load_current(token, report_id, "report_download")
         meta = self._public_meta(row)
         payload = self._payload_for_role(
-            json.loads(row["payload_json"] or "{}"), admin=admin, report_id=row["report_id"]
+            json.loads(row["payload_json"] or "{}"), admin=admin, report_id=row["report_id"], row=row
         )
+        if fmt in {"docx", "pdf"}:
+            return self._render_document(account, role, row, meta, payload, fmt, admin=admin)
         report = payload.get("report", {})
         stats = meta["stats"]
         if fmt == "json":
@@ -548,6 +734,8 @@ class Demo2ReportStore:
                     "course_id": row["course_id"], "course_name": row["course_name"],
                     "school_id": meta["school_id"],
                     "evaluation_id": meta["evaluation_id"],
+                    "course_task_doc_id": meta["course_task_doc_id"],
+                    "course_task_version": meta["course_task_version"],
                     "frame_revision": row["frame_revision"],
                     "version_fingerprint": meta["version_fingerprint"],
                     "status": meta["status"], "status_label": meta["status_label"],
@@ -556,6 +744,7 @@ class Demo2ReportStore:
                     "record_ids": json.loads(row["record_ids_json"] or "[]"),
                     "evaluation_ids": json.loads(row["evaluation_ids_json"] or "[]"),
                     "generated_at": row["generated_at"], "report": report,
+                    "platform": BRAND_FULL_NAME,
                     "boundary": "本报告用于课堂教育支持复盘，不构成医学诊断、学生能力定级或教师绩效结论。",
                 },
                 ensure_ascii=False, indent=2,
@@ -563,9 +752,11 @@ class Demo2ReportStore:
             filename = f"report_{row['report_id']}.json"
             content_type = "application/json; charset=utf-8"
         else:
-            lines = [f"# {row['title']}", "", f"报告ID：{row['report_id']}"]
+            lines = [f"# {row['title']}", "", f"> {BRAND_FULL_NAME} · 课堂观察报告", "", f"报告ID：{row['report_id']}"]
             lines.append(f"课程ID：{row['course_id']} · 任务ID：{row['task_id']}"
                          + (f" · 评价ID：{meta['evaluation_id']}" if meta["evaluation_id"] else ""))
+            if meta["course_task_doc_id"]:
+                lines.append(f"课程任务ID：{meta['course_task_doc_id']} · 课程任务版本：{meta['course_task_version']}")
             lines.append(f"生成时间：{row['generated_at']} · 版本：{meta['version_fingerprint']}")
             lines.append(f"正文 {meta['character_count']} 字符 · {row['engine']}")
             lines.append(f"关联学生：{stats['students']} 名 · 已复核目标：{stats['reviewed']} 条 · "
@@ -581,13 +772,37 @@ class Demo2ReportStore:
                 lines.append("")
                 lines.append("不同学生、目标与支持条件不合并排名。6分为试行参考线；空缺不是0分。")
                 lines.append("")
-            for section in report.get("sections", []):
+            course_goals = (report.get("course_task") or {}).get("goals") or []
+            measurement_rows = report.get("student_measurements") or []
+            student_names = {s.get("student_id"): s.get("display_name") or "学生"
+                             for s in payload.get("students") or [] if isinstance(s, dict)}
+            for section in [*(report.get("lead_sections") or []), *report.get("sections", [])]:
+                lines.append(f"## {section.get('title', '')}")
+                lines.append("")
+                lines.append(section.get("text", ""))
+                lines.append("")
+                if section.get("source") == "course_task" and course_goals:
+                    lines.append("| 目标编号 | 目标描述 | 通过标准 | 关联/已复核/达标 | 达成情况 |")
+                    lines.append("| --- | --- | --- | --- | --- |")
+                    for goal in course_goals:
+                        cells = [str(goal.get("goal_code", "")), str(goal.get("description", "")),
+                                 str(goal.get("pass_criteria", "") or "未填写"),
+                                 f"{goal.get('record_count', 0)}/{goal.get('reviewed_count', 0)}/{goal.get('passed_count', 0)}",
+                                 str(goal.get("achievement_label", ""))]
+                        lines.append("| " + " | ".join(c.replace("|", "／").replace("\n", " ") for c in cells) + " |")
+                    lines.append("")
+                if section.get("source") == "student_measurement" and measurement_rows:
+                    lines.extend(measurement_table_markdown(measurement_rows, student_names))
+                    lines.append("")
+            for section in report.get("appendix_sections") or []:
                 lines.append(f"## {section.get('title', '')}")
                 lines.append("")
                 lines.append(section.get("text", ""))
                 lines.append("")
             lines.append("---")
             lines.append("本报告用于课堂教育支持复盘，不构成医学诊断、学生能力定级或教师绩效结论。")
+            lines.append("")
+            lines.append(f"由 {BRAND_FULL_NAME} 生成 · {row['generated_at']}")
             text = "\n".join(lines)
             filename = f"report_{row['report_id']}.md"
             content_type = "text/markdown; charset=utf-8"
@@ -598,6 +813,70 @@ class Demo2ReportStore:
             account_id=account["account_id"], fmt=fmt, status=meta["status"],
         )
         return text, filename, content_type
+
+
+    def _render_document(self, account, role, row, meta, payload, fmt, *, admin):
+        from .demo2_report_render import (CONTENT_TYPES, RendererUnavailable, classroom_filename,
+                                          classroom_report_model, render)
+
+        common = dict(report_id=row["report_id"], task_id=row["task_id"], role=role, fmt=fmt,
+                      account_id=account["account_id"], version_fingerprint=meta["version_fingerprint"])
+        report_debug_event(self.records, "report_render_start", "started", **common)
+        started = time.monotonic()
+        try:
+            model = classroom_report_model(payload, meta, admin=admin)
+            data, info = render(model, fmt)
+        except RendererUnavailable as exc:
+            report_debug_event(self.records, "report_render_failed", "renderer_unavailable",
+                               code="report_renderer_unavailable", message=exc.package,
+                               duration_ms=_elapsed_ms(started), **common)
+            raise ReportError(503, "report_renderer_unavailable",
+                              f"服务器暂未安装{'PDF' if fmt == 'pdf' else 'Word'}报告生成组件，"
+                              + ("请改用「下载 Word 报告」" if fmt == "pdf" else "请稍后重试或联系管理员")) from None
+        except Exception as exc:  # any renderer bug becomes a logged 500, never a half-written file
+            report_debug_event(self.records, "report_render_failed", "failed", code="report_render_failed",
+                               message=type(exc).__name__, duration_ms=_elapsed_ms(started), **common)
+            raise ReportError(500, "report_render_failed", "报告文件生成失败，请稍后重试或改用其他格式") from None
+        filename = classroom_filename(payload, meta, fmt)
+        report_debug_event(
+            self.records, "report_render_done", "ok", byte_size=info["byte_size"], page_count=info.get("page_count"),
+            image_count=info.get("image_count"), section_count=len(model.headings()),
+            student_count=len(payload.get("students") or []), duration_ms=_elapsed_ms(started),
+            font=info.get("font"), **common)
+        report_debug_event(
+            self.records, "report_download", "ok", evaluation_id=meta["evaluation_id"],
+            frame_revision=row["frame_revision"], status=meta["status"], byte_size=info["byte_size"],
+            page_count=info.get("page_count"), **common)
+        # Per-thread so the HTTP layer can add page count / duration to admin_debug without a shared race.
+        _RENDER_INFO.value = {"fmt": fmt, "byte_size": info["byte_size"], "page_count": info.get("page_count"),
+                              "duration_ms": _elapsed_ms(started)}
+        return data, filename, CONTENT_TYPES[fmt]
+
+
+_RENDER_INFO = threading.local()
+
+
+def last_render_info() -> dict[str, Any]:
+    """Size/page/duration of the last Word/PDF rendered on this thread (empty for md/json)."""
+    return dict(getattr(_RENDER_INFO, "value", None) or {})
+
+
+def clear_render_info() -> None:
+    _RENDER_INFO.value = None
+
+
+def _elapsed_ms(started: float) -> int:
+    return int(round((time.monotonic() - started) * 1000))
+
+
+def stale_reason_codes(reasons) -> list[str]:
+    """Reason categories only (no record/document ids) for page display."""
+    codes: list[str] = []
+    for reason in reasons or []:
+        code = str(reason).split(":", 1)[0]
+        if code and code not in codes:
+            codes.append(code)
+    return codes
 
 
 def _first(values) -> str:
@@ -643,6 +922,22 @@ def _strip_keys(value, keys, removed):
         return result
     if isinstance(value, list):
         return [_strip_keys(item, keys, removed) for item in value]
+    return value
+
+
+def _replace_names(value, aliases, replaced):
+    """Deep-copy ``value`` with each display name swapped for its neutral label."""
+    if isinstance(value, dict):
+        return {key: _replace_names(item, aliases, replaced) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_replace_names(item, aliases, replaced) for item in value]
+    if isinstance(value, str):
+        text = value
+        for name, alias in aliases:
+            if name in text:
+                replaced[0] += text.count(name)
+                text = text.replace(name, alias)
+        return text
     return value
 
 
