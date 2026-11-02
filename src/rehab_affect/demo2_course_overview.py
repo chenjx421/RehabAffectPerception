@@ -277,11 +277,14 @@ def _goal_table(goals: list[dict[str, Any]], rows: list[dict[str, Any]]) -> list
         code = goal.get("goal_code") or ""
         scores = [row["goal_scores"][code] for row in rows if code in row["goal_scores"]]
         achieved = sum(1 for value in scores if value >= PASS_SCORE)
+        # No reviewed measurement is "not measured", not "everyone failed".
+        measured = bool(scores)
         table.append({"goal_code": code, "description": _excerpt(goal.get("description"), 80),
                       "pass_criteria": _excerpt(goal.get("pass_criteria"), 80),
                       "achieved": achieved, "reviewed_students": len(scores), "included": len(rows),
-                      "ratio": _round(achieved / len(rows), 3) if rows else None,
-                      "label": (f"{achieved}/{len(rows)} 名学生达成" if rows else "暂无纳入学生")})
+                      "ratio": (_round(achieved / len(rows), 3) if measured and rows else None),
+                      "label": ((f"{achieved}/{len(rows)} 名学生达成" if measured else "暂无已复核测量")
+                                if rows else "暂无纳入学生")})
     return table
 
 
@@ -320,7 +323,8 @@ def _pool(indicators: dict[str, Any], goals: list[dict[str, Any]], coverage: dic
                                "href": f"#ov-item-{item['id']}", "href_label": "查看条目分",
                                "source_href": evaluation_href, "source_label": "打开课程评价"}})
     for goal in goals:
-        if not goal["included"]:
+        if not goal["included"] or not goal["reviewed_students"]:
+            # Unmeasured goals are a to-do, not a weakness in this lesson.
             continue
         value = goal["achieved"] / goal["included"] * 100
         pool.append({"kind": "goal", "key": goal["goal_code"], "group": "goal:" + goal["goal_code"],

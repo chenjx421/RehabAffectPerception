@@ -980,9 +980,14 @@ class _Candidates:
         mine = self._bigrams(value)
         if len(mine) < 3:
             return None
+        mine_number = _numbered_goal(value)
         best, best_score = None, 0.0
         for item in self.items:
             if item["field"] != field or item.get("same_goal_as") or item["source"]["block_id"] == "":
+                continue
+            theirs_number = _numbered_goal(item["original_text"])
+            if mine_number is not None and theirs_number is not None and mine_number != theirs_number:
+                # 1. 能… and 2. 能… are distinct objectives even when the wording is close.
                 continue
             theirs = self._bigrams(item["original_text"])
             if len(theirs) < 3:
@@ -1036,11 +1041,50 @@ def _header_fields(labels: _Labels, row: dict[int, dict[str, Any]]) -> dict[int,
     return {} if alternating else mapped
 
 
+_HEADER_SUFFIX = re.compile(r"(方式|标准|条件|目标|内容|评价|方法|要求|维度|备注|说明|指标|项目)$")
+
+
+def _header_like(value: str) -> bool:
+    """Short column captions such as 支持方式/通过标准 are headers, not values."""
+    text = unicodedata.normalize("NFKC", value or "").strip()
+    return 0 < len(text) <= 8 and bool(_HEADER_SUFFIX.search(text))
+
+
+def _numbered_goal(value: str) -> int | None:
+    """Ordinal of ``1. …`` / ``目标2：…``; None for unnumbered table-row goals."""
+    raw = unicodedata.normalize("NFKC", value or "").strip()
+    marker = _LIST_MARKER.match(raw)
+    if marker:
+        token = re.sub(r"[^0-9一二三四五六七八九十百a-zA-Z]", "", marker.group(0))
+        number = ordinal_number(token)
+        if number is not None:
+            return number
+    head = re.split(r"[:：]", match_key(value), maxsplit=1)[0]
+    match = _NUMBERED_LABEL.match(head)
+    return ordinal_number(match.group(2)) if match else None
+
+
 def _table_candidates(block: dict[str, Any], collector: _Candidates, labels: _Labels,
                       section: str | None) -> str | None:
     grid: dict[int, dict[int, dict[str, Any]]] = {}
     for cell in block["cells"]:
         grid.setdefault(cell["row"], {})[cell["col"]] = cell
+    # A "目标 | 支持方式" caption row is a header even when the second caption is
+    # not a recognised course-task field; its rows are the real goals.
+    if len(grid) >= 2 and not _header_fields(labels, grid[min(grid)]):
+        first_row = min(grid)
+        first_cells = grid[first_row]
+        first_cols = sorted(first_cells)
+        if len(first_cols) >= 2:
+            goal_field = labels.exact(first_cells[first_cols[0]]["text"])
+            if goal_field in _GOAL_FIELDS and _header_like(first_cells[first_cols[1]]["text"]):
+                for row_number in sorted(r for r in grid if r > first_row):
+                    row = grid[row_number]
+                    goal_cell = row.get(first_cols[0])
+                    if goal_cell and goal_cell["text"].strip():
+                        collector.add_values(goal_field, goal_cell["text"], block, 0.85,
+                                             method="table_header_goal", cell=goal_cell)
+                return None
     header_row = None
     header_fields: dict[int, str] = {}
     for row_number in sorted(grid)[:3]:

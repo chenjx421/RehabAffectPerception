@@ -929,8 +929,14 @@ def classroom_report_model(payload: dict[str, Any], meta: dict[str, Any], *, adm
             model.para(conclusion.get("note"), "note")
     else:
         missing = conclusion.get("missing") if isinstance(conclusion.get("missing"), list) else []
+        missing_texts = []
+        for item in missing:
+            text = item.get("text") if isinstance(item, dict) else item
+            text = plain(text)
+            if text:
+                missing_texts.append(text)
         if overview:
-            model.para("课程结论暂未生成：" + ("、".join(plain(m) for m in missing) or "缺少已核对的课程评价或已复核测量")
+            model.para("课程结论暂未生成：" + ("、".join(missing_texts) or "缺少已核对的课程评价或已复核测量")
                        + "。完成后重新打开课堂分析页即可更新报告。", "warn")
         overview_section = next((s for s in report.get("sections") or []
                                  if isinstance(s, dict) and s.get("source") == "course_overview"), None)
