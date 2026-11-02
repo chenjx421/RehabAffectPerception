@@ -310,9 +310,12 @@ def face_in_seat(face, anchor, roi):
     """
     x, y = center(face["bbox"])
     ax, ay = center(anchor)
+    manual = bool(os.getenv("REHAB_DEMO2_TRACKING_MANUAL_SEATS", "").strip())
+    x_tolerance = max(.08, anchor["width"]*3.0) if manual else max(.12, anchor["width"]*4.0)
+    y_tolerance = max(.075, anchor["height"]*1.2) if manual else max(.12, anchor["height"]*3.5)
     return (roi["x"] <= x <= roi["x"]+roi["width"]
-            and abs(x-ax) <= max(.12, anchor["width"]*4.0)
-            and abs(y-ay) <= max(.12, anchor["height"]*3.5)
+            and abs(x-ax) <= x_tolerance
+            and abs(y-ay) <= y_tolerance
             and .30 <= face["bbox"]["width"]/max(anchor["width"], 1e-6) <= 3.5)
 
 
@@ -380,6 +383,26 @@ def _initial_face_set(observations):
                                  "sample_indices": {sample_index}})
     recurring = sorted((cluster for cluster in clusters if len(cluster["members"]) >= 2),
                        key=lambda cluster: (cluster["x"], cluster["y"]))[:_candidate_cap()]
+    # Front-row students are often seen in profile or partially occluded, so
+    # they recur less often than the stable adults behind them.  Keep up to
+    # three large faces in the lower half of the frame as student candidates
+    # instead of letting the opening interval select only background staff.
+    if len(recurring) < _candidate_cap():
+        foreground = sorted(
+            (cluster for cluster in clusters
+             if len(cluster["members"]) >= 2 and cluster["y"] >= .45),
+            key=lambda cluster: (-cluster["width"], cluster["x"]),
+        )
+        added = 0
+        for cluster in foreground:
+            if added >= 3 or len(recurring) >= _candidate_cap():
+                break
+            if any(abs(cluster["x"] - item["x"]) <= .06 and abs(cluster["y"] - item["y"]) <= .09
+                   for item in recurring):
+                continue
+            recurring.append(cluster)
+            added += 1
+        recurring.sort(key=lambda cluster: (cluster["x"], cluster["y"]))
     if len(recurring) < 2:
         return None
 
@@ -741,6 +764,31 @@ def present_motion_analysis(analysis):
     return result
 
 
+def _manual_seats() -> list[dict[str, float]]:
+    """Optional fixed seat boxes (normalized) for a teacher-confirmed 3-seat demo."""
+    raw = os.getenv("REHAB_DEMO2_TRACKING_MANUAL_SEATS", "").strip()
+    if not raw:
+        return []
+    try:
+        values = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(values, list) or not 1 <= len(values) <= MAX_PERSONS:
+        return []
+    seats = []
+    for value in values:
+        if not isinstance(value, dict):
+            return []
+        box = {key: value.get(key) for key in ("x", "y", "width", "height")}
+        if any(type(number) not in (int, float) or not math.isfinite(number) for number in box.values()):
+            return []
+        if (box["x"] < 0 or box["y"] < 0 or box["width"] <= 0 or box["height"] <= 0
+                or box["x"] + box["width"] > 1 or box["y"] + box["height"] > 1):
+            return []
+        seats.append({key: float(number) for key, number in box.items()})
+    return sorted(seats, key=lambda item: item["x"])
+
+
 def analyze(request, detector=None):
     import cv2
     import numpy as np
@@ -762,11 +810,38 @@ def analyze(request, detector=None):
     initial = None
     faces = []
     best_initial_rank = None
+    manual_seats = _manual_seats()
+    if manual_seats:
+        # Teacher-confirmed seats bypass the recurring-face heuristic: side
+        # profiles and front-row occlusion otherwise lose to stable adults.
+        for sample in samples[::15][:16]:
+            candidate_image = _read(root, sample["frame"])
+            if candidate_image is None:
+                continue
+            detected = detector(candidate_image)
+            detection_count += 1
+            hits = sum(1 for face in detected
+                       if any(abs(center(face["bbox"])[0] - box["x"] - box["width"] / 2) <= .06
+                              and abs(center(face["bbox"])[1] - box["y"] - box["height"] / 2) <= .09
+                              for box in manual_seats))
+            if hits >= max(2, len(manual_seats) // 2):
+                initial = candidate_image
+                anchor_time = float(sample["time"])
+                break
+        if initial is None:
+            for sample in samples:
+                candidate_image = _read(root, sample["frame"])
+                if candidate_image is not None:
+                    initial, anchor_time = candidate_image, float(sample["time"])
+                    break
+        if initial is None:
+            return unavailable("no_video_samples")
+        faces = [{"bbox": dict(box), "score": 1.0, "source": "manual_seat"} for box in manual_seats]
     detection_count = 0
     opening_observations = []
     # Do not freeze the first blurry frame.  Search a short opening interval
     # and prefer candidates that recur, rather than one accidental high score.
-    for sample in samples[:INITIAL_SEARCH_SAMPLES:3]:
+    for sample in ([] if manual_seats else samples[:INITIAL_SEARCH_SAMPLES:3]):
         candidate_image = _read(root, sample["frame"])
         if candidate_image is None:
             continue
@@ -786,10 +861,42 @@ def analyze(request, detector=None):
             faces, initial = candidates, candidate_image
             anchor_time = float(sample["time"])
             best_initial_rank = rank
-    recurring = _initial_face_set(opening_observations)
+    recurring = None if manual_seats else _initial_face_set(opening_observations)
     if recurring is not None:
         faces, initial, anchor_time, _ = recurring
-    if not faces:
+    # Foreground students often appear after the first two minutes or turn
+    # sideways while the teacher speaks.  Scan later samples for up to three
+    # large, lower-half faces and keep them as fixed-seat anchors as well.
+    if faces and not manual_seats:
+        existing_centers = [center(face["bbox"]) for face in faces]
+        additions = []
+        for sample in samples[::15][:48]:
+            candidate_image = _read(root, sample["frame"])
+            if candidate_image is None:
+                continue
+            detected = detector(candidate_image)
+            detection_count += 1
+            for face in detected:
+                cx, cy = center(face["bbox"])
+                if cy < .45 or face["bbox"]["width"] < .02:
+                    continue
+                if any(math.dist((cx, cy), other) < .055 for other in existing_centers):
+                    continue
+                if any(math.dist((cx, cy), center(item[0]["bbox"])) < .055 for item in additions):
+                    continue
+                additions.append((face, sample, candidate_image))
+            if len(additions) >= 8:
+                break
+        additions.sort(key=lambda item: (-item[0]["bbox"]["width"], item[0]["bbox"]["x"]))
+        picked = []
+        for face, _, _ in additions:
+            if any(abs(center(face["bbox"])[0] - center(other["bbox"])[0]) <= .05 for other in picked):
+                continue
+            picked.append(face)
+            if len(picked) >= 3:
+                break
+        faces = faces + picked
+    if not faces and not manual_seats:
         # A title slide or empty classroom at the start is not the whole lesson.
         for sample in samples[INITIAL_SEARCH_SAMPLES::15]:
             candidate_image = _read(root, sample["frame"])

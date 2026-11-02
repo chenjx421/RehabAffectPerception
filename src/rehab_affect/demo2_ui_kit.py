@@ -626,7 +626,7 @@ TEACHER_NAV: tuple[tuple[str, str, str, str], ...] = (
     ("upload", "上传任务", "/demo2/upload", "rxNavUpload"),
     ("students", "学生名册", "/demo2/students", "studentRosterLink"),
     ("measurement", "学生测量", "/demo2/measurement", "rxNavMeasurement"),
-    ("evaluation", "课程评价", "/demo2/evaluation", "rxNavEvaluation"),
+    ("evaluation", "评课", "/demo2/evaluation", "rxNavEvaluation"),
     ("capture", "课堂录制", "/demo2/capture", "rxNavCapture"),
     ("school", "学校信息", "/demo2/school", "rxNavSchool"),
     ("membership", "会员中心", "/demo2/membership", "membershipLink"),

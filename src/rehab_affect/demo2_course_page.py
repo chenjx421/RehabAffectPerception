@@ -59,12 +59,11 @@ body.no-task .layout{grid-template-columns:minmax(0,1fr);max-width:1180px}body.n
 </style></head><body>
 <header><strong>课堂观察工作台</strong><nav><a href="/demo2/upload">课堂视频</a><a href="/demo2/students">学生名册</a><a href="/demo2/measurement">长期测量</a></nav></header>
 <div class="layout"><aside id="taskAside"><small>本课更多操作</small>
-<div class="aside-links"><a id="supportLink">教学支持与上传测试</a><a id="batchLink">同课多视频汇总</a><a id="identityLink">确认学生身份</a><a id="dossierLink">课程关联资料</a><a id="courseEvalLink" href="/demo2/evaluation">为本课做课程评价</a><a href="/demo2/capture">录制新课堂</a></div></aside>
+<div class="aside-links"><a id="supportLink">教学支持与上传测试</a><a id="batchLink">同课多视频汇总</a><a id="identityLink">确认学生身份</a><a id="dossierLink">课程关联资料</a><a id="courseEvalLink" href="/demo2/evaluation">为本课评课</a><a href="/demo2/capture">录制新课堂</a></div></aside>
 <main><div class="heading"><div><div class="subtle" id="school">课堂复核与分析</div><h1 id="title">选择课堂视频</h1><div class="subtle" id="scope"></div></div><div class="actions"><a class="button" id="batchTopLink" hidden>同课多视频汇总</a><a class="button" href="/demo2/analysis">切换视频</a><button id="refresh">刷新结果</button></div></div>
 <div id="message" role="status" aria-live="polite"></div><section id="picker" class="picker" hidden aria-labelledby="pickerTitle"><div class="picker-head"><div><h2 id="pickerTitle">课堂视频列表</h2><p class="subtle">只列出当前账号在本学校上传的课堂视频。点击「查看分析」进入学生状态、片段复核和图文报告。</p></div><a class="rx-btn rx-btn-primary" href="/demo2/upload">上传新课堂</a></div>
 <div class="picker-tools"><label>查找课程或文件<input type="search" id="taskSearch" placeholder="输入课程名或文件名" autocomplete="off"></label><p id="taskCount" class="subtle" role="status" aria-live="polite"></p></div><div id="taskList" class="task-list"></div>
 <details class="legacy-note" id="legacyNote"><summary>旧版历史分析资料去哪了？</summary><p>旧版「历史全局案例」中的课堂、群像、个体分析与报告资料<strong>未迁移、未分配给任何账号，也未删除</strong>，源数据完整保留。</p><p>由于旧资料没有建立账号、学生与授权之间的对应关系，暂不在线开放。如需继续使用，请先核对正确学生及学校授权，再通过<a href="/demo2/students">学生档案</a>重新导入。<strong>仅凭姓名不能关联历史资料。</strong></p></details></section>
-<nav class="quick-links" id="courseLinks" hidden aria-label="本课操作"><a id="supportTopLink">教学支持与下次改进</a><a id="identityTopLink">学生对应</a><a id="dossierTopLink">本课资料</a><a id="safetyTopLink">提交安全核查</a></nav>
 <div class="analysis-tabs rx-tabs" id="analysisTabs" role="tablist" aria-label="分析视图" hidden>
 <button class="rx-tab" type="button" role="tab" id="tab-overview" aria-selected="true" aria-controls="overview" data-tab="overview">课程总览</button>
 <button class="rx-tab" type="button" role="tab" id="tab-group" aria-selected="false" aria-controls="group" data-tab="group" tabindex="-1">群像概览</button>
@@ -201,7 +200,7 @@ function filterRecords(){if(!work)return;const v=$('reviewFilter').value;const r
 $('reviewFilter').onchange=filterRecords;const originalRender=render;render=()=>{originalRender();filterRecords();};
 $('refresh').onclick=()=>{if(canDiscard()){clearWithoutConfirm();load().catch(e=>message(e.message));}};
 function clearWithoutConfirm(){originalClear();markDirty(false);}
-for(const [id,route]of [['supportTopLink','teaching-support'],['identityTopLink','identity'],['dossierTopLink','course-dossier'],['safetyTopLink','safety']])$(id).href=taskId?'/demo2/'+route+'?task_id='+encodeURIComponent(taskId):'#picker';$('courseLinks').hidden=!taskId;
+
 function goalKey(v){return String(v||'').normalize('NFKC').trim().toUpperCase();}
 function courseGoals(){return (work&&work.course_task&&work.course_task.goals)||[];}
 function goalTag(r){const g=courseGoals().find(g=>goalKey(g.goal_code)===goalKey(r.goal_id));return g?`<span class="goal-tag" title="${esc(g.description)}">与目标 ${esc(g.goal_code)} 相关的片段</span>`:'';}

@@ -83,7 +83,7 @@ def test_every_teacher_page_has_one_shared_navigation(name):
     assert html.count('class="rx-header"') == 1
     assert html.count('<nav class="rx-nav"') == 1
     assert not re.search(r'class="(?:workspace-nav|site-header|topbar|entry-header)', html)
-    assert _nav_labels(html) == ["首页", "上传任务", "学生名册", "学生测量", "课程评价", "课堂录制",
+    assert _nav_labels(html) == ["首页", "上传任务", "学生名册", "学生测量", "评课", "课堂录制",
                                  "学校信息", "会员中心", "使用帮助"]
     assert re.findall(r'data-rx-nav-key="(\w+)" aria-current="page"', html) == [active]
     assert 'aria-controls="rxNavPanel"' in html and 'aria-label="打开导航菜单"' in html

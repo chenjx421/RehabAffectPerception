@@ -588,7 +588,7 @@ def build_home_summary(records: Any, token: str, account: dict[str, Any], source
     pending_measurements = [item for item in measurements
                             if item.get("reviewed") is not True or item.get("evidence_status") == "needs_reconfirmation"]
     evaluation_task = _safe_id((checked_tasks or [{}])[0].get("task_id"))
-    secondary = {"label": "为本课做课程评价",
+    secondary = {"label": "为本课评课",
                  "href": _query("/demo2/evaluation", task_id=evaluation_task) if evaluation_task else "/demo2/evaluation"}
     assessment_count = (f"测量 {len(measurements)} 条（待复核 {len(pending_measurements)}）"
                         f" · 课程评价 {len(evaluations)} 条")

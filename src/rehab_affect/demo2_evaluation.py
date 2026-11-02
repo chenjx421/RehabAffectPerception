@@ -7,6 +7,7 @@ from .demo2_portal import _document, _WORKSPACE_STYLE, _account_payload
 from .demo2_score_basis_ui import SCORE_BASIS_CSS, SCORE_BASIS_JS
 from .demo2_ui_kit import UI_DRAFT_STORE_JS, teacher_header
 from .score_basis import evaluation_rubric_detail
+from .assessment_rubric import DIMENSION_LABELS, DIMENSION_WEIGHTS, RUBRIC_VERSION
 
 _API = "/api/v1/demo2"
 
@@ -1187,9 +1188,15 @@ def render_evaluation(account: Any | None = None) -> str:
         + '<main id="mainContent" class="page-shell">'
         '<div class="page-heading eval-heading"><div>'
         '<span class="eyebrow">教师工作台</span>'
-        '<h1>课程评价</h1>'
-        '<p class="lead">课堂双轨评价：按学校「课堂教学基本评价指标」4 个类目、10 个条目给整节课评分，'
+        '<h1>评课</h1>'
+        '<p class="lead">课堂教学双轨评价：按学校「课堂教学基本评价指标」4 个类目、10 个条目给整节课评分，'
         '学校分由教师录入，系统建议分按本课数据预填并附依据。不涉及学生个体能力评分。</p>'
+        '<details class="rubric-note" id="evalRubricNote">'
+        '<summary>本次评课引用的测量口径（' + RUBRIC_VERSION + '）</summary>'
+        '<p>学生测量采用 10 分制，四维权重：' + '、'.join(f'{label} {round(weight*100)}%' for label, weight in zip(DIMENSION_LABELS.values(), DIMENSION_WEIGHTS.values())) + '。'
+        '教师完成复核、四个维度均有有效分且观察机会不少于 2 次，才生成综合分；未观察的维度留空，不按 0 分计入。'
+        '<a href="/demo2/measurement">查看完整量表与评分标准</a></p>'
+        '</details>'
         '</div></div>'
         '<div id="pageMsg" class="page-msg" role="alert" aria-live="polite"></div>'
         '<div class="eval-layout">'
