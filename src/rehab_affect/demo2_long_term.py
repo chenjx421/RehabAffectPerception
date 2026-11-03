@@ -9,6 +9,8 @@ import html
 from collections import OrderedDict
 
 from .demo2_ui_kit import teacher_header
+from .demo2_portal import _COMMON_STYLE, _WORKSPACE_STYLE
+from .demo2_ui_kit import UI_KIT_SCRIPT, UI_KIT_STYLE
 
 
 def _e(value) -> str:
@@ -98,7 +100,8 @@ def render_long_term(account, token: str, student_id: str, workspace: dict, iep:
 def _shell(account, body: str) -> str:
     header = teacher_header("measurement", account, page="measurement")
     return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>长期观测 · WeGlow</title><style>
+<title>长期观测 · WeGlow</title><style>{_COMMON_STYLE}{_WORKSPACE_STYLE}
+
 :root{{--ink:#172b4d;--muted:#5f7186;--line:#dbe5ef;--blue:#1f63c6;--blue-pale:#eef5ff;--ok:#0d6042;--warn:#8a4b00;--bg:#f6f8fb}}
 *{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}}
 .page-shell{{width:min(1120px,calc(100% - 32px));margin:0 auto;padding:28px 0 60px}}
@@ -112,4 +115,4 @@ def _shell(account, body: str) -> str:
 .lt-record{{padding:8px 0;border-bottom:1px dashed var(--line)}}.lt-record:last-child{{border-bottom:0}}.lt-meta{{color:var(--muted);font-size:12px;margin-top:3px}}.lt-dims{{display:flex;gap:14px;flex-wrap:wrap;margin-top:5px;font-size:12px}}.lt-dims span b{{color:var(--muted);font-weight:600}}
 .empty{{background:#fff;border:1px solid var(--line);border-radius:8px;padding:24px;text-align:center}}.button{{display:inline-block;border:1px solid var(--line);background:#fff;color:var(--blue);padding:8px 14px;border-radius:6px;text-decoration:none;font-size:13px}}.button.quiet{{background:#fff}}
 @media(max-width:720px){{.rx-kpi-grid{{grid-template-columns:1fr}}}}
-</style></head><body>{header}{body}</body></html>'''
+</style>{UI_KIT_STYLE}</head><body>{header}{body}{UI_KIT_SCRIPT}</body></html>'''

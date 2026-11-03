@@ -4,6 +4,8 @@ from __future__ import annotations
 import html
 
 from .demo2_ui_kit import teacher_header
+from .demo2_portal import _COMMON_STYLE, _WORKSPACE_STYLE
+from .demo2_ui_kit import UI_KIT_SCRIPT, UI_KIT_STYLE
 
 
 def _e(v) -> str:
@@ -40,7 +42,7 @@ def render_lesson(account, task_id: str, work: dict, evaluations: list) -> str:
         ("1", "视频与学生身份", f'视频 {duration_text} · 已确认 {_count(work,"students")} 人 · IEP {iep_ok}/{len(people)}',
          f'<a class="button primary" href="/demo2/identity?task_id={_e(task_id)}">确认学生 / 手动画框</a>'
          f'<a class="button" href="/demo2/video?id={_e(task_id)}">回看原视频</a>'),
-        ("2", "学生测量", f'记录 {_count(work,"records")} 条 · 已复核 {_count(work,"reviewed")} · 已评分 {_count(work,"scored")}',
+        ("2", "学生测量", f'本课视频记录 {_count(work,"records")} 条 · 已复核 {_count(work,"reviewed")} · 已评分 {_count(work,"scored")}；现场观察在学生测量中查看',
          f'<a class="button primary" href="/demo2/measurement">进入学生测量</a>'),
         ("3", "本课评课", (f'已保存 {len(eval_rows)} 条评价' if eval_rows else "还没有评课记录") + "",
          f'<a class="button primary" href="/demo2/evaluation?task_id={_e(task_id)}">去评课</a>'
@@ -64,7 +66,8 @@ def render_lesson(account, task_id: str, work: dict, evaluations: list) -> str:
 </main>'''
     header = teacher_header("home", account, page="home")
     return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>本课工作台 · WeGlow</title><style>
+<title>本课工作台 · WeGlow</title><style>{_COMMON_STYLE}{_WORKSPACE_STYLE}
+
 body{{margin:0;background:#f6f8fb;color:#172b4d;font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}}
 .page-shell{{width:min(1120px,calc(100% - 32px));margin:0 auto;padding:28px 0 60px}}
 .lesson-head{{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}}h1{{font-size:28px;margin:2px 0}}h2{{font-size:17px;margin:0 0 5px}}.eyebrow{{font-size:11px;letter-spacing:.12em;color:#1f63c6;font-weight:800}}
@@ -75,4 +78,4 @@ body{{margin:0;background:#f6f8fb;color:#172b4d;font:14px/1.6 -apple-system,Blin
 .button{{display:inline-block;border:1px solid #dbe5ef;background:#fff;color:#1f63c6;padding:7px 12px;border-radius:6px;text-decoration:none;font-size:13px}}.button.primary{{background:#1f63c6;color:#fff;border-color:#1f63c6}}
 .people{{margin-top:26px}}.people-row{{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}}.person{{display:flex;flex-direction:column;gap:2px;min-width:120px;background:#fff;border:1px solid #dbe5ef;border-radius:8px;padding:10px 12px;text-decoration:none;color:inherit}}.person span{{font-size:12px;color:#5f7186}}.hint,.muted{{font-size:12px;color:#5f7186}}
 @media(max-width:760px){{.step-grid{{grid-template-columns:1fr}}}}
-</style></head><body>{header}{body}</body></html>'''
+</style>{UI_KIT_STYLE}</head><body>{header}{body}{UI_KIT_SCRIPT}</body></html>'''
