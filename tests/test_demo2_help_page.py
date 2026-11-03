@@ -66,7 +66,7 @@ def test_new_sections_toc_targets_and_faq():
         assert question in html
     # Redesigned-page details that must stay documented.
     for phrase in ("把视频拖到这里", 'id="uploadFailureTable"', "在画面中点选或框选人物", "至少需要 2 次已复核记录才能看趋势",
-                   "4 步分步表单", "通道设置", "查询任务", "符合条件 x / y 项"):
+                   "3 步分步表单", "通道设置", "查询任务", "符合条件 x / y 项"):
         assert phrase in html
 
 
@@ -196,9 +196,9 @@ def test_phase_four_sections_faq_and_loop_rename():
         assert f'id="{faq_id}"' in html and question in html
     # 第 7 步改名为「课程评价」，并与首页一致。
     assessment = dict((key, title) for key, title, _hint in help_page.HELP_LOOP_STEPS)["assessment"]
-    assert assessment == "学生测量 / 课程评价"
+    assert assessment == "学生测量 / 评课"
     for phrase in ("本课检测学生", "纳入本课检测", "查看依据", "下载 Word 报告", "下载 PDF 报告", "试行", "学生评价矩阵",
-                   "去做课程评价", "查看课程总览", "管理本课检测学生"):
+                   "去做评课", "查看课程总览", "管理本课检测学生"):
         assert phrase in html, phrase
     # In-page links point at existing anchors only.
     for target in set(re.findall(r'href="#([a-z-]+)"', html)):

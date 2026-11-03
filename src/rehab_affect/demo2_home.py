@@ -591,7 +591,7 @@ def build_home_summary(records: Any, token: str, account: dict[str, Any], source
     secondary = {"label": "为本课评课",
                  "href": _query("/demo2/evaluation", task_id=evaluation_task) if evaluation_task else "/demo2/evaluation"}
     assessment_count = (f"测量 {len(measurements)} 条（待复核 {len(pending_measurements)}）"
-                        f" · 课程评价 {len(evaluations)} 条")
+                        f" · 评课 {len(evaluations)} 条")
     # Lessons with teacher-reviewed measurements but no checked course evaluation (basic_100).
     reviewed_course_eval_tasks = _reviewed_course_evaluation_tasks(evaluations)
     checked_ids = {str(task.get("task_id")) for task in checked_tasks}
@@ -606,25 +606,25 @@ def build_home_summary(records: Any, token: str, account: dict[str, Any], source
                             and str(task.get("task_id")) not in reviewed_course_eval_tasks]
                            if "evaluation" not in errors and "measurement" not in errors else [])
     if "measurement" in errors and "evaluation" in errors:
-        steps.append(_step("assessment", "学生测量 / 课程评价", "attention", "暂时无法读取", "请刷新页面后重试。",
+        steps.append(_step("assessment", "学生测量 / 评课", "attention", "暂时无法读取", "请刷新页面后重试。",
                            "打开学生测量", "/demo2/measurement", secondary=secondary))
     elif not measurements and not evaluations:
-        steps.append(_step("assessment", "学生测量 / 课程评价", "not_started", assessment_count,
-                           "按评分标准记录学生测量，或为本课做课程评价（系统建议分自动预填）。", "开始学生测量", "/demo2/measurement",
+        steps.append(_step("assessment", "学生测量 / 评课", "not_started", assessment_count,
+                           "按评分标准记录学生测量，或为本课做评课（系统建议分自动预填）。", "开始学生测量", "/demo2/measurement",
                            secondary=secondary))
     elif pending_measurements:
-        steps.append(_step("assessment", "学生测量 / 课程评价", "in_progress", assessment_count,
+        steps.append(_step("assessment", "学生测量 / 评课", "in_progress", assessment_count,
                            "有测量记录待复核，复核后才计入趋势。", "复核测量记录", "/demo2/measurement",
                            secondary=secondary))
     elif course_eval_missing:
         missing_target = _safe_id(course_eval_missing[0].get("task_id"))
-        steps.append(_step("assessment", "学生测量 / 课程评价", "in_progress", assessment_count,
-                           f"测量记录均已复核；还有 {len(course_eval_missing)} 节课没有核对过的课程评价，"
-                           "核对后课程总览才能给出结论。", "做课程评价",
+        steps.append(_step("assessment", "学生测量 / 评课", "in_progress", assessment_count,
+                           f"测量记录均已复核；还有 {len(course_eval_missing)} 节课没有核对过的评课，"
+                           "核对后课程总览才能给出结论。", "做评课",
                            _query("/demo2/evaluation", task_id=missing_target),
                            secondary={"label": "查看学生测量", "href": "/demo2/measurement"}))
     else:
-        steps.append(_step("assessment", "学生测量 / 课程评价", "done", assessment_count,
+        steps.append(_step("assessment", "学生测量 / 评课", "done", assessment_count,
                            "测量记录均已复核。", "查看学生测量", "/demo2/measurement", secondary=secondary))
 
     # 8. Report --------------------------------------------------------------------
@@ -731,9 +731,9 @@ def build_home_summary(records: Any, token: str, account: dict[str, Any], source
         todos["course_evaluations"].append({
             "kind": "course_evaluation_missing", "task_id": task_id,
             "count": reviewed_measurement_tasks.get(task_id, 0),
-            "text": f"做课程评价：「{task_names.get(task_id) or '课堂视频'}」已有 {reviewed_measurement_tasks.get(task_id, 0)} 条"
-                    "复核过的学生测量，但还没有核对过的课程评价（系统建议分会自动预填），核对后课程总览才能给出结论。",
-            "action": {"label": "去做课程评价", "href": _query("/demo2/evaluation", task_id=task_id)},
+            "text": f"做评课：「{task_names.get(task_id) or '课堂视频'}」已有 {reviewed_measurement_tasks.get(task_id, 0)} 条"
+                    "复核过的学生测量，但还没有核对过的评课（系统建议分会自动预填），核对后课程总览才能给出结论。",
+            "action": {"label": "去做评课", "href": _query("/demo2/evaluation", task_id=task_id)},
         })
     fresh_reports = {task_id: report for task_id, report in latest_reports.items()
                      if not report.get("stale") and _safe_id(report.get("report_id"))}
@@ -928,7 +928,7 @@ const byId=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const safeHref=v=>typeof v==='string'&&v.startsWith('/demo2/')&&!v.startsWith('//')?v:'/demo2/upload';
 const STATUS_BADGE={not_started:['未开始','neutral'],in_progress:['进行中','info'],done:['已完成','success'],attention:['需处理','warning']};
-const TODO_LABEL={failed_task:['失败任务','danger'],course_task_upload:['课程任务','info'],iep_summary_missing:['IEP 摘要','warning'],lesson_measurement_review:['本课测量','warning'],measurement_review:['待复核测量','warning'],stale_report:['报告已过期','muted'],expiring_authorization:['授权即将到期','warning'],course_evaluation_missing:['课程评价','warning'],course_overview_ready:['课程总览','success'],few_students_detected:['检测学生不足','warning']};
+const TODO_LABEL={failed_task:['失败任务','danger'],course_task_upload:['课程任务','info'],iep_summary_missing:['IEP 摘要','warning'],lesson_measurement_review:['本课测量','warning'],measurement_review:['待复核测量','warning'],stale_report:['报告已过期','muted'],expiring_authorization:['授权即将到期','warning'],course_evaluation_missing:['评课','warning'],course_overview_ready:['课程总览','success'],few_students_detected:['检测学生不足','warning']};
 const badge=(label,tone)=>'<span class="rx-badge rx-badge-'+esc(tone)+'">'+esc(label)+'</span>';
 const pad=n=>String(n).padStart(2,'0');
 const todayText=()=>{const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());};
