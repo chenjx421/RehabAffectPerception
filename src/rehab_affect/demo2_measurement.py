@@ -152,7 +152,7 @@ svg.chart-svg{display:block;width:100%;height:auto;min-height:280px;max-width:no
 .report-dl-notice.ok{background:#eef9f3;color:#0d6042;border:1px solid #a8dcc4;}
 .report-dl-notice.warn{background:#fff8ec;color:#7b4708;border:1px solid #f0c987;}
 .report-text{font-size:13px;line-height:1.8;color:#3d526d;margin:0;}
-.report-foot{font-size:11px;color:var(--muted);margin-top:8px;}
+.iep-banner{display:flex;gap:12px;align-items:center;flex-wrap:wrap;border-left:4px solid var(--line);background:#fff;padding:10px 14px;border-radius:8px;margin:14px 0}.iep-banner.ok{border-color:#1d9b70;background:#eef9f3}.iep-banner.warn{border-color:#c98a1b;background:#fff8ec}.iep-banner span{font-size:12px;color:var(--muted)}.iep-banner .button{margin-left:auto}.report-foot{font-size:11px;color:var(--muted);margin-top:8px;}
 .std-card{margin-bottom:14px;}
 .std-card h3{font-size:15px;margin:0 0 10px;color:var(--ink);}
 .std-card p{font-size:13px;line-height:1.8;margin:0;}
@@ -569,6 +569,13 @@ function miniBars(r){
   }).join('')}</div>`;
 }
 
+function iepBanner(info){
+  const status=String(info?.iep_status||'unavailable');
+  const label=status==='available'?'IEP 已关联':status==='not_found'?'尚未上传 IEP':status==='ambiguous'?'存在多份有效 IEP':'IEP 不可用';
+  const note=status==='available'?'正式报告可以使用当前 IEP 目标与支持条件。':status==='not_found'?'正式报告会被阻断；请先到学生资料中登记授权并上传 IEP 摘要。':status==='ambiguous'?'请先核实并只保留一份当前有效 IEP。':'授权到期/撤回或资料不可用，请重新登记。';
+  const tone=status==='available'?'ok':'warn';
+  return `<div class="iep-banner ${tone}" id="iepBanner"><strong>${esc(label)}</strong><span>${esc(note)}</span><a class="button quiet" href="/demo2/dossier?student_id=${encodeURIComponent(info?.student_id||'')}">管理 IEP 与授权</a></div>`;
+}
 function renderOverview(){
   const pane=byId('paneOverview');if(!pane)return;
   const sid=state.selectedId;
@@ -581,8 +588,9 @@ function renderOverview(){
   pane.innerHTML=`<div class="ov-head">
   <span class="rx-avatar rx-avatar-lg" data-tone="${avatarTone(sid)}" aria-hidden="true">${esc(firstChar(studentName(sid)))}</span>
   <div class="ov-head-text"><h2 class="pane-title">${esc(studentName(sid))}</h2><p class="pane-sub">${esc(info.class_name||info.student_code||'学生测量总览')}</p></div>
-  <div class="ov-actions"><button class="button primary" onclick="switchTab('form')">+ 新增记录</button><button class="button" onclick="switchTab('trends')">查看趋势</button></div>
+  <div class="ov-actions"><button class="button primary" onclick="switchTab('form')">+ 新增记录</button><button class="button" onclick="switchTab('trends')">查看趋势</button><a class="button" href="/demo2/long-term?student_id=${encodeURIComponent(sid)}">长期观测 / IEP</a></div>
 </div>
+${iepBanner(info)}
 <div class="overview-cards">
   <article class="rx-kpi"><span class="rx-kpi-label">有效记录</span><strong class="rx-kpi-value" id="kpiTotal">${recs.length}</strong><small class="rx-kpi-hint">未撤销的测量记录</small></article>
   <article class="rx-kpi rx-kpi-success"><span class="rx-kpi-label">已复核得分</span><strong class="rx-kpi-value" id="kpiReviewed">${reviewed}</strong><small class="rx-kpi-hint">满足最低评分条件并已复核</small></article>
@@ -992,6 +1000,11 @@ function renderReport(recordId){
   const pane=byId('paneReport');if(!pane)return;
   const sid=state.selectedId;
   if(!sid){pane.innerHTML=noStudentHtml('请从左侧选择学生。');return;}
+  const iepState=studentInfo(sid)?.iep_status||'unavailable';
+  if(iepState!=='available'){
+    const label=iepState==='not_found'?'尚未上传 IEP':iepState==='ambiguous'?'存在多份有效 IEP':'IEP 不可用';
+    pane.innerHTML=`<h2 class="pane-title">${esc(studentName(sid))} · 单次记录报告</h2><div class="iep-banner warn" style="margin-top:14px"><strong>${esc(label)}</strong><span>正式报告必须关联学生当前有效的 IEP。请先完成授权和 IEP 上传，再生成报告。</span><a class="button quiet" href="/demo2/dossier?student_id=${encodeURIComponent(sid)}">去管理 IEP</a></div><button class="button" onclick="switchTab('overview')">返回总览</button>`;return;
+  }
   const recs=studentRecords(sid).filter(r=>formalScore(r.assessment)!=null||r.source_type==='video');
   if(!recs.length){pane.innerHTML=`<h2 class="pane-title">${esc(studentName(sid))} · 单次记录报告</h2><div class="rx-empty" style="margin-top:14px"><p>该学生暂无已复核且有综合得分的记录，无法生成报告。</p><button class="button" onclick="switchTab('overview')">返回总览</button></div>`;return;}
   let selId=recordId||pane._selId||recs[recs.length-1].record_id;

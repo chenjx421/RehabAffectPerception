@@ -814,14 +814,14 @@ def create_handler(
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             if parsed.path in {
-                "/demo2/login", "/demo2/home", "/demo2/upload", "/demo2/admin", "/demo2/admin/channels", "/demo2/admin/schools", "/demo2/analysis", "/demo2/course-overview", "/demo2/course-batch", "/demo2/teaching-support",
+                "/demo2/login", "/demo2/home", "/demo2/lesson", "/demo2/upload", "/demo2/admin", "/demo2/admin/channels", "/demo2/admin/schools", "/demo2/analysis", "/demo2/course-overview", "/demo2/course-batch", "/demo2/teaching-support",
                 "/demo2/register", "/demo2/privacy", "/demo2/help", "/demo2/school",
                 "/demo2/video", "/demo2/membership",
                 "/demo2/students", "/demo2/identity",
                 "/demo2/simple-result",
                 "/demo2/dossier", "/demo2/course-dossier", "/demo2/admin/dossiers",
                 "/demo2/student-summary", "/demo2/admin/student-summaries",
-                "/demo2/measurement", "/demo2/admin/measurements", "/demo2/capture", "/demo2/evaluation", "/demo2/safety",
+                "/demo2/measurement", "/demo2/long-term", "/demo2/admin/measurements", "/demo2/capture", "/demo2/evaluation", "/demo2/safety",
             }:
                 self._handle_demo2_page(parsed.path)
                 return
@@ -1107,6 +1107,51 @@ def create_handler(
                     renderer = importlib.import_module('.demo2_evaluation', package=__package__)
                     self._send_text_payload(renderer.render_evaluation(account).encode('utf-8'), content_type='text/html; charset=utf-8',
                                             extra_headers={'Cache-Control':'no-store, private'})
+                elif path == "/demo2/lesson":
+                    self._require_role(account, "school_uploader")
+                    task_id, = self._page_task_query(urlparse(self.path))
+                    token = self._session_cookie_token()
+                    work = self._measurement_call("course_workspace", token, task_id)
+                    # The workbench exposes current student-level IEP status, not the
+                    # task-reference status used by classroom analysis.
+                    try:
+                        from .demo2_dossier_store import Demo2DossierStore
+                        dossier = Demo2DossierStore(student_store)
+                        for person in work.get("people") or []:
+                            if not isinstance(person, dict) or not person.get("student_id"):
+                                continue
+                            try:
+                                ctx = dossier.iep_context(token, person["student_id"])
+                                person["iep_context"] = {"status": ctx.get("status"), "reason": ctx.get("reason") or ""}
+                            except Exception:
+                                person["iep_context"] = {"status": "unavailable", "reason": "iep_check_unavailable"}
+                    except Exception:
+                        for person in work.get("people") or []:
+                            if isinstance(person, dict):
+                                person["iep_context"] = {"status": "unavailable", "reason": "iep_check_unavailable"}
+                    evaluations = self._evaluation_call("for_task", token, task_id)
+                    renderer = importlib.import_module('.demo2_lesson_workbench', package=__package__)
+                    self._send_text_payload(renderer.render_lesson(account, task_id, work, evaluations).encode('utf-8'),
+                                            content_type="text/html; charset=utf-8",
+                                            extra_headers={'Cache-Control': 'no-store, private'})
+                elif path == "/demo2/long-term":
+                    self._require_role(account, "school_uploader")
+                    query = parse_qs(urlparse(self.path).query)
+                    student_id = (query.get("student_id") or [""])[0]
+                    if not student_id:
+                        raise Demo2APIError(400, "student_required", "请选择学生")
+                    token = self._session_cookie_token()
+                    workspace = self._measurement_call("workspace", token)
+                    if not any(item.get("student_id") == student_id for item in workspace.get("students") or []):
+                        raise Demo2APIError(404, "student_unavailable", "学生不存在或不在当前学校范围内")
+                    try:
+                        iep = dossier_call("iep_context", token, student_id)
+                    except Exception:
+                        iep = {"status": "unavailable", "reason": "iep_check_unavailable", "message": "IEP 状态暂时无法读取"}
+                    renderer = importlib.import_module('.demo2_long_term', package=__package__)
+                    self._send_text_payload(renderer.render_long_term(account, token, student_id, workspace, iep).encode('utf-8'),
+                                            content_type="text/html; charset=utf-8",
+                                            extra_headers={'Cache-Control': 'no-store, private'})
                 elif path in {"/demo2/measurement", "/demo2/admin/measurements"}:
                     self._require_role(account, "company_admin" if path.startswith('/demo2/admin/') else "school_uploader")
                     renderer = importlib.import_module('.demo2_measurement', package=__package__)

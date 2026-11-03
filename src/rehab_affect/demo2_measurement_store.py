@@ -423,6 +423,18 @@ class Demo2MeasurementStore:
     def course_report(self, token, task_id):
         """Build the downloadable report from the current task workspace."""
         from .demo2_course_analysis import build_task_report
+        from .demo2_iep_requirement import IepRequirementError, current_iep
+        # A classroom report that contains reviewed student measurements must
+        # be anchored to an IEP for each represented student.
+        with self.records._connect() as _db:
+            _rows = _db.execute("SELECT payload_json FROM demo2_measurements WHERE owner_account_id=? AND status='active' AND json_extract(payload_json,'$.task_id')=?",
+                                (self._account(token)['account_id'], task_id)).fetchall()
+        _students = sorted({str((json.loads(r['payload_json']).get('student_id') or '')) for r in _rows})
+        try:
+            for _sid in [x for x in _students if x]:
+                current_iep(self.records, token, _sid)
+        except IepRequirementError as exc:
+            raise MeasurementError(exc.status, exc.code, exc.message) from None
         from .demo2_evaluation_store import Demo2EvaluationStore
         work=self.course_workspace(token, task_id)
         # Keep the legacy in-page report untouched when there is no saved
@@ -618,6 +630,25 @@ class Demo2MeasurementStore:
             trends.append({'student_id':student,'goal_id':goal,'measurement_context':context,'criterion':criterion,
                            'rubric_version':version,'series':build_longitudinal_series(points)})
         self._log_trend_gaps(account, roster, trends)
+        # IEP completeness is exposed as a status only; no IEP text is copied into
+        # the measurement workspace. Reports are gated separately.
+        try:
+            from .demo2_dossier_store import Demo2DossierStore
+            dossier=Demo2DossierStore(self.records)
+            for student in roster.get('students') or []:
+                if not isinstance(student,dict) or not student.get('student_id'):
+                    continue
+                try:
+                    ctx=dossier.iep_context(token, student['student_id'])
+                    student['iep_status']=ctx.get('status') or 'unknown'
+                    student['iep_reason']=ctx.get('reason') or ''
+                    student['iep_document_id']=ctx.get('iep_document_id') or ''
+                except Exception:
+                    student['iep_status']='unavailable'; student['iep_reason']='iep_check_unavailable'; student['iep_document_id']=''
+        except Exception:
+            for student in roster.get('students') or []:
+                if isinstance(student,dict):
+                    student['iep_status']='unavailable'; student['iep_reason']='iep_check_unavailable'; student['iep_document_id']=''
         return {**roster,'records':records,'trends':trends,'rubric_version':RUBRIC_VERSION,'rubric':rubric_contract(),
                 'standard_status':'试行量表；权重与6分参考线待校方确认，不是已验证官方量表',
                 'retention':{'raw_media_days':60,'structured_days':730,'report':'按需生成，不额外保存含姓名副本'}}
@@ -647,6 +678,11 @@ class Demo2MeasurementStore:
             ) else (404, 'record_unavailable', '记录不存在或已撤销')
             report_debug_event(self.records, 'report_rejected', str(code[0]), code=code[1], message='measurement_report', **common)
             raise MeasurementError(*code)
+        from .demo2_iep_requirement import require_current_iep
+        try:
+            require_current_iep(self.records, token, str(record.get('student_id') or ''))
+        except IepRequirementError as exc:
+            raise MeasurementError(exc.status, exc.code, exc.message) from None
         student = next((s for s in workspace.get('students') or [] if s.get('student_id') == record.get('student_id')), {})
         name = student.get('display_name') or '学生'
         trend = next((t for t in workspace['trends'] if t['student_id'] == record.get('student_id')

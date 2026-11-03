@@ -53,10 +53,13 @@ def _lines(env):
 
 def test_page_has_wizard_steps_item_cards_and_keeps_existing_ids():
     page = render_evaluation({'username': 'school_uploader_01', 'login_alias': 't1'})
+    for index in range(1, 4):
+        assert f'id="stepBtn{index}"' in page
     for index in range(1, 5):
-        assert f'id="stepBtn{index}"' in page and f'id="stepPanel{index}"' in page
-    for label in ('课程基本信息', '课程口径与本课目标', '逐项评分', '核对并保存'):
+        assert f'id="stepPanel{index}"' in page
+    for label in ('课程信息与口径', '课程口径与本课目标', '逐项评分', '核对并保存'):
         assert label in page
+    assert 'resultSaveBtn' in page and '第 1 / 3 步' in page
     for element in ('stepPrev', 'stepNext', 'reviewSummary', 'sumScored', 'sumSchool10', 'resultInfo',
                     'kSchool', 'kEnhanced', 'kDelta', 'fReviewed', 'previewBtn', 'saveBtn', 'withdrawBtn',
                     'exportJsonBtn', 'printBtn', 'editRecordBtn', 'diffChart', 'refList', 'formMsg'):

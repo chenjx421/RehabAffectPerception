@@ -47,7 +47,7 @@ _EVAL_STYLE = r"""
 .form-card .card-head p{max-width:720px}
 #evaluationSource{font-size:13px;color:var(--muted);margin-top:4px}
 /* 步骤条 */
-.step-bar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0 0 22px;padding:0;list-style:none;counter-reset:none}
+.step-bar{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 22px;padding:0;list-style:none;counter-reset:none}
 .step-bar li{min-width:0}
 .step-btn{display:flex;align-items:center;gap:10px;width:100%;min-height:56px;padding:9px 12px;border:1px solid #d3e2f0;border-radius:9px;background:#fff;color:var(--muted);font:inherit;text-align:left;cursor:pointer;transition:border-color .18s,background .18s,box-shadow .18s}
 .step-btn:hover{border-color:#8fbbe3;background:#f7fbff}
@@ -290,7 +290,7 @@ textarea[data-autogrow]{resize:none;overflow:hidden}
   .tab-bar{position:static}
 }
 @media(max-width:600px){
-  .step-bar{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+  .step-bar{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
   .step-btn{flex-direction:column;justify-content:center;gap:4px;padding:8px 4px;text-align:center}
   .step-btn span{font-size:11px;align-items:center}
   .form-card .card-head,.form-card .card-body{padding:18px 14px}
@@ -348,8 +348,7 @@ _INFO_ICON = ('<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="#
               '<circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>')
 
 _STEPS = (
-    ("课程基本信息", "课堂编号、日期、课程"),
-    ("课程口径与本课目标", "学科、模板、目标"),
+    ("课程信息与口径", "课堂、学科、模板、目标"),
     ("逐项评分", "学校分与证据"),
     ("核对并保存", "预览、复核、保存"),
 )
@@ -376,8 +375,8 @@ _FORM_HTML = (
     + '<div class="wizard"><div class="wizard-main">'
     # 第1步
     '<section class="step-panel" id="stepPanel1" aria-labelledby="stepTitle1">'
-    '<div class="step-panel-head"><h3 id="stepTitle1" tabindex="-1">第 1 步 · 课程基本信息</h3>'
-    '<p>先登记这节课是哪一堂课。三项都必填，课堂编号和上课日期保存后锁定。</p></div>'
+    '<div class="step-panel-head"><h3 id="stepTitle1" tabindex="-1">第 1 步 · 课程信息与口径</h3>'
+    '<p>先登记这节课是哪一堂课，并确认课程口径；课堂编号、日期和课程口径保存后锁定。</p></div>'
     '<div class="form-grid-3">'
     '<div class="field"><label for="fLessonId">课堂编号 <abbr title="必填">*</abbr></label>'
     '<input id="fLessonId" type="text" autocomplete="off" required maxlength="120" placeholder="如 L2026-001"/>'
@@ -389,7 +388,7 @@ _FORM_HTML = (
     '</div></section>'
     # 第2步
     '<section class="step-panel" id="stepPanel2" aria-labelledby="stepTitle2" hidden>'
-    '<div class="step-panel-head"><h3 id="stepTitle2" tabindex="-1">第 2 步 · 课程口径与本课目标</h3>'
+    '<div class="step-panel-head"><h3 id="stepTitle2" tabindex="-1">同第 1 步 · 课程口径与本课目标</h3>'
     '<p>课程口径（保存后锁定）：学科、评价模板、评价方案和本课目标保存后不能再改，以保证前后评价可比。</p></div>'
     '<div class="form-section"><p class="form-section-title">课程口径（保存后锁定）</p>'
     '<div class="form-grid-3">'
@@ -424,7 +423,7 @@ _FORM_HTML = (
     '</div></section>'
     # 第3步
     '<section class="step-panel" id="stepPanel3" aria-labelledby="stepTitle3" hidden>'
-    '<div class="step-panel-head"><h3 id="stepTitle3" tabindex="-1">第 3 步 · 逐项评分</h3>'
+    '<div class="step-panel-head"><h3 id="stepTitle3" tabindex="-1">第 2 步 · 逐项评分</h3>'
     '<p>每个评价项目一张卡片。没有评价的项目请留空，留空显示为「未评」，不按 0 分计算。点「评分参考」可查看各分值的含义。</p></div>'
     '<div class="form-section"><p class="form-section-title">评分来源</p>'
     '<div class="form-grid-2">'
@@ -447,7 +446,7 @@ _FORM_HTML = (
     '</div></div></section>'
     # 第4步
     '<section class="step-panel" id="stepPanel4" aria-labelledby="stepTitle4" hidden>'
-    '<div class="step-panel-head"><h3 id="stepTitle4" tabindex="-1">第 4 步 · 核对并保存</h3>'
+    '<div class="step-panel-head"><h3 id="stepTitle4" tabindex="-1">第 3 步 · 核对并保存</h3>'
     '<p>核对下面的信息，可先「预览评分」看两套结果，确认无误后保存。点击每行右侧「修改」可回到对应步骤。</p></div>'
     '<dl id="reviewSummary" class="review-list"></dl>'
     '<label class="review-check"><input type="checkbox" id="fReviewed"/>'
@@ -458,7 +457,7 @@ _FORM_HTML = (
     '<div id="formMsg" class="page-msg" role="alert"></div>'
     '<div class="step-nav no-print">'
     '<button id="stepPrev" class="button" type="button" hidden>上一步</button>'
-    '<span class="step-nav-count" id="stepCount">第 1 / 4 步</span>'
+    '<span class="step-nav-count" id="stepCount">第 1 / 3 步</span>'
     '<div class="form-actions">'
     '<button id="withdrawBtn" class="button" type="button" hidden>撤销此记录</button>'
     '<button id="previewBtn" class="button" type="button" hidden>预览评分</button>'
@@ -474,7 +473,7 @@ _FORM_HTML = (
     '<div class="sum-progress" aria-hidden="true"><i id="sumBar"></i></div>'
     '<div class="sum-row"><span id="sumEnhLabel">增强分已评</span><strong id="sumEnh">—</strong></div>'
     '<div class="sum-row"><span>学校折算10分（预估）</span><strong id="sumSchool10">—</strong></div>'
-    '<div class="sum-preview" id="sumPreview">尚未预览。到第 4 步点「预览评分」查看两套结果。</div>'
+    '<div class="sum-preview" id="sumPreview">尚未预览。到第 3 步点「预览评分」查看两套结果。</div>'
     '<p class="sum-note">预估只按已填学校分平均；正式分数以「预览评分」和保存结果为准。未评项目不计 0 分。</p>'
     '</aside>'
     '</div></div></div>'
@@ -488,7 +487,7 @@ _RESULT_HTML = (
     '<div><dt>学校折算</dt><dd id="kSchool">—</dd></div>'
     '<div><dt>系统增强</dt><dd id="kEnhanced">—</dd><dd id="kEnhancedBasis" class="no-print"></dd></div>'
     '<div><dt>总分差</dt><dd id="kDelta">—</dd></div></dl>'
-    '<button id="editRecordBtn" class="button no-print" type="button">查看评分与证据</button></div>'
+    '<button id="resultSaveBtn" class="button primary no-print" type="button" hidden>保存记录</button><button id="editRecordBtn" class="button no-print" type="button">查看评分与证据</button></div>'
     '<details class="result-info" id="resultInfo"><summary>课程、来源与本课目标</summary>'
     '<p id="resultMeta" class="result-meta-line"></p><p id="resultContext" class="result-context"></p>'
     '<div class="result-goal"><strong>本课目标与支持约定</strong><p id="resultGoal"></p></div>'
@@ -597,7 +596,7 @@ const byId=id=>document.getElementById(id);
 const fieldByName=name=>document.querySelector(`#itemsTbody [name="${name}"]`);
 let workspace=null,activeRecord=null,previewResult=null,renderedRecord=null,formRevision=0,busy=false,focusAfter="";
 let currentStep=1,maxStep=1;
-const STEP_NAMES=["课程基本信息","课程口径与本课目标","逐项评分","核对并保存"];
+const STEP_NAMES=["课程信息与口径","逐项评分","核对并保存"];
 function focusInvalid(){if(!focusAfter)return;const el=byId(focusAfter)||fieldByName(focusAfter);focusAfter="";if(el&&!el.disabled){el.scrollIntoView({block:"center"});el.focus();}}
 const sourceParams=new URLSearchParams(location.search);
 const sourceValues=[...sourceParams.getAll("currenttask"),...sourceParams.getAll("task_id")];
@@ -710,18 +709,18 @@ t.items.forEach(i=>{const sv=fieldByName("school_"+i.id)?.value;const ev=fieldBy
 if(hasS){out.school++;out.sum+=Number(sv);}else out.missing.push(i.label);if(hasE)out.enh++;if(hasE&&(!hasS||Number(ev)!==Number(sv)))out.changed++;
 const badge=document.querySelector(`[data-state-for="${i.id}"]`);if(badge){const changed=hasE&&(!hasS||Number(ev)!==Number(sv));badge.textContent=changed?"已修正":hasS?"已评":"未评";badge.className="item-state"+(changed?" changed":hasS?" ok":"");badge.closest(".item-card")?.classList.toggle("scored",hasS);}});return out;}
 function updateSummary(){const c=scoreCounts();updateSuggestionStates();const ctx=byId("fWeightPolicy").value==="school_context";
-byId("sumStep").textContent=`${currentStep} / 4`;
+byId("sumStep").textContent=`${currentStep} / 3`;
 byId("sumScored").textContent=c.total?`${c.school} / ${c.total}`:"—";
 byId("sumBar").style.width=c.total?(c.school/c.total*100)+"%":"0";
 byId("sumEnhLabel").textContent=ctx?"情境修正项":"增强分已评";
 byId("sumEnh").textContent=!c.total?"—":c.isQ?"无增强映射":ctx?`${c.changed} 项（其余沿用）`:`${c.enh} / ${c.total}`;
 byId("sumSchool10").textContent=c.total&&c.school===c.total?(c.sum/c.total*(c.isQ?2:1)).toFixed(2):c.total?"待评完":"—";
 const res=previewResult||(!byId("resultCard").hidden&&renderedRecord?.result)||activeRecord?.result;
-byId("sumPreview").innerHTML=res?`<b>${previewResult?"最近预览":"已保存结果"}</b>（${esc(statusLabel(res.status))}）<br>学校折算 ${fmtNum(res.school?.score_10,2)} · 系统增强 ${fmtNum(res.enhanced?.score_10,2)}<br>总分差 ${signed(res.comparison?.available?res.comparison.total_delta:null)}`:"尚未预览。到第 4 步点「预览评分」查看两套结果。";}
+byId("sumPreview").innerHTML=res?`<b>${previewResult?"最近预览":"已保存结果"}</b>（${esc(statusLabel(res.status))}）<br>学校折算 ${fmtNum(res.school?.score_10,2)} · 系统增强 ${fmtNum(res.enhanced?.score_10,2)}<br>总分差 ${signed(res.comparison?.available?res.comparison.total_delta:null)}`:"尚未预览。到第 3 步点「预览评分」查看两套结果。";}
 const REQUIRED_FIELDS=[["fLessonId","请填写课堂编号"],["fLessonDate","请选择上课日期"],["fCourseName","请填写课程名称"],
 ["fSubject","请选择学科"],["fTemplate","请选择评价模板"],["fGoalContext","请填写本课目标与学生分层支持约定"],
 ["fSchoolSource","请选择学校评分来源"],["fSchoolRater","请填写评分人"]];
-const FIELD_STEP={fLessonId:1,fLessonDate:1,fCourseName:1,fSubject:2,fTemplate:2,fGoalContext:2,fSchoolSource:3,fSchoolRater:3};
+const FIELD_STEP={fLessonId:1,fLessonDate:1,fCourseName:1,fSubject:1,fTemplate:1,fGoalContext:1,fSchoolSource:3,fSchoolRater:3};
 function fieldError(el,text){if(!el)return;const field=el.closest(".field");let note=field?.querySelector(".field-error");
 if(!note&&field){note=document.createElement("span");note.className="field-error";note.id=el.id+"Error";note.setAttribute("role","alert");field.appendChild(note);}
 if(text){el.setAttribute("aria-invalid","true");if(note){note.textContent=text;el.setAttribute("aria-describedby",note.id);}}
@@ -743,8 +742,9 @@ if(z!=null&&z!==s){const need=ctx?["evidence","reason","suggestion"]:["reason"];
 need.forEach(k=>{const f=fieldByName(k+"_"+item.id);if(f&&!f.value.trim())out.push([k+"_"+item.id,text[k],"reason_required"]);});}});
 return out;}
 function validateStep(n){
-document.querySelectorAll(`#stepPanel${n} [aria-invalid="true"]`).forEach(el=>fieldError(el,""));
-const miss=missingFields([n]);const probs=n===3?itemProblems():[];
+const scope=n===1?[1,2]:n===2?[3]:[4];
+scope.forEach(p=>document.querySelectorAll(`#stepPanel${p} [aria-invalid="true"]`).forEach(el=>fieldError(el,"")));
+const miss=n===1?missingFields([1,2]):n===3?missingFields([3]):[];const probs=n===2?itemProblems():[];
 miss.forEach(([id,text])=>fieldError(byId(id),text));
 probs.forEach(([name,text])=>fieldError(fieldByName(name),text));
 const bad=[...miss.map(m=>m[0]),...probs.map(p=>p[0])];
@@ -756,21 +756,23 @@ const scored=(sf&&sf.value!=="")||(!isQ&&ef&&ef.value!=="");if(scored&&vf&&!vf.v
 return out;}
 function validateRequired(){
 for(const s of [1,2,3]){const bad=validateStep(s);if(!bad.length)continue;showStep(s,true);
-const miss=missingFields([s]);const err=new Error(miss.length?`请先完成第 ${s} 步必填项：${miss.map(m=>m[1].replace(/^请(填写|选择)/,"")).join("、")}。`:"第 3 步逐项评分有需要修改的内容，请按字段下方的红字提示调整。");err.focusId=bad[0];throw err;}
+const miss=missingFields(s===1?[1,2]:s===3?[3]:[]);const err=new Error(miss.length?`请先完成第 ${s} 步必填项：${miss.map(m=>m[1].replace(/^请(填写|选择)/,"")).join("、")}。`:"第 2 步逐项评分有需要修改的内容，请按字段下方的红字提示调整。");err.focusId=bad[0];throw err;}
 const noEvidence=reviewedEvidenceProblems();
 if(noEvidence.length){noEvidence.forEach(([name])=>fieldError(fieldByName(name),"已勾选「已核对」，有评分的项目须填写证据摘要"));
-dbg("evaluation_step_invalid","blocked",{step:3,code:"evidence_required",fields:noEvidence.map(p=>p[0]).slice(0,40)});
-showStep(3,true);const err=new Error(`已勾选「已核对」：第 ${noEvidence.map(p=>p[1]).join("、")} 项有评分但缺少证据摘要，请补充后再预览或保存；若暂不核对，可取消勾选后保存为草稿。`);err.focusId=noEvidence[0][0];throw err;}}
+dbg("evaluation_step_invalid","blocked",{step:2,code:"evidence_required",fields:noEvidence.map(p=>p[0]).slice(0,40)});
+showStep(2,true);const err=new Error(`已勾选「已核对」：第 ${noEvidence.map(p=>p[1]).join("、")} 项有评分但缺少证据摘要，请补充后再预览或保存；若暂不核对，可取消勾选后保存为草稿。`);err.focusId=noEvidence[0][0];throw err;}}
 function showStep(n,silent){currentStep=n;maxStep=Math.max(maxStep,n);
-for(let i=1;i<=4;i++){byId("stepPanel"+i).hidden=i!==n;const b=byId("stepBtn"+i);b.classList.toggle("current",i===n);b.classList.toggle("done",i!==n&&i<=maxStep&&i<n);if(i===n)b.setAttribute("aria-current","step");else b.removeAttribute("aria-current");}
-byId("stepPrev").hidden=n===1;byId("stepNext").hidden=n===4;byId("stepNext").textContent=n<4?`下一步：${STEP_NAMES[n]}`:"下一步";
-byId("previewBtn").hidden=n!==4;byId("saveBtn").hidden=n!==4;byId("withdrawBtn").hidden=n!==4||!activeRecord||activeRecord.status==="withdrawn";
-byId("stepCount").textContent=`第 ${n} / 4 步 · ${STEP_NAMES[n-1]}`;
-if(n===4)renderReviewSummary();
-if(n===3)requestAnimationFrame(growAll);
-if(n===2)requestAnimationFrame(()=>autoGrow(byId("fGoalContext")));
+const panels=n===1?[1,2]:n===2?[3]:[4];
+for(let i=1;i<=4;i++){byId("stepPanel"+i).hidden=!panels.includes(i);}
+for(let i=1;i<=3;i++){const b=byId("stepBtn"+i);b.classList.toggle("current",i===n);b.classList.toggle("done",i!==n&&i<=maxStep&&i<n);if(i===n)b.setAttribute("aria-current","step");else b.removeAttribute("aria-current");}
+byId("stepPrev").hidden=n===1;byId("stepNext").hidden=n===3;byId("stepNext").textContent=n<3?`下一步：${STEP_NAMES[n]}`:"下一步";
+byId("previewBtn").hidden=n!==3;byId("saveBtn").hidden=n!==3;byId("withdrawBtn").hidden=n!==3||!activeRecord||activeRecord.status==="withdrawn";
+byId("stepCount").textContent=`第 ${n} / 3 步 · ${STEP_NAMES[n-1]}`;
+if(n===3)renderReviewSummary();
+if(n===2)requestAnimationFrame(growAll);
+if(n===1)requestAnimationFrame(()=>autoGrow(byId("fGoalContext")));
 updateSummary();
-if(!silent){const card=byId("formCard");if(card.getBoundingClientRect().top<0)card.scrollIntoView({block:"start"});byId("stepTitle"+n).focus({preventScroll:true});}}
+if(!silent){const card=byId("formCard");if(card.getBoundingClientRect().top<0)card.scrollIntoView({block:"start"});byId("stepTitle"+panels[0]).focus({preventScroll:true});}}
 function tryGo(target){if(busy||target===currentStep)return;
 if(target<currentStep){clearFmsg();showStep(target);return;}
 for(let s=currentStep;s<target;s++){const bad=validateStep(s);if(bad.length){if(s!==currentStep)showStep(s,true);fmsg(`请先完成第 ${s} 步「${STEP_NAMES[s-1]}」中标红的内容，再进入下一步。`);focusAfter=bad[0];focusInvalid();return;}}
@@ -780,10 +782,10 @@ const policy=byId("fWeightPolicy").selectedOptions[0]?.textContent||"";const dom
 const src=byId("fSchoolSource").selectedOptions[0]?.textContent||"";const rater=byId("fSchoolSource").value==="teacher_recorded"?byId("fSchoolRater").value.trim():"（按校表初评，无需填写）";
 const row=(k,v,step,cls)=>`<dt>${k}</dt><dd${cls?` class="${cls}"`:""}>${v}</dd><div class="review-edit"><button type="button" data-goto="${step}">修改</button></div>`;
 byId("reviewSummary").innerHTML=row("课堂编号",esc(byId("fLessonId").value.trim()),1)+row("上课日期",esc(byId("fLessonDate").value),1)+row("课程名称",esc(byId("fCourseName").value.trim()),1)+
-row("学科",esc(subj?.label||"—"),2)+row("评价模板",esc(t?.label||"—"),2)+row("评价方案",esc(policy)+(domains.length?`；本课重点：${esc(domains.join("、"))}`:""),2)+
-row("本课目标",esc(byId("fGoalContext").value.trim()),2)+row("评分来源",esc(src)+" · 评分人："+esc(rater),3)+
-row("逐项评分",c.total?`学校分已评 ${c.school} / ${c.total} 项${c.isQ?"":byId("fWeightPolicy").value==="school_context"?`，情境修正 ${c.changed} 项`:`，增强分已评 ${c.enh} / ${c.total} 项`}`:"—",3)+
-row("未评项目",c.missing.length?`${c.missing.length} 项未评，保存后显示「未评」，不按 0 分计算：${esc(c.missing.join("；"))}`:"无，全部已评",3,c.missing.length?"review-missing":"");}
+row("学科",esc(subj?.label||"—"),1)+row("评价模板",esc(t?.label||"—"),1)+row("评价方案",esc(policy)+(domains.length?`；本课重点：${esc(domains.join("、"))}`:""),1)+
+row("本课目标",esc(byId("fGoalContext").value.trim()),1)+row("评分来源",esc(src)+" · 评分人："+esc(rater),3)+
+row("逐项评分",c.total?`学校分已评 ${c.school} / ${c.total} 项${c.isQ?"":byId("fWeightPolicy").value==="school_context"?`，情境修正 ${c.changed} 项`:`，增强分已评 ${c.enh} / ${c.total} 项`}`:"—",2)+
+row("未评项目",c.missing.length?`${c.missing.length} 项未评，保存后显示「未评」，不按 0 分计算：${esc(c.missing.join("；"))}`:"无，全部已评",2,c.missing.length?"review-missing":"");}
 function buildPayload(recordId,expectedVersion){
 const schoolSource=byId("fSchoolSource").value;
 const tmpl=currentTemplate();
@@ -880,6 +882,7 @@ const cr=result?.context_review;const ce=byId("contextChanges");ce.hidden=!cr?.e
 if(!result){byId("resultCard").hidden=true;return;}
 byId("resultCard").hidden=false;
 byId("formCard").hidden=true;
+byId("resultSaveBtn").hidden=!!rec;
 renderedRecord=rec;byId("exportJsonBtn").disabled=!rec;
 byId("editRecordBtn").textContent=rec?"查看评分与证据":"返回修改";
 const sch=result.school||{};const enh=result.enhanced||{};const cmp=result.comparison||{};
@@ -1015,7 +1018,7 @@ setBusy(true);
 try{
 const d=await api(API+"/evaluations/preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
 previewResult=d.result;renderResult(d.result,null);
-msg("预览已生成（尚未保存）。如需修改请点「返回修改」，确认无误后回到第 4 步保存。","info");
+msg("预览已生成（尚未保存）。可直接点「保存记录」；如需改分点「返回修改」。","info");
 }catch(e){invalidate();goalNameError(e);courseSaveError(e);fmsg(apiErrorText(e));focusAfter=e.focusId||"";}finally{setBusy(false);focusInvalid();}});
 byId("saveBtn").addEventListener("click",async()=>{
 if(busy)return;clearFmsg();
@@ -1046,6 +1049,7 @@ setBusy(false);resetForm();renderRecordList(workspace.records);
 fmsg("记录已撤销。","info");okToast("课堂评价已撤销");
 }catch(e){fmsg(apiErrorText(e));}finally{if(busy)setBusy(false);}});
 byId("newBtn").addEventListener("click",()=>{resetForm();renderRecordList(workspace?.records||[]);msg("");byId("fLessonId").focus();});
+byId("resultSaveBtn").addEventListener("click",()=>{if(!busy)byId("saveBtn").click();});
 byId("editRecordBtn").addEventListener("click",()=>{const step=renderedRecord?3:4;byId("formCard").hidden=false;msg("");showStep(step,true);byId("formCard").scrollIntoView({block:"start"});byId("stepTitle"+step).focus({preventScroll:true});dbg("evaluation_edit",renderedRecord?"opened":"back_from_preview",{step});});
 byId("stepPrev").addEventListener("click",()=>tryGo(currentStep-1));
 byId("stepNext").addEventListener("click",()=>tryGo(currentStep+1));
