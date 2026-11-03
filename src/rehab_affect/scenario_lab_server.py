@@ -3623,6 +3623,7 @@ def create_handler(
             actions = {
                 f"{DEMO2_IDENTITY_API_PREFIX}/students": ("create_student", "student"),
                 f"{DEMO2_IDENTITY_API_PREFIX}/bindings": ("save_binding", "binding"),
+                f"{DEMO2_IDENTITY_API_PREFIX}/manual-seats": ("save_manual_seats", "manual_seats"),
                 f"{DEMO2_IDENTITY_API_PREFIX}/bindings/revoke": ("revoke_binding", "binding"),
                 f"{DEMO2_IDENTITY_API_PREFIX}/task-school": ("confirm_task_school", "workspace"),
                 f"{DEMO2_IDENTITY_API_PREFIX}/debug-event": ("client_debug_event", "event"),

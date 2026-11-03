@@ -92,7 +92,8 @@ def build_analysis(segments, run, meta, *, stop_event=None):
             "rms": audio.get("rms"),
         })
     request = {"root": str(Path(run).resolve() / "frames"), "samples": samples,
-               "duration": meta.get("duration_sec", 0), "audio_windows": audio_windows}
+               "duration": meta.get("duration_sec", 0), "audio_windows": audio_windows,
+               "manual_seats": meta.get("manual_seats") if isinstance(meta.get("manual_seats"), list) else []}
     env = dict(os.environ, OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1",
                OPENCV_LOG_LEVEL="SILENT", OPENCV_IO_MAX_IMAGE_PIXELS="16000000")
     options = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
@@ -764,14 +765,17 @@ def present_motion_analysis(analysis):
     return result
 
 
-def _manual_seats() -> list[dict[str, float]]:
-    """Optional fixed seat boxes (normalized) for a teacher-confirmed 3-seat demo."""
-    raw = os.getenv("REHAB_DEMO2_TRACKING_MANUAL_SEATS", "").strip()
-    if not raw:
-        return []
-    try:
-        values = json.loads(raw)
-    except (TypeError, ValueError):
+def _manual_seats(value=None) -> list[dict[str, float]]:
+    """Teacher-confirmed fixed seat boxes (normalized), from task config or env."""
+    raw = value if value is not None else os.getenv("REHAB_DEMO2_TRACKING_MANUAL_SEATS", "").strip()
+    if isinstance(raw, str):
+        try:
+            values = json.loads(raw)
+        except (TypeError, ValueError):
+            return []
+    elif isinstance(raw, list):
+        values = raw
+    else:
         return []
     if not isinstance(values, list) or not 1 <= len(values) <= MAX_PERSONS:
         return []
@@ -807,10 +811,11 @@ def analyze(request, detector=None):
     if any(float(a["time"]) >= float(b["time"]) for a, b in zip(samples, samples[1:])):
         raise ValueError("non_monotonic_samples")
     detector = detector or Detector()
+    detection_count = 0
     initial = None
     faces = []
     best_initial_rank = None
-    manual_seats = _manual_seats()
+    manual_seats = _manual_seats(request.get("manual_seats"))
     if manual_seats:
         # Teacher-confirmed seats bypass the recurring-face heuristic: side
         # profiles and front-row occlusion otherwise lose to stable adults.
@@ -837,7 +842,6 @@ def analyze(request, detector=None):
         if initial is None:
             return unavailable("no_video_samples")
         faces = [{"bbox": dict(box), "score": 1.0, "source": "manual_seat"} for box in manual_seats]
-    detection_count = 0
     opening_observations = []
     # Do not freeze the first blurry frame.  Search a short opening interval
     # and prefer candidates that recur, rather than one accidental high score.
@@ -1114,6 +1118,8 @@ def analyze(request, detector=None):
         reacquisitions = sum(1 for before, after in zip(items, items[1:])
                              if after["face_detected"] and not before["face_detected"])
         persons.append(dict(person_id=f"person_{i+1:02d}", display_name=display_name, anonymous=True,
+                            identity_source="manual_seat" if manual_seats else "auto_candidate",
+                            manual_seat=bool(manual_seats),
                             anchor_bbox=anchors[i], observation_roi=regions[i], windows=windows,
                             average_score=average_score, average_student_score=average_student_score,
                             dominant_state=dominant,

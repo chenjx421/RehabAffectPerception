@@ -273,6 +273,11 @@ def apply_person_filter(analysis: Any, overrides: dict[str, str] | None = None) 
         decision = overrides.get(str(person.get("person_id")))
         if decision in STATUSES:
             info["status"], info["manual"] = decision, decision != info["auto_status"]
+        elif person.get("manual_seat") or info.get("manual_seat"):
+            # Teacher-confirmed seat ROIs are authoritative; screening must not
+            # quietly remove one of the three selected students.
+            info["auto_status"] = STATUS_STUDENT
+            info["status"], info["manual"] = STATUS_STUDENT, False
         else:
             info["status"], info["manual"] = info["auto_status"], False
         reasons = [r for r in info.get("reasons", []) if r not in _MANUAL_REASONS]

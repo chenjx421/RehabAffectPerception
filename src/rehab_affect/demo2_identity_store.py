@@ -579,6 +579,54 @@ class Demo2IdentityStore:
                              binding_id=result.get("binding_id"), **trace)
         return result
 
+    def save_manual_seats(self, token, payload):
+        """Teacher-confirmed seat boxes; queue a fresh analysis seeded by these ROIs."""
+        account = self._account(token, write=True)
+        if not isinstance(payload, dict) or set(payload) != {"task_id", "seats"}:
+            raise IdentityError(400, "invalid_manual_seats", "请提交任务和座位框")
+        task_id = _field(payload.get("task_id"), 120, required=True)
+        raw = payload.get("seats")
+        if not isinstance(raw, list) or not 1 <= len(raw) <= 3:
+            raise IdentityError(400, "invalid_manual_seats", "请提交 1 至 3 个座位框")
+        seats = []
+        for item in raw:
+            if not isinstance(item, dict):
+                raise IdentityError(400, "invalid_manual_seats", "座位框格式无效")
+            box = {key: item.get(key) for key in ("x", "y", "width", "height")}
+            if any(type(v) not in (int, float) or not math.isfinite(v) for v in box.values()):
+                raise IdentityError(400, "invalid_manual_seats", "座位框坐标无效")
+            if (box["x"] < 0 or box["y"] < 0 or box["width"] <= 0 or box["height"] <= 0
+                    or box["x"] + box["width"] > 1 or box["y"] + box["height"] > 1):
+                raise IdentityError(400, "invalid_manual_seats", "座位框必须位于画面内")
+            seats.append({"student_id": str(item.get("student_id") or "")[:120], **{k: float(v) for k, v in box.items()}})
+        with self.record_store._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            task = self._task(db, account, task_id)
+            self._require_media(task)
+            context = self._context(task.get("school_context_json"), required=False)
+            scope = self._scope(account["account_id"], context)
+            if scope:
+                for seat in seats:
+                    if seat["student_id"] and not db.execute(
+                            "SELECT 1 FROM demo2_identity_students WHERE student_id=? AND owner_account_id=? AND scope_key=?",
+                            (seat["student_id"], account["account_id"], scope)).fetchone():
+                        raise IdentityError(403, "student_forbidden", "座位对应的学生不在当前学校名册，请刷新后重选")
+            if task.get("analysis_status") == "processing":
+                raise IdentityError(409, "analysis_running", "视频正在处理中，请稍后再试")
+            config = json.loads(task.get("processing_config_json") or "{}")
+            if not isinstance(config, dict):
+                config = {}
+            config["manual_seats"] = seats
+            encoded = json.dumps(config, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+            revision = hashlib.sha256(encoded.encode()).hexdigest()
+            db.execute("""UPDATE video_analysis_tasks SET processing_config_json=?, processing_config_hash=?,
+                analysis_status='queued', processing_stage='queued', processing_progress=0,
+                processing_error_json='{}', processing_claim_id='', updated_at=? WHERE task_id=?""",
+                (encoded, revision, _iso(), task_id))
+            self._audit(db, account, "manual_seats_queued", task_id,
+                        {"seat_count": len(seats), "configuration": revision[:16]})
+        return {"task_id": task_id, "status": "queued", "seats": seats}
+
     def save_binding(self, token, payload):
         return self._logged("identity_confirm", self._save_binding, token, payload)
 

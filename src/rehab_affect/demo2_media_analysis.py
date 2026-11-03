@@ -515,6 +515,8 @@ def process_video_task(
         check_source()
         emit(9, "probing")
         meta = _probe_media(ffprobe, source, stop_event)
+        config = task.get("processing_config") if isinstance(task.get("processing_config"), dict) else {}
+        meta["manual_seats"] = config.get("manual_seats") if isinstance(config.get("manual_seats"), list) else []
         config = task.get("processing_config", {})
         if not isinstance(config, dict):
             raise MediaAnalysisError("invalid_task", "Processing configuration must be an object.")
