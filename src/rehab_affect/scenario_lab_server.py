@@ -1476,6 +1476,15 @@ def create_handler(
                         self._send_course_task_file(text.encode('utf-8'), filename, 'text/markdown; charset=utf-8')
                 elif parsed.path == f"{DEMO2_API_PREFIX}/measurements":
                     self._send_demo2_json({'ok': True, 'workspace': self._measurement_call('workspace', self._session_cookie_token())})
+                elif parsed.path == f"{DEMO2_API_PREFIX}/goal-plans/due":
+                    self._require_role(account, 'school_uploader')
+                    query = parse_qs(parsed.query, keep_blank_values=True)
+                    today = (query.get('today') or [''])[0].strip()
+                    if today and (len(today) != 10 or today[4] != '-' or today[7] != '-'):
+                        raise Demo2APIError(400, 'invalid_request', 'today 必须为 YYYY-MM-DD')
+                    from datetime import date as _date
+                    due = self._goal_plan_call('due_stages', _account_id(account), today or _date.today().isoformat())
+                    self._send_demo2_json({'ok': True, 'due': due})
                 elif parsed.path == f"{DEMO2_API_PREFIX}/goal-plans":
                     self._require_role(account, 'school_uploader')
                     query = parse_qs(parsed.query, keep_blank_values=True)

@@ -97,6 +97,36 @@ class Demo2GoalPlanStore:
                               (account_id, student_id)).fetchall()
             return [self._public(row) for row in rows]
 
+    def list_all(self, account_id: str) -> list[dict[str, Any]]:
+        with self.records._connect() as db:
+            self._ensure(db)
+            rows = db.execute("SELECT * FROM demo2_goal_plans WHERE account_id=? ORDER BY updated_at DESC",
+                              (account_id,)).fetchall()
+            return [self._public(row) for row in rows]
+
+    def due_stages(self, account_id: str, today: str) -> list[dict[str, Any]]:
+        """Stages whose date is on/before today; no hidden notification is invented."""
+        from datetime import date, timedelta
+        try:
+            current = date.fromisoformat(today)
+        except ValueError:
+            current = date.today()
+        due = []
+        for plan in self.list_all(account_id):
+            base = str(plan.get("confirmed_at") or plan.get("updated_at") or "")
+            try:
+                start = date.fromisoformat(base[:10])
+            except ValueError:
+                continue
+            for week in (1, 2, 4, 8):
+                when = start + timedelta(weeks=week)
+                if when <= current:
+                    due.append({"plan_id": plan["plan_id"], "student_id": plan["student_id"],
+                                "subject": plan["subject"], "week": week, "due_date": when.isoformat(),
+                                "days_overdue": (current - when).days, "status": plan.get("status") or "draft"})
+        due.sort(key=lambda item: (item["due_date"], item["student_id"], item["week"]))
+        return due
+
     def save(self, account_id: str, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise GoalPlanError(400, "invalid_goal_plan", "请求格式无效")

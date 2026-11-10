@@ -168,6 +168,7 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any], lesson_
 <p class="lead">先把长期目标拆成可教的短期目标，再挂到本节课的视频证据。这里生成的是<strong>规则草案</strong>，必须由特教老师修改并确认，不能自动替代 IEP。</p></div>
 <div class="gp-actions"><a class="button" href="/demo2/long-term?student_id=" id="longTermLink">长期观测</a><a class="button" id="assessmentLink" href="#" hidden>学生综合评估</a></div></section>
 
+<div class="gp-due" id="dueBanner" hidden></div>
 <section class="gp-card">
   <div class="gp-grid">
     <label>学生<select id="studentSelect">{options}</select></label>
@@ -206,7 +207,7 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any], lesson_
 .gp-grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px}}label{{display:grid;gap:5px;font-size:13px;color:var(--muted)}}label.full{{margin-top:10px}}select,input,textarea{{font:inherit;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:6px;padding:9px 10px}}textarea{{resize:vertical}}
 .gp-actions{{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}}
 .button{{display:inline-block;border:1px solid var(--line);background:#fff;color:var(--blue);padding:8px 13px;border-radius:6px;text-decoration:none;font-size:13px;cursor:pointer}}.button.primary{{background:var(--blue);border-color:var(--blue);color:#fff}}.button:disabled{{opacity:.45;cursor:not-allowed}}
-.gp-hint{{color:var(--muted);font-size:12px}}.gp-result-head{{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start}}.gp-boundary{{color:var(--muted);font-size:12px;border-left:3px solid #c98a1b;padding-left:10px}}
+.gp-hint{{color:var(--muted);font-size:12px}}.gp-due{{background:#fff8ec;border:1px solid #f0c674;color:#8a4b00;border-radius:8px;padding:10px 14px;margin:0 0 12px;font-size:13px}}.gp-result-head{{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start}}.gp-boundary{{color:var(--muted);font-size:12px;border-left:3px solid #c98a1b;padding-left:10px}}
 .table-wrap{{overflow-x:auto}}.goal-table,.rubric-block table{{width:100%;border-collapse:collapse;font-size:13px;min-width:860px}}.goal-table th,.goal-table td,.rubric-block th,.rubric-block td{{border-bottom:1px solid var(--line);padding:8px;vertical-align:top;text-align:left}}.goal-table th,.rubric-block th{{background:#f4f8fd;color:#3d4e63;font-weight:600}}.goal-table input,.goal-table textarea{{width:100%;min-width:120px;border:1px solid transparent;background:#f8fafc;padding:6px}}.goal-table textarea{{min-height:54px}}.goal-table .idx{{width:34px;color:var(--muted)}}.goal-table .rm{{border:0;background:transparent;color:#b13f3f;cursor:pointer;font-size:18px}}
 .rubric-block{{border:1px solid var(--line);border-radius:8px;margin:10px 0;padding:0 12px}}.rubric-block summary{{cursor:pointer;padding:10px 0;font-weight:700}}.rubric-block summary span{{color:var(--muted);font-weight:400;font-size:12px}}.rubric-block .table-wrap{{margin:0 0 12px}}
 .status-ok{{color:#0d6042}}.status-warn{{color:#8a4b00}}
@@ -302,6 +303,17 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any], lesson_
   function updateAssessmentLink(){{
     var s=selectedStudent(),a=$('assessmentLink'),task=window.GP_TASK_ID||'';
     if(!a)return;if(task&&s){{a.href='/demo2/assessment?task_id='+encodeURIComponent(task)+'&student_id='+encodeURIComponent(s.student_id);a.hidden=false;}}else{{a.hidden=true;}}
+    loadDue();
+  }}
+  function loadDue(){{
+    var s=selectedStudent(),box=$('dueBanner');if(!box)return;
+    if(!s){{box.hidden=true;return;}}
+    fetch('/api/v1/demo2/goal-plans/due',{{cache:'no-store',credentials:'same-origin'}}).then(function(r){{return r.json();}}).then(function(j){{
+      var mine=((j.due)||[]).filter(function(d){{return d.student_id===s.student_id;}});
+      if(!mine.length){{box.hidden=true;return;}}
+      box.textContent='阶段复测提醒：'+mine.map(function(d){{return '第 '+d.week+' 周（'+d.due_date+'，已过 '+d.days_overdue+' 天）';}}).join('；')+'。请在学生测量中补记并复核。';
+      box.hidden=false;
+    }}).catch(function(){{box.hidden=true;}});
   }}
   function load(){{
     var s=selectedStudent();var lt=$('longTermLink');if(lt)lt.href='/demo2/long-term?student_id='+encodeURIComponent(s?s.student_id:'');updateAssessmentLink();
