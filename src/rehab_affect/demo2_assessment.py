@@ -76,8 +76,10 @@ def render_assessment(account: dict[str, Any], task: dict[str, Any], student: di
         base_date = datetime.fromisoformat(base_text.replace("Z", "+00:00")).date() if base_text else date.today()
     except ValueError:
         base_date = date.today()
+    today = date.today()
     stages = "".join(
-        f'<div class="as-stage"><b>第 {week} 周</b><span>{(base_date + timedelta(weeks=week)).isoformat()}</span><em>待复测</em></div>'
+        f'<div class="as-stage"><b>第 {week} 周</b><span>{(base_date + timedelta(weeks=week)).isoformat()}</span>'
+        f'<em>{"已到期待补测" if (base_date + timedelta(weeks=week)) <= today else "待复测"}</em></div>'
         for week in (1, 2, 4, 8))
     plan_status = (plan or {}).get("status") or "none"
     plan_badge = {"confirmed": "已确认", "draft": "草案，待教师确认", "none": "未生成目标草案"}.get(plan_status, plan_status)

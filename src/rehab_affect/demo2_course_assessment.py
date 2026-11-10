@@ -65,6 +65,33 @@ def render_course_assessment(account: dict[str, Any], task: dict[str, Any], stud
                 len(mapped), len(goals), len(reviewed), _num(plan_attainment),
                 "有已复核证据" if plan_attainment is not None else "待补",
                 _e(task.get("task_id")), _e(sid)))
+    plan_scores = []
+    for student in students:
+        sid = str(student.get("student_id") or "")
+        plans = plans_by_student.get(sid) or []
+        plan = next((p for p in plans if p.get("status") == "confirmed"), plans[0] if plans else None)
+        goals = (plan or {}).get("goals") or []
+        mapped = [g for g in goals if str(g.get("lesson_goal_id") or "") in lesson_ids]
+        recs = [r for r in records if r.get("student_id") == sid]
+        by_goal = {}
+        for r in recs:
+            by_goal.setdefault(str(r.get("goal_id") or ""), []).append(r)
+        reviewed = [r for g in mapped for r in by_goal.get(str(g.get("lesson_goal_id") or ""), []) if r.get("reviewed")]
+        scores = [r.get("assessment", {}).get("score") for r in reviewed if isinstance(r.get("assessment"), dict)]
+        vals = [s for s in scores if isinstance(s, (int, float))]
+        if vals:
+            plan_scores.append(sum(vals) / len(vals) * 10)
+    plan_mean = round(sum(plan_scores) / len(plan_scores), 1) if plan_scores else None
+    formula = ((overview or {}).get("conclusion") or {}).get("formula") if isinstance(overview, dict) else None
+    course_total = formula.get("course_total") if isinstance(formula, dict) else None
+    candidate = (round(course_total * 0.6 + plan_mean * 0.4, 1)
+                 if isinstance(course_total, (int, float)) and plan_mean is not None else None)
+    plan_complete = len(plan_scores) == len(students) and bool(students)
+    plan_conclusion = (
+        f"按短期目标重算：课程评价 {_num(course_total)} × 60% + 学生短期目标达成 {_num(plan_mean)} × 40% = {_num(candidate)}"
+        if plan_complete and candidate is not None else
+        f"暂不能按短期目标出正式课程结论：只有 {len(plan_scores)}/{len(students)} 名学生有已复核的短期目标证据。"
+    )
     conclusion = (overview or {}).get("conclusion") or {}
     course_score = conclusion.get("score") if isinstance(conclusion, dict) else None
     grade = (conclusion.get("grade") or {}).get("label") if isinstance(conclusion, dict) else ""
@@ -75,6 +102,7 @@ def render_course_assessment(account: dict[str, Any], task: dict[str, Any], stud
 <section class="ca-card"><div class="ca-kpis"><div class="ca-kpi"><span>纳入检测学生</span><strong>{len(students)}</strong></div><div class="ca-kpi"><span>已有复核证据</span><strong>{evidenced_students}</strong></div><div class="ca-kpi"><span>课程评价</span><strong>{_num(course_score)}{" " + _e(grade) if grade else ""}</strong></div><div class="ca-kpi"><span>本课测量记录</span><strong>{len(records)}</strong></div></div></section>
 <section class="ca-card"><h2>学生目标证据覆盖</h2><p class="ca-note">“已关联”= 短期目标已挂到本课目标；“已复核”= 对应测量已由教师复核。计划达成分只是已映射测量的平均，不等于正式课程结论；课程总览仍是原 60/40 口径。</p>
 <div class="ca-wrap"><table class="ca-table"><thead><tr><th>学生</th><th>目标草案</th><th>已关联 / 短期目标</th><th>已复核测量</th><th>计划达成分（参考）</th><th>状态</th><th></th></tr></thead><tbody>{''.join(rows) if rows else '<tr><td colspan="7">本课还没有学生。</td></tr>'}</tbody></table></div></section>
+<section class="ca-card"><h2>按短期目标重算（证据链口径）</h2><p class="ca-note">{_e(plan_conclusion)}</p><p class="ca-note">正式课程总览仍保留原 60/40 口径（{_e(_num(course_score))}{" " + _e(grade) if grade else ""}）；本卡只在证据覆盖完整时才给出重算值，覆盖不全不冒充结论。</p></section>
 <section class="ca-card"><h2>结论口径说明</h2><p class="ca-note">课程总览的 71.7 仍由“课程评价 78 × 60% + 学生目标达成 62.2 × 40%”计算；学生目标达成来自课程任务目标，不来自上面的短期目标。要让课程总评按短期目标重算，需要把本表“已复核测量”接入总览公式，并明确缺失学生如何处理。</p>
 <p><a class="ca-link" href="/demo2/course-overview?task_id={_e(task.get("task_id"))}">打开课程总览</a></p></section>
 </main>'''
