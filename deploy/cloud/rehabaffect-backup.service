@@ -1,0 +1,17 @@
+[Unit]
+Description=WeGlow SQLite encrypted-at-rest pilot backup
+After=rehabaffect-app.service
+ConditionPathExists=/var/lib/rehabaffect/seewo_demo2/rehab_affect_demo2.sqlite3
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+EnvironmentFile=/etc/rehabaffect/cloud.env
+ExecStart=/opt/rehabaffect/.venv/bin/python /opt/rehabaffect/scripts/cloud_pilot_ops.py backup --db /var/lib/rehabaffect/seewo_demo2/rehab_affect_demo2.sqlite3 --out /var/lib/rehabaffect/cloud_backups/daily --keep 14
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/rehabaffect
