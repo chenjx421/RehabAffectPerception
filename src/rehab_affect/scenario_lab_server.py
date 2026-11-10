@@ -17,6 +17,11 @@ from collections import OrderedDict, deque
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+
+class _ThreadingHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer with a backlog large enough for browser/API bursts."""
+    request_queue_size = 128
 from threading import BoundedSemaphore, Event, Lock, Thread
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urlparse
@@ -4353,7 +4358,7 @@ def run_server(
     from .demo2_media_worker import VideoAnalysisWorker
 
     media_worker = VideoAnalysisWorker(retention_store)
-    server = ThreadingHTTPServer((host, port), handler)
+    server = _ThreadingHTTPServer((host, port), handler)
     dossier_cleanup = getattr(handler, "cleanup_expired_dossiers", None)
     safety_cleanup = getattr(handler, "cleanup_expired_safety", None)
     summary_cleanup = getattr(handler, "cleanup_expired_student_summaries", None)
