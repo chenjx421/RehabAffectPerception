@@ -669,10 +669,13 @@ OVERVIEW_CSS = r"""
 .ov-conclusion[data-grade=qualified]{border-left-color:#c98a1b}.ov-conclusion[data-grade=improve]{border-left-color:#c24d4d}.ov-conclusion.is-pending{border-left-color:#9aa9bb;background:#fbfcfe}
 .ov-grade-row{display:flex;gap:18px;align-items:center;flex-wrap:wrap}.ov-grade{font-size:34px;font-weight:800;line-height:1.1}
 .ov-grade[data-grade=excellent]{color:#1d8a5c}.ov-grade[data-grade=good]{color:#1f5fbf}.ov-grade[data-grade=qualified]{color:#a8700f}.ov-grade[data-grade=improve]{color:#b13f3f}
-.ov-score{font-size:15px;color:#23334a}.ov-score strong{font-size:22px}.ov-trial{display:inline-block;padding:2px 8px;border-radius:4px;background:#fff4dc;color:#8a5a00;font-size:12px;font-weight:700}
+.ov-score{font-size:15px;color:#23334a;display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}.ov-score strong{font-size:22px}.ov-trial{display:inline-block;padding:2px 8px;border-radius:4px;background:#fff4dc;color:#8a5a00;font-size:12px;font-weight:700}
+.ov-score-help{width:24px;height:24px;border-radius:50%;border:1px solid #9bb7d9;background:#eef5ff;color:#1f5fbf;font-size:14px;font-weight:800;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;vertical-align:middle}
+.ov-score-help:hover,.ov-score-help:focus-visible,.ov-score-help.is-open{background:#1f5fbf;border-color:#1f5fbf;color:#fff;outline:none;box-shadow:0 0 0 3px rgba(31,95,191,.15)}
+.ov-formula-panel{margin-top:14px;padding:14px;border:1px solid #dce5f0;border-radius:8px;background:#f8fafc}.ov-formula-panel[hidden]{display:none!important}.ov-formula-panel h3{margin:0 0 10px;font-size:14px;color:#23334a}
 .ov-formula{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:14px 0 8px}
 .ov-formula div{background:#f4f8fd;border:1px solid #dce5f0;border-radius:6px;padding:10px 12px}.ov-formula span{display:block;color:#62758c;font-size:12px}.ov-formula strong{font-size:18px}
-.ov-formula-text{font-size:13px;color:#3d4e63;background:#f8fafc;border-radius:6px;padding:8px 10px;margin:6px 0}
+.ov-formula-text{font-size:13px;color:#3d4e63;background:#fff;border-radius:6px;padding:8px 10px;margin:6px 0}
 .ov-bands{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:#62758c;margin:4px 0 0}.ov-bands span{border:1px solid #dce5f0;border-radius:4px;padding:2px 8px}.ov-bands span.is-current{border-color:#1f5fbf;color:#1f5fbf;font-weight:700}
 .ov-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:14px}
 .ov-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}.ov-list details{border:1px solid #dce5f0;border-radius:6px;background:#fff}
@@ -729,11 +732,11 @@ OVERVIEW_JS = r"""
     }
     var f=cc.formula||{},g=cc.grade||{};
     return '<section class="ov-card ov-conclusion"'+ida('ovConclusion')+' data-grade="'+esc(g.key)+'" aria-labelledby="ovConclusionTitle"><h2'+ida('ovConclusionTitle')+'>课程结论 <span class="ov-trial">试行</span></h2>'+
-      '<div class="ov-grade-row"><div class="ov-grade" id="ovGrade" data-grade="'+esc(g.key)+'">'+esc(g.label)+'</div><div class="ov-score">结论分 <strong id="ovScore">'+num(cc.score,1)+'</strong> / 100</div></div>'+
-      '<div class="ov-formula" id="ovFormula"><div><span>课程评价总分（学校原表）× '+Math.round(Number(f.course_weight)*100)+'%</span><strong>'+num(f.course_total,1)+' × '+num(f.course_weight)+' = '+num(f.course_part)+'</strong></div>'+
+      '<div class="ov-grade-row"><div class="ov-grade" id="ovGrade" data-grade="'+esc(g.key)+'">'+esc(g.label)+'</div><div class="ov-score">结论分 <strong id="ovScore">'+num(cc.score,1)+'</strong> / 100 <button class="ov-score-help" type="button" aria-label="查看结论分计算说明" aria-expanded="false" aria-controls="ovFormulaPanel" title="点击查看结论分怎么算">?</button></div></div>'+
+      '<div class="ov-formula-panel" id="ovFormulaPanel" hidden><h3>结论分怎么算</h3><div class="ov-formula" id="ovFormula"><div><span>课程评价总分（学校原表）× '+Math.round(Number(f.course_weight)*100)+'%</span><strong>'+num(f.course_total,1)+' × '+num(f.course_weight)+' = '+num(f.course_part)+'</strong></div>'+
       '<div><span>学生目标达成度均值 × '+Math.round(Number(f.attainment_weight)*100)+'%</span><strong>'+num(f.attainment_mean,1)+' × '+num(f.attainment_weight)+' = '+num(f.attainment_part)+'</strong></div>'+
       '<div><span>结论分（保留一位小数）</span><strong>'+num(cc.score,1)+' → '+esc(g.label)+'</strong></div></div>'+
-      '<p class="ov-formula-text" id="ovFormulaText">'+esc(f.text)+'</p>'+bandsHtml(contract,g.key)+'<p class="ov-note">'+esc(cc.note||'')+'</p>'+
+      '<p class="ov-formula-text" id="ovFormulaText">'+esc(f.text)+'</p>'+bandsHtml(contract,g.key)+'<p class="ov-note">'+esc(cc.note||'')+'</p></div>'+
       '<div class="ov-two"><div><h3>主要优点</h3>'+highlightList(cc.strengths,false,admin,'ovStrength')+'</div><div><h3>主要待改进</h3>'+highlightList(cc.improvements,true,admin,'ovImprove')+'</div></div></section>';
   }
   function chart(categories){
@@ -789,6 +792,22 @@ OVERVIEW_JS = r"""
     opts=opts||{};if(!host)return;var admin=opts.viewer==='company_admin'||ov.viewer==='company_admin';
     if(!ov||ov.available===false){host.innerHTML='<div class="ov-card ov-stale">'+esc((ov&&ov.error)||'课程总览暂时无法计算，请稍后刷新')+'</div>';return;}
     host.innerHTML=(opts.staleNotice?'<div class="ov-stale" id="ovStaleNotice">'+esc(opts.staleNotice)+'</div>':'')+head(ov)+conclusion(ov,admin)+indicators(ov)+matrix(ov,admin)+'<p class="ov-note">'+esc(ov.boundary||'')+'</p>';
+    host.querySelectorAll('.ov-score-help').forEach(function(btn){
+      var panel=document.getElementById(btn.getAttribute('aria-controls'));if(!panel)return;
+      function open(){panel.hidden=false;btn.setAttribute('aria-expanded','true');btn.classList.add('is-open');}
+      btn.addEventListener('mouseenter',open);
+      btn.addEventListener('focus',open);
+      btn.addEventListener('click',function(e){e.stopPropagation();open();});
+    });
+    if(!window.__ovScoreHelpOutside){
+      window.__ovScoreHelpOutside=true;
+      document.addEventListener('click',function(e){
+        if(e.target&&e.target.closest&&(e.target.closest('.ov-score-help')||e.target.closest('.ov-formula-panel')))return;
+        document.querySelectorAll('.ov-formula-panel').forEach(function(p){p.hidden=true;});
+        document.querySelectorAll('.ov-score-help').forEach(function(b){b.setAttribute('aria-expanded','false');b.classList.remove('is-open');});
+      });
+      document.addEventListener('keydown',function(e){if(e.key!=='Escape')return;document.querySelectorAll('.ov-formula-panel').forEach(function(p){p.hidden=true;});document.querySelectorAll('.ov-score-help').forEach(function(b){b.setAttribute('aria-expanded','false');b.classList.remove('is-open');});});
+    }
     host.querySelectorAll('[data-ov-jump]').forEach(function(a){a.addEventListener('click',function(e){var id=a.getAttribute('data-ov-jump').replace(/^#/,'');var t=document.getElementById(id);if(!t)return;e.preventDefault();t.scrollIntoView({behavior:'smooth',block:'center'});if(t.tagName==='TR'){t.classList.add('is-selected');setTimeout(function(){t.classList.remove('is-selected');},2400);}});});
     if(admin)return;
     host.querySelectorAll('[data-ov-student]').forEach(function(tr){
