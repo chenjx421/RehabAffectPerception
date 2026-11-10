@@ -47,11 +47,13 @@ MAX_DECODED_FRAMES = MAX_DURATION_SEC * MAX_SOURCE_FPS
 MAX_SAMPLE_SIDE = 768
 WINDOW_SEC = 20
 SIMPLE_STATE_WINDOW_SEC = 30
-MAX_SIMPLE_PERSONS = 3
+MAX_SIMPLE_PERSONS = 5
 MAX_FACE_DETECTION_SAMPLES = 120
 SIMPLE_ANALYSIS_VERSION = "simple_student_seats_v3_8"
 AUDIO_RATE = 16000
 ENERGY_THRESHOLD_RMS = 0.01
+PROGRESS_HEARTBEAT_SEC = 2.0
+DECODER_THREADS_ENV = "REHAB_DEMO2_DECODER_THREADS"
 PROBE_TIMEOUT_SEC = 30.0
 PROCESS_TIMEOUT_SEC = 2 * 60 * 60.0
 MAX_PROBE_BYTES = 256 * 1024
@@ -62,6 +64,8 @@ _SCOPE = "Technical full-scene media evidence; not student or classroom evaluati
 class MediaAnalysisError(RuntimeError):
     def __init__(self, code: str, message: str):
         self.code = code
+        # Set for missing_dependency so the worker can name ffmpeg/ffprobe.
+        self.tool = ""
         super().__init__(message)
 
 
@@ -75,9 +79,15 @@ def _check_stop(stop_event: threading.Event | None) -> None:
         raise MediaAnalysisCancelled()
 
 
-def _resolve_tool(name: str) -> str:
+def _resolve_tool_with_source(name: str) -> tuple[str, str]:
+    """Return ``(executable, source)``; source is configured/path/sibling/bundled/imageio.
+
+    Cloud hosts set REHAB_FFMPEG=/usr/bin/ffmpeg and REHAB_FFPROBE=/usr/bin/ffprobe.
+    A configured path that does not exist never falls back to another binary.
+    """
     configured = os.environ.get(f"REHAB_{name.upper()}", "").strip()
     found = shutil.which(configured or name)
+    source = "configured" if configured else "path"
     if not found and configured:
         candidate = Path(configured).expanduser()
         if candidate.is_file() and os.access(candidate, os.X_OK):
@@ -87,11 +97,11 @@ def _resolve_tool(name: str) -> str:
         if ffmpeg:
             candidate = Path(ffmpeg).parent / ("ffprobe.exe" if os.name == "nt" else "ffprobe")
             if candidate.is_file() and os.access(candidate, os.X_OK):
-                found = str(candidate.resolve())
+                found, source = str(candidate.resolve()), "sibling"
     if not found and not configured:
         candidate = Path(__file__).resolve().parents[2] / ".tools" / (f"{name}.exe" if os.name == "nt" else name)
         if candidate.is_file() and os.access(candidate, os.X_OK):
-            found = str(candidate.resolve())
+            found, source = str(candidate.resolve()), "bundled"
     if not found and name == "ffmpeg" and not configured:
         try:
             import imageio_ffmpeg
@@ -101,13 +111,34 @@ def _resolve_tool(name: str) -> str:
             candidates = sorted(binaries.glob("ffmpeg-*"))
             found = next((str(p.resolve()) for p in candidates if p.is_file() and os.access(p, os.X_OK)
                           and (p.suffix == ".exe" if os.name == "nt" else p.suffix != ".exe")), None)
+            source = "imageio"
         except ImportError:
             pass
     if not found:
-        raise MediaAnalysisError(
+        error = MediaAnalysisError(
             "missing_dependency", f"Install {name} or set REHAB_{name.upper()} to its executable."
         )
-    return found
+        error.tool = name
+        raise error
+    return found, source
+
+
+def _resolve_tool(name: str) -> str:
+    return _resolve_tool_with_source(name)[0]
+
+
+def media_tool_status() -> dict[str, Any]:
+    """Report which FFmpeg/ffprobe will be used, without exposing their paths."""
+    status: dict[str, Any] = {"tools_available": True, "missing": []}
+    for name in ("ffmpeg", "ffprobe"):
+        try:
+            _, source = _resolve_tool_with_source(name)
+        except MediaAnalysisError:
+            source = "missing"
+            status["tools_available"] = False
+            status["missing"].append(name)
+        status[f"{name}_source"] = source
+    return status
 
 
 def _no_links(path: Path) -> None:
@@ -137,9 +168,12 @@ def _local_path(value: Any) -> Path:
 
 
 def _input_options() -> list[str]:
+    threads = os.environ.get(DECODER_THREADS_ENV, "1")
+    if threads not in {"1", "2"}:
+        raise MediaAnalysisError("invalid_task", "Decoder threads must be 1 or 2.")
     return [
         "-protocol_whitelist", "file", "-format_whitelist", _FORMATS,
-        "-probesize", "8000000", "-analyzeduration", "5000000", "-threads", "1",
+        "-probesize", "8000000", "-analyzeduration", "5000000", "-threads", threads,
         "-max_streams", str(MAX_STREAMS), "-max_pixels", str(MAX_PIXELS),
     ]
 
@@ -400,6 +434,7 @@ def process_video_task(
     task: dict, output_dir: Path,
     progress: Callable[[int, str], None] | None = None,
     stop_event: threading.Event | None = None,
+    *, stage_timings: dict[str, float] | None = None,
 ) -> dict:
     """Decode the complete video to a bounded 1 fps evidence stream.
 
@@ -410,15 +445,31 @@ def process_video_task(
     not separately encoded video clips. Decoded frame-end timing is required
     (verified with bundled FFmpeg 7.1).
     Caller-owned output_dir must be private and not shared between tenants.
+    Optional stage_timings receives elapsed seconds after success, outside the
+    evidence result. Progress callbacks are coalesced with a bounded heartbeat.
     """
     last_progress = -1
+    last_emitted = None
+    last_emitted_at = 0.0
+    timing_origin = time.perf_counter() if stage_timings is not None else 0.0
+    timing_started = timing_origin
+    timing_stage = None
 
     def emit(percent: int, stage: str) -> None:
-        nonlocal last_progress
+        nonlocal last_progress, last_emitted, last_emitted_at, timing_started, timing_stage
         _check_stop(stop_event)
         percent = max(last_progress, min(100, percent))
+        if stage_timings is not None and stage != timing_stage:
+            now = time.perf_counter()
+            if timing_stage is not None:
+                stage_timings[timing_stage] = stage_timings.get(timing_stage, 0.0) + now - timing_started
+            timing_started, timing_stage = now, stage
         if progress is not None:
-            progress(percent, stage)
+            now = time.monotonic()
+            current = (percent, stage)
+            if current != last_emitted or now - last_emitted_at >= PROGRESS_HEARTBEAT_SEC:
+                progress(percent, stage)
+                last_emitted, last_emitted_at = current, now
         last_progress = percent
         _check_stop(stop_event)
 
@@ -464,6 +515,8 @@ def process_video_task(
         check_source()
         emit(9, "probing")
         meta = _probe_media(ffprobe, source, stop_event)
+        config = task.get("processing_config") if isinstance(task.get("processing_config"), dict) else {}
+        meta["manual_seats"] = config.get("manual_seats") if isinstance(config.get("manual_seats"), list) else []
         config = task.get("processing_config", {})
         if not isinstance(config, dict):
             raise MediaAnalysisError("invalid_task", "Processing configuration must be an object.")
@@ -636,6 +689,11 @@ def process_video_task(
         with (run / "analysis.json").open("xb") as handle:
             handle.write(encoded_result)
         emit(100, "evidence_ready")
+        if stage_timings is not None:
+            now = time.perf_counter()
+            if timing_stage is not None:
+                stage_timings[timing_stage] = stage_timings.get(timing_stage, 0.0) + now - timing_started
+            stage_timings["total"] = now - timing_origin
         completed = True
         return result
     except OSError:
@@ -696,7 +754,7 @@ def _audio_evidence(
         wav.setsampwidth(2)
         wav.setframerate(AUDIO_RATE)
         with closing(_pipe_chunks(command, stage="audio", stop_event=stop_event,
-                                   timeout=PROCESS_TIMEOUT_SEC, chunk_size=640,
+                                   timeout=PROCESS_TIMEOUT_SEC, chunk_size=32000,
                                    max_bytes=(expected_samples + AUDIO_RATE) * 2,
                                    counters=counters)) as chunks:
             for block in chunks:

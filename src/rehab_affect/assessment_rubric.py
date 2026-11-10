@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from decimal import ROUND_HALF_UP, Decimal
 from collections.abc import Iterable, Mapping
 from datetime import date, datetime, timedelta
 from statistics import mean
@@ -43,6 +44,196 @@ SCORE_LEVELS = {
 }
 
 SCALE = {"min": 0, "max": 10, "pass_score": PASS_SCORE, "pass_label": "及格"}
+
+MIN_OBSERVED = 2
+EVIDENCE_SUFFICIENT = "证据充分"
+EVIDENCE_INSUFFICIENT = "证据不足"
+DIMENSION_LABELS: dict[str, str] = {
+    "accuracy": "准确性",
+    "independence": "独立性",
+    "consistency": "一致性",
+    "transfer": "泛化性",
+}
+# 页面“评分标准”与后端计算共用的说明，避免两处口径漂移。
+DIMENSION_DESCRIPTIONS: dict[str, str] = {
+    "accuracy": "目标行为完成正确率，0分=有机会但无成功，留空=无观察机会",
+    "independence": "完成行为所需提示级别，10分=完全独立，0分=全程辅助",
+    "consistency": "相同条件下重复出现的稳定程度，需至少2次观察机会",
+    "transfer": "在新材料或新情境中是否出现，无泛化机会时留空而非填0",
+}
+SCORING_PRINCIPLES: tuple[tuple[str, str], ...] = (
+    ("目标对齐", "所记录行为须与学习目标直接对应，不记录课堂管理或偶发行为。"),
+    ("提示层级", "同一课次内使用相同提示级别，不混合不同支持强度的观察。"),
+    ("相同难度", "一致性维度仅统计难度相当的重复试次，不将新材料与熟悉材料混合。"),
+    ("新材料独立性", "首次接触新材料或新情境的表现，记入泛化性维度而非准确性。"),
+    ("留空而非填0", "当某维度没有观察机会时，留空；0分表示有机会但未成功，含义不同。"),
+    ("可比性保证", "跨课比较须相同目标、测量条件、通过标准和量表版本；任一项不同即不可比。"),
+)
+
+# 评分标准细则（锚点 / 证据要求 / 数据来源 / 不计分情形）。细则只解释每个分档，
+# 不改变上面的权重与计算；细则文字调整时递增 RUBRIC_DETAIL_VERSION。
+RUBRIC_DETAIL_VERSION = "2026-11-01.anchors-v1"
+ANCHOR_LEVELS: tuple[int, ...] = (10, 8, 6, 4, 2, 0)
+DIMENSION_ANCHORS: dict[str, dict[int, str]] = {
+    "accuracy": {
+        10: "本课约定的学习机会中几乎全部正确完成（约 90% 以上），出现错误能自我纠正",
+        8: "多数机会正确完成（约 70%–89%），偶有错误",
+        6: "过半机会正确完成（约 50%–69%），达到本节目标最低要求",
+        4: "少数机会正确完成（约 30%–49%），常需教师纠错",
+        2: "偶尔正确（约 10%–29%），多数机会未完成",
+        0: "提供了学习机会但未出现正确表现（10% 以下）；没有机会时应留空而非记 0",
+    },
+    "independence": {
+        10: "完全独立完成，不需要任何提示",
+        8: "仅需手势或视觉提示（指向、图卡）即可完成",
+        6: "需要口语提示才能完成",
+        4: "需要教师示范后才能完成",
+        2: "需要部分肢体辅助才能完成",
+        0: "全程需要肢体辅助，无法自主启动",
+    },
+    "consistency": {
+        10: "相同条件下每次机会都稳定出现",
+        8: "绝大多数重复机会稳定出现，仅一次波动",
+        6: "过半的重复机会出现，表现基本稳定",
+        4: "时有时无，出现次数不足一半",
+        2: "多次机会中仅偶发出现一次",
+        0: "至少 2 次相同条件机会均未出现",
+    },
+    "transfer": {
+        10: "在新材料和新情境中都能独立出现",
+        8: "在新材料或新情境中出现，仅需普通提示",
+        6: "在相近的新材料中出现，需要口语提示",
+        4: "在新材料中需要示范后才出现",
+        2: "新材料中只在大量辅助下出现",
+        0: "提供了新材料或新情境机会但未出现；没有泛化机会时留空",
+    },
+}
+DIMENSION_EVIDENCE: dict[str, str] = {
+    "accuracy": "记录本课学习机会次数与正确完成次数（或视频中稳定参与/正确回应的片段），并写明通过标准。",
+    "independence": "记录每次完成时实际使用的提示层级（独立/视觉/口语/示范/肢体），同一课次按最高支持强度归档。",
+    "consistency": "至少 2 次相同难度、相同条件的重复机会，写明各次是否出现。",
+    "transfer": "写明所用的新材料或新情境，以及该情境下的完成方式；单节视频没有新情境时留空。",
+}
+DATA_SOURCE_LABELS: dict[str, str] = {
+    "video": "视频指标",
+    "teacher_observation": "教师观察",
+    "course_goal": "课程任务目标",
+    "iep": "IEP 要点",
+}
+DIMENSION_SOURCES: dict[str, tuple[str, ...]] = {
+    "accuracy": ("teacher_observation", "video", "course_goal"),
+    "independence": ("teacher_observation", "video", "iep"),
+    "consistency": ("teacher_observation", "video"),
+    "transfer": ("teacher_observation", "course_goal", "iep"),
+}
+DIMENSION_NOT_SCORED: dict[str, tuple[str, ...]] = {
+    "accuracy": ("本课没有提供该目标的学习机会", "目标行为与本课学习目标无关（如课堂管理行为）"),
+    "independence": ("提示层级未记录或无法从视频判断", "他人代答或集体回答无法归到该学生"),
+    "consistency": ("相同条件的重复机会少于 2 次", "各次机会的材料或难度不同，不可比较"),
+    "transfer": ("本课没有安排新材料或新情境", "单节视频只有熟悉材料，无法观察泛化"),
+}
+# 记录中的提示层级（support_level）对应的独立性参考档位。
+SUPPORT_LEVEL_ANCHORS: dict[str, tuple[str, int | None]] = {
+    "independent": ("独立完成", 10),
+    "visual": ("视觉/手势提示", 8),
+    "verbal": ("口语提示", 6),
+    "demonstration": ("示范", 4),
+    "physical": ("肢体辅助", 2),
+    "unknown": ("未记录", None),
+}
+MIN_CONDITIONS: tuple[str, ...] = (
+    "教师须勾选「已完成复核」，否则不生成综合得分。",
+    "准确性、独立性、一致性、泛化性四个维度都须有有效分数（非空）。",
+    f"观察次数至少为 {MIN_OBSERVED} 次（observed ≥ {MIN_OBSERVED}）。",
+    "不满足任一条件时标注「证据不足」，不输出得分数字，不使用置信度替代。",
+)
+
+
+def anchor_level(score: Any) -> int | None:
+    """Highest anchor level not above ``score`` (7.5 -> 6); None stays None."""
+    value = _validate_score(score)
+    if value is None:
+        return None
+    return min(10, int(value // 2) * 2)
+
+
+# 课程总览「课程结论」的试行等级：结论分 = 课程评价总分 × 60% + 学生目标达成度均值 × 40%。
+# 阈值与权重是试行口径（未经学校校准），页面与报告都要标明「试行」。
+COURSE_GRADE_VERSION = "2026-11-01.course-grade-trial-v1"
+COURSE_GRADE_WEIGHTS: dict[str, float] = {"course_evaluation": 0.6, "student_attainment": 0.4}
+COURSE_GRADE_BANDS: tuple[dict[str, Any], ...] = (
+    {"key": "excellent", "label": "优秀", "min": 85.0, "range": "≥ 85"},
+    {"key": "good", "label": "良好", "min": 70.0, "range": "70 ~ 84.9"},
+    {"key": "qualified", "label": "合格", "min": 60.0, "range": "60 ~ 69.9"},
+    {"key": "improve", "label": "待改进", "min": 0.0, "range": "< 60"},
+)
+COURSE_GRADE_NOTE = (
+    "课程等级为试行口径：课程评价总分取学校标准评分原表总分（10 项 × 10 分 = 100 分，须已核对），"
+    "学生目标达成度 = 每名学生已复核且证据充分的目标综合分平均 × 10；两者按 60% / 40% 合成，"
+    "保留一位小数后对照等级阈值。阈值与权重待学校校准，不构成教师绩效或学生能力定级。"
+)
+
+
+def _one_decimal(value: Decimal) -> float:
+    return float(value.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
+
+def course_grade(score: Any) -> dict[str, Any] | None:
+    """Grade band of a 0--100 conclusion score; ``None`` stays ``None`` (no conclusion)."""
+    if score is None:
+        return None
+    if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(float(score)):
+        raise ValueError("课程结论分必须是有限数字")
+    number = float(score)
+    if number < 0 or number > 100:
+        raise ValueError("课程结论分超出 0--100 范围")
+    for band in COURSE_GRADE_BANDS:
+        if number >= band["min"]:
+            return {"key": band["key"], "label": band["label"], "range": band["range"]}
+    return {"key": COURSE_GRADE_BANDS[-1]["key"], "label": COURSE_GRADE_BANDS[-1]["label"],
+            "range": COURSE_GRADE_BANDS[-1]["range"]}
+
+
+def course_conclusion_score(course_total: Any, attainment_mean: Any) -> dict[str, Any]:
+    """Weighted conclusion with every intermediate value rounded the way the page shows it."""
+    for value in (course_total, attainment_mean):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            raise ValueError("课程评价总分与学生目标达成度均值必须是有限数字")
+        if float(value) < 0 or float(value) > 100:
+            raise ValueError("课程评价总分与学生目标达成度均值须在 0--100 之间")
+    total = Decimal(str(_one_decimal(Decimal(str(course_total)))))
+    attainment = Decimal(str(_one_decimal(Decimal(str(attainment_mean)))))
+    course_weight = Decimal(str(COURSE_GRADE_WEIGHTS["course_evaluation"]))
+    attainment_weight = Decimal(str(COURSE_GRADE_WEIGHTS["student_attainment"]))
+    course_part = (total * course_weight).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    attainment_part = (attainment * attainment_weight).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    score = _one_decimal(course_part + attainment_part)
+    return {
+        "course_total": float(total), "course_weight": float(course_weight),
+        "attainment_mean": float(attainment), "attainment_weight": float(attainment_weight),
+        "course_part": float(course_part), "attainment_part": float(attainment_part),
+        "score": score, "grade": course_grade(score),
+        "text": (f"结论分 = 课程评价总分 {float(total):g} × {float(course_weight):g} + 学生目标达成度均值 "
+                 f"{float(attainment):g} × {float(attainment_weight):g} = {float(course_part):g} + "
+                 f"{float(attainment_part):g} = {score:g}"),
+    }
+
+
+def course_grade_contract() -> dict[str, Any]:
+    return {
+        "version": COURSE_GRADE_VERSION,
+        "trial": True,
+        "weights": [
+            {"key": "course_evaluation", "label": "课程评价总分", "weight": COURSE_GRADE_WEIGHTS["course_evaluation"],
+             "weight_percent": round(COURSE_GRADE_WEIGHTS["course_evaluation"] * 100)},
+            {"key": "student_attainment", "label": "学生目标达成度均值", "weight": COURSE_GRADE_WEIGHTS["student_attainment"],
+             "weight_percent": round(COURSE_GRADE_WEIGHTS["student_attainment"] * 100)},
+        ],
+        "bands": [dict(band) for band in COURSE_GRADE_BANDS],
+        "formula": "结论分 = 课程评价总分 × 60% + 学生目标达成度均值 × 40%（保留一位小数）",
+        "note": COURSE_GRADE_NOTE,
+    }
+
 
 _NOTE = (
     "本量表为试点校内部评分参考：35/30/20/15 维度权重与 6 分及格线均为试点设定，"
@@ -108,8 +299,61 @@ def weighted_score(scores: Mapping[str, Any] | None, observed: Iterable[str] | N
                 usable.append((name, value))
     if not usable:
         return None
-    total_weight = sum(DIMENSION_WEIGHTS[name] for name, _ in usable)
-    return round(sum(value * DIMENSION_WEIGHTS[name] for name, value in usable) / total_weight, 2)
+    # Decimal + ROUND_HALF_UP keeps the page rule "两位小数" exact (no 6.849999 drift).
+    total_weight = sum(Decimal(str(DIMENSION_WEIGHTS[name])) for name, _ in usable)
+    weighted = sum(Decimal(str(value)) * Decimal(str(DIMENSION_WEIGHTS[name])) for name, value in usable)
+    return float((weighted / total_weight).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def evidence_shortfalls(scores: Mapping[str, Any] | None, *, observed: Any, reviewed: Any) -> list[str]:
+    """Return every unmet minimum-scoring condition (empty list = 证据充分).
+
+    Order follows the page: 复核 -> 四维非空 -> observed >= 2.
+    """
+    reasons: list[str] = []
+    if reviewed is not True:
+        reasons.append("教师未勾选「已完成复核」")
+    scores = scores if isinstance(scores, Mapping) else {}
+    missing = [DIMENSION_LABELS[name] for name in DIMENSION_WEIGHTS if scores.get(name) is None]
+    if missing:
+        reasons.append("维度为空：" + "、".join(missing))
+    if isinstance(observed, bool) or not isinstance(observed, int) or observed < MIN_OBSERVED:
+        reasons.append(f"观察次数不足（observed={observed}，至少需要 {MIN_OBSERVED} 次）")
+    return reasons
+
+
+def rubric_contract() -> dict[str, Any]:
+    """Machine-readable rubric shared by the 评分标准 page and the scoring code."""
+    return {
+        "rubric_version": RUBRIC_VERSION,
+        "detail_version": RUBRIC_DETAIL_VERSION,
+        "scale": dict(SCALE),
+        "min_observed": MIN_OBSERVED,
+        "decimals": 2,
+        "dimensions": [
+            {
+                "key": name,
+                "label": DIMENSION_LABELS[name],
+                "weight": weight,
+                "weight_percent": round(weight * 100),
+                "description": DIMENSION_DESCRIPTIONS[name],
+                "anchors": [{"level": level, "text": DIMENSION_ANCHORS[name][level]} for level in ANCHOR_LEVELS],
+                "evidence": DIMENSION_EVIDENCE[name],
+                "data_sources": [{"key": key, "label": DATA_SOURCE_LABELS[key]} for key in DIMENSION_SOURCES[name]],
+                "not_scored": list(DIMENSION_NOT_SCORED[name]),
+            }
+            for name, weight in DIMENSION_WEIGHTS.items()
+        ],
+        "score_levels": [{"level": level, "text": SCORE_LEVELS[level]} for level in ANCHOR_LEVELS],
+        "anchor_rule": "得分落在两个锚点之间时，取不高于得分的锚点（如 7.5 分对应 6 分档）。",
+        "support_levels": [{"key": key, "label": label, "anchor_level": level}
+                           for key, (label, level) in SUPPORT_LEVEL_ANCHORS.items()],
+        "min_conditions": list(MIN_CONDITIONS),
+        "principles": [{"title": title, "text": text} for title, text in SCORING_PRINCIPLES],
+        "evidence_status": {"sufficient": EVIDENCE_SUFFICIENT, "insufficient": EVIDENCE_INSUFFICIENT},
+        "confidence_substitute": False,
+        "course_grade": course_grade_contract(),
+    }
 
 
 def build_assessment_summary(
@@ -148,9 +392,11 @@ def build_assessment_summary(
             normalized[name] = _validate_score(scores[name])
 
     all_present = all(normalized.get(name) is not None for name in DIMENSION_WEIGHTS)
-    provisional = weighted_score(normalized) if all_present and observed >= 2 else None
+    provisional = weighted_score(normalized) if all_present and observed >= MIN_OBSERVED else None
     overall = provisional if reviewed else None
-    insufficient = observed < 2 or not all_present
+    insufficient = observed < MIN_OBSERVED or not all_present
+    shortfalls = evidence_shortfalls(normalized, observed=observed, reviewed=reviewed)
+    evidence_status = EVIDENCE_INSUFFICIENT if shortfalls else EVIDENCE_SUFFICIENT
     band = score_band(overall)
     passed = None if overall is None else overall >= PASS_SCORE
 
@@ -166,6 +412,11 @@ def build_assessment_summary(
             for name, weight in DIMENSION_WEIGHTS.items()
         },
         "overall_score": overall,
+        # score/evidence_status 是对外评分契约：证据不足时 score 恒为 None，不用置信度替代。
+        "score": overall if not shortfalls else None,
+        "score_display": f"{overall:.2f}" if overall is not None and not shortfalls else None,
+        "evidence_status": evidence_status,
+        "evidence_reasons": shortfalls,
         "provisional_score": provisional,
         "band": band,
         "passed": passed,

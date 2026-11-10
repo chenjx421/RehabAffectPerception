@@ -18,54 +18,44 @@ import time
 from typing import Any
 
 VERSION = "simple_student_seats_v3_8"
-# Stored analyses written before v3.7 keep the older presentation contract.
-# Motion-only analyses may still be stored under these versions; semantic
-# v3.7 analyses carry their own state cue and are never rewritten.
-LEGACY_PRESENTATION_VERSIONS = frozenset({VERSION, "simple_student_seats_v3_6", "simple_student_seats_v3_2"})
 WINDOW_SEC = 30
 MAX_SAMPLES = 10800
 TIMEOUT_SEC = 900
-MAX_PERSONS = 3
+# Upper bound on tracked candidates.  Teachers, background adults and blank
+# picks are tracked too, then removed by demo2_person_filter before display.
+MAX_PERSONS = 8
 DETECTION_INTERVAL_SEC = 2.0
-# A published student candidate must keep some face evidence or real local motion.
-# Wide teacher-camera shots often yield a one-off face on a desk/chair; reporting
-# it as a student would fabricate "low attention" windows.
-PERSON_MIN_FACE_RATIO = .08
-PERSON_MIN_MOTION_MEDIAN = .012
 INITIAL_SEARCH_SAMPLES = 60
-REPORT_VERSION = "demo1_student_state_report_v6"
+REPORT_VERSION = "student_state_report_v5"
 MOTION_LABELS = {"movement_high": "动作变化较多", "movement_moderate": "中等动作变化",
                  "movement_low": "动作变化较少"}
-# Demo1 state vocabulary. The wording is a classroom support cue bound to the
-# visible window evidence, never a diagnosis or a claim about the child.
 STUDENT_STATE_LABELS = {
-    "engaged": "参与",
-    "low_attention": "注意力下降",
-    "confused_or_stuck": "困惑·停滞",
-    "uncertain_adult_interference": "成人干扰下不确定",
-    "uncertain": "无法判断",
+    "engaged": "稳定参与",
+    "active_response": "出现回应或操作",
+    "low_response": "回应信号较低",
+    "not_observed": "未观察到有效作答机会",
+    "uncertain": "证据不足",
 }
 STUDENT_STATE_ACTIONS = {
     "engaged": {
-        "action_id": "continue_current_task", "screen": "不打断，保持现在的画面",
-        "speech": "保持现在的节奏，做得好的时候可以给一句具体的肯定。", "teacher_alert": False,
+        "action_id": "continue_current_task", "screen": "保持当前教学画面",
+        "speech": "保持当前节奏，必要时给予具体正反馈。", "teacher_alert": False,
     },
-    "low_attention": {
-        "action_id": "regain_attention_low_stimulation", "screen": "轻轻提示当前这一步",
-        "speech": "我们先看这里，只做这一步。", "teacher_alert": False,
+    "active_response": {
+        "action_id": "continue_and_record_response", "screen": "保留当前任务并记录回应时刻",
+        "speech": "保持当前节奏，记录学生的回应或操作。", "teacher_alert": False,
     },
-    "confused_or_stuck": {
-        "action_id": "repeat_one_step_with_visual_highlight",
-        "screen": "只留当前这一步，把其他信息收起来", "speech": "没关系，我们再来看一遍这一步。",
-        "teacher_alert": True,
+    "low_response": {
+        "action_id": "check_response_opportunity", "screen": "保留当前教学画面并观察回应机会",
+        "speech": "先确认学生是否正在等待、倾听或准备回应。", "teacher_alert": False,
     },
-    "uncertain_adult_interference": {
-        "action_id": "defer_to_teacher_observation", "screen": "先不打扰，把这段记下来",
-        "speech": "这段画面被挡住了，交给你确认。", "teacher_alert": True,
+    "not_observed": {
+        "action_id": "do_not_score_without_opportunity", "screen": "不触发学生侧结论",
+        "speech": "当前片段没有明确作答机会，不据此判断学生状态。", "teacher_alert": False,
     },
     "uncertain": {
-        "action_id": "mark_for_review", "screen": "不自动提示",
-        "speech": "画面看不清，建议回看确认。", "teacher_alert": True,
+        "action_id": "mark_for_review", "screen": "不触发自动提示",
+        "speech": "该片段证据不足，结合原片确认。", "teacher_alert": True,
     },
 }
 MOTION_SCORE_NOTE = (
@@ -102,7 +92,8 @@ def build_analysis(segments, run, meta, *, stop_event=None):
             "rms": audio.get("rms"),
         })
     request = {"root": str(Path(run).resolve() / "frames"), "samples": samples,
-               "duration": meta.get("duration_sec", 0), "audio_windows": audio_windows}
+               "duration": meta.get("duration_sec", 0), "audio_windows": audio_windows,
+               "manual_seats": meta.get("manual_seats") if isinstance(meta.get("manual_seats"), list) else []}
     env = dict(os.environ, OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1",
                OPENCV_LOG_LEVEL="SILENT", OPENCV_IO_MAX_IMAGE_PIXELS="16000000")
     options = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
@@ -135,6 +126,7 @@ def build_analysis(segments, run, meta, *, stop_event=None):
         result = json.loads(output)
         if result.get("analysis_version") != VERSION:
             raise RuntimeError("student_tracking_invalid_result")
+        _log_person_filter(result, run)
         return result
     finally:
         if child.poll() is None:
@@ -142,18 +134,140 @@ def build_analysis(segments, run, meta, *, stop_event=None):
         communication.join(5)
 
 
-def unavailable(reason, *, excluded=None):
-    messages = {
-        "no_face_candidates": "视频中未检测到可用人物，请确认画面中有学生正脸。",
-        "no_persistent_students": ("本视频未检测到可持续跟踪的学生人物，可能是教师机远景或人物过小；"
-                                   "请改用学生机画面，或在结果页手动确认人物位置。"),
-        "no_video_samples": "视频没有可用采样画面。",
-    }
+def _log_person_filter(result, run):
+    """Debug-log screening decisions; logging never fails the analysis."""
+    try:
+        from .demo2_person_filter import log_analysis
+        run_path = Path(run).resolve()
+        task_id = run_path.parent.name if run_path.parent.parent.name == "analysis" else ""
+        log_analysis(result, task_id=task_id, run_path=run_path)
+    except Exception:
+        pass
+
+
+def unavailable(reason):
     return {"available": False, "analysis_version": VERSION, "reason": reason,
-            "message": messages.get(reason, "未生成学生状态分析。"),
-            "excluded_candidates": list(excluded or []),
             "persons": [], "window_sec": WINDOW_SEC,
-            "max_persons": MAX_PERSONS}
+            "max_persons": MAX_PERSONS,
+            "message": "未取得可持续观察的人物画面；请检查光线、拍摄距离和遮挡。"}
+
+
+def _candidate_cap():
+    try:
+        from rehab_affect.demo2_person_filter import person_filter_config
+    except ImportError:
+        return MAX_PERSONS
+    return max(1, min(MAX_PERSONS * 2, int(person_filter_config()["max_candidates"])))
+
+
+def _face_sharpness(image, box):
+    """Laplacian variance of the face box at the sample's own resolution."""
+    import cv2
+    patch = crop(image, box)
+    if patch.size == 0:
+        return 0.
+    return float(cv2.Laplacian(cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var())
+
+
+def _select_avatar(face_items):
+    """Best portrait sample: sharpest face among unoccluded, near-full-size boxes.
+
+    Size, frontal aspect and detection score only break ties, so the chosen
+    frame is the sharpest usable one and its Laplacian value can be audited.
+    """
+    if not face_items:
+        return None
+    widths = sorted(x["bbox"]["width"] for x in face_items)
+    median_width = widths[len(widths) // 2]
+    pool = [x for x in face_items
+            if x["bbox"]["width"] >= median_width * .8 and float(x.get("face_score", 0)) >= .7]
+    selection = "sharpest_unoccluded"
+    if not pool:
+        pool, selection = list(face_items), "sharpest_any"
+
+    def frontal(item):
+        aspect = (item["bbox"]["width"] * item.get("frame_width", 1)) / max(
+            item["bbox"]["height"] * item.get("frame_height", 1), 1e-6)
+        return 1. - min(1., abs(aspect - .82) / .4)
+    best = max(pool, key=lambda x: (round(float(x.get("face_sharpness", 0)), 3),
+                                    x["bbox"]["width"] * x["bbox"]["height"], frontal(x),
+                                    float(x.get("face_score", 0)), -x["time"]))
+    return dict(frame=best["frame"], time_sec=best["time"], bbox=dict(best["bbox"]),
+                sharpness=round(float(best.get("face_sharpness", 0)), 2),
+                max_sharpness=round(max(float(x.get("face_sharpness", 0)) for x in face_items), 2),
+                face_px=round(best["bbox"]["width"] * best.get("frame_width", 0), 1),
+                score=round(float(best.get("face_score", 0)), 3), frontal=round(frontal(best), 3),
+                selection=selection)
+
+
+def _merge_split_tracks(persons, face_lists):
+    """Merge lanes that are one walking person split by the fixed-seat lanes.
+
+    Two tracks merge only when their faces have a similar size and height,
+    sit near each other and were NEVER detected in the same sample: two
+    simultaneous faces are by definition two different people, so seated
+    neighbours are never merged.  The track with most face samples is kept.
+    """
+    count = len(persons)
+    if count < 2:
+        return persons, face_lists
+    stats = []
+    for person, faces in zip(persons, face_lists):
+        if not faces:
+            # A lane that never won a face is described by its opening anchor;
+            # it may only be absorbed by a track that did see faces.
+            anchor = person.get("anchor_bbox") or {}
+            if all(isinstance(anchor.get(k), (int, float)) for k in ("x", "y", "width", "height")):
+                stats.append(dict(width=anchor["width"], height=anchor["height"], x=center(anchor)[0],
+                                  y=center(anchor)[1], times=set(), empty=True))
+            else:
+                stats.append(None)
+            continue
+        widths = sorted(x["bbox"]["width"] for x in faces)
+        heights = sorted(x["bbox"]["height"] for x in faces)
+        xs = sorted(center(x["bbox"])[0] for x in faces)
+        ys = sorted(center(x["bbox"])[1] for x in faces)
+        mid = len(faces) // 2
+        stats.append(dict(width=widths[mid], height=heights[mid], x=xs[mid], y=ys[mid],
+                          times={round(x["time"], 3) for x in faces}, empty=False,
+                          x_min=xs[0], x_max=xs[-1]))
+    parent = list(range(count))
+
+    def root(index):
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+    for i in range(count):
+        for j in range(i + 1, count):
+            a, b = stats[i], stats[j]
+            if a is None or b is None or (a["empty"] and b["empty"]):
+                continue
+            ratio = a["width"] / max(b["width"], 1e-6)
+            if (.75 <= ratio <= 1.33 and abs(a["y"] - b["y"]) <= .6 * max(a["height"], b["height"])
+                    and abs(a["x"] - b["x"]) <= 4 * max(a["width"], b["width"])
+                    and not (a["times"] & b["times"])):
+                if a["empty"] or b["empty"]:
+                    empty, full = (a, b) if a["empty"] else (b, a)
+                    # Only inside the span the other person actually walked.
+                    if not full["x_min"] - full["width"] <= empty["x"] <= full["x_max"] + full["width"]:
+                        continue
+                parent[root(j)] = root(i)
+    groups = {}
+    for index in range(count):
+        groups.setdefault(root(index), []).append(index)
+    if all(len(group) == 1 for group in groups.values()):
+        return persons, face_lists
+    merged_persons, merged_faces = [], []
+    for group in sorted(groups.values(), key=lambda g: min(g)):
+        primary = max(group, key=lambda index: (len(face_lists[index]), -index))
+        person = persons[primary]
+        if len(group) > 1:
+            person["merged_person_ids"] = [persons[index]["person_id"] for index in group if index != primary]
+        faces = sorted((x for index in group for x in face_lists[index]), key=lambda x: x["time"])
+        merged_persons.append(person)
+        merged_faces.append(faces)
+    return merged_persons, merged_faces
 
 
 def center(box):
@@ -174,15 +288,6 @@ def crop(image, box):
     x2 = min(w, max(x1+1, math.ceil((box["x"]+box["width"])*w)))
     y2 = min(h, max(y1+1, math.ceil((box["y"]+box["height"])*h)))
     return image[y1:y2, x1:x2]
-
-
-def _crop_bounds(inner, outer, width, height):
-    """Pixel bounds of an inner normalised box inside an outer crop."""
-    left = max(0, int(round((inner["x"] - outer["x"]) / max(outer["width"], 1e-9) * width)))
-    top = max(0, int(round((inner["y"] - outer["y"]) / max(outer["height"], 1e-9) * height)))
-    right = min(width, int(round((inner["x"] + inner["width"] - outer["x"]) / max(outer["width"], 1e-9) * width)))
-    bottom = min(height, int(round((inner["y"] + inner["height"] - outer["y"]) / max(outer["height"], 1e-9) * height)))
-    return left, top, max(left, right), max(top, bottom)
 
 
 def seat_regions(boxes):
@@ -206,9 +311,12 @@ def face_in_seat(face, anchor, roi):
     """
     x, y = center(face["bbox"])
     ax, ay = center(anchor)
+    manual = bool(os.getenv("REHAB_DEMO2_TRACKING_MANUAL_SEATS", "").strip())
+    x_tolerance = max(.08, anchor["width"]*3.0) if manual else max(.12, anchor["width"]*4.0)
+    y_tolerance = max(.075, anchor["height"]*1.2) if manual else max(.12, anchor["height"]*3.5)
     return (roi["x"] <= x <= roi["x"]+roi["width"]
-            and abs(x-ax) <= max(.12, anchor["width"]*4.0)
-            and abs(y-ay) <= max(.12, anchor["height"]*3.5)
+            and abs(x-ax) <= x_tolerance
+            and abs(y-ay) <= y_tolerance
             and .30 <= face["bbox"]["width"]/max(anchor["width"], 1e-6) <= 3.5)
 
 
@@ -275,7 +383,27 @@ def _initial_face_set(observations):
                                  "members": [(sample_index, face)],
                                  "sample_indices": {sample_index}})
     recurring = sorted((cluster for cluster in clusters if len(cluster["members"]) >= 2),
-                       key=lambda cluster: (cluster["x"], cluster["y"]))[:MAX_PERSONS]
+                       key=lambda cluster: (cluster["x"], cluster["y"]))[:_candidate_cap()]
+    # Front-row students are often seen in profile or partially occluded, so
+    # they recur less often than the stable adults behind them.  Keep up to
+    # three large faces in the lower half of the frame as student candidates
+    # instead of letting the opening interval select only background staff.
+    if len(recurring) < _candidate_cap():
+        foreground = sorted(
+            (cluster for cluster in clusters
+             if len(cluster["members"]) >= 2 and cluster["y"] >= .45),
+            key=lambda cluster: (-cluster["width"], cluster["x"]),
+        )
+        added = 0
+        for cluster in foreground:
+            if added >= 3 or len(recurring) >= _candidate_cap():
+                break
+            if any(abs(cluster["x"] - item["x"]) <= .06 and abs(cluster["y"] - item["y"]) <= .09
+                   for item in recurring):
+                continue
+            recurring.append(cluster)
+            added += 1
+        recurring.sort(key=lambda cluster: (cluster["x"], cluster["y"]))
     if len(recurring) < 2:
         return None
 
@@ -445,62 +573,46 @@ def _teacher_activity(sec: float, duration: float) -> str:
 
 
 def _student_state(
-    activity, audio_activity, adult_interference, visibility, quality, motions, expected,
-    *, face_presence=0.0, response_expected=True, lesson_phase="", previous_activity=None,
+    activity, audio_activity, visibility, quality, motions, expected,
+    *, face_presence=0.0, face_motion=None, signal_variance=0.0,
+    response_expected=True, lesson_phase="",
 ):
-    """Demo1's five classroom state cues, bound to one window's visible evidence.
+    """Map local evidence to Demo1-style descriptive classroom state cues.
 
-    The decision order follows Demo1: sustained local movement means participation,
-    a quiet seat next to adult/neighbour movement is deferred to the teacher,
-    quiet seat plus classroom sound is treated as possibly stuck, and a plain
-    quiet seat is a low-attention cue. Every branch keeps a classroom-level
-    caveat: this is a review cue, not a diagnosis or a score.
+    This is deliberately a support cue, not a diagnosis or a claim about a
+    child's inner attention.  A quiet window with classroom sound is kept as
+    "possible prompt needed" instead of being silently discarded.
     """
     enough_evidence = (visibility >= .35 and quality >= .30
                        and len(motions) >= min(3, max(1, expected - 1)))
-    adult = float(adult_interference or 0.0)
-    audio = float(audio_activity or 0.0)
     if not enough_evidence or activity is None:
         state = "uncertain"
-        evidence = f"这一段画面看不清（能用的采样约{visibility:.0%}），先不下结论。"
-        interpretation = "需要结合原片再确认。"
-        confidence = .35
-    elif activity >= .35:
-        state = "engaged"
-        evidence = "这段时间他一直有动作，像是跟着课堂在做事。"
-        interpretation = "保持现在的节奏就好。"
-        confidence = .68 + min(.17, activity * .2)
-    elif adult >= .55 and activity < .22:
-        state = "uncertain_adult_interference"
-        evidence = "旁边有人靠得很近，可能挡住了他；这一段先交给你确认。"
-        interpretation = "先记下来，下课问一下当时的情况。"
-        confidence = .52
-    elif activity < .14 and audio >= .35 and previous_activity is not None and previous_activity >= .30:
-        state = "confused_or_stuck"
-        evidence = ("前面还在动，这一段突然安静下来，而课堂声音还在——"
-                    "更像是没跟上，或者正在等一个提示。")
-        interpretation = "可以只把当前这一步再说一遍，看看他有没有跟上来。"
-        confidence = .58
-    elif activity < .18:
-        state = "low_attention"
-        evidence = "这一段他基本没怎么动，可能是在听、在等，也可能走神了。"
-        interpretation = "给个轻提示就够了，先别点名。"
-        confidence = .55
+        evidence = "本人物区域的可用画面或人脸核对不足，保留为证据不足，不用旁边人物代替。"
+        interpretation = "当前片段需要结合原视频确认，不能据此判断学生是否参与或理解。"
+    elif activity >= .62:
+        state = "active_response"
+        evidence = "本人物固定区域出现较明显的连续局部画面变化，保留为可能的回应或操作线索。"
+        interpretation = "更像出现了回应、操作或身体活动；仍需结合课堂任务确认具体含义。"
+    elif activity < .24 and not response_expected:
+        state = "not_observed"
+        evidence = f"本人物固定区域变化较少；当前处于“{lesson_phase or '当前教学'}”，未识别到明确作答机会。"
+        interpretation = "学生没有作答不计入不会或退步，需要结合教师当时是否提出任务解释。"
+    elif activity < .24:
+        state = "low_response"
+        evidence = "本人物固定区域变化较少，且当前阶段存在可能的回应机会，保留为回应信号较低线索。"
+        interpretation = "需要区分倾听、等待、遮挡或未参与，不能仅凭安静判断分心。"
     else:
         state = "engaged"
-        evidence = "有一点点动作，还没到需要提醒的程度。"
-        interpretation = "继续观察就好。"
-        confidence = .60
-    if quality < .45 and state != "uncertain":
-        confidence = max(.30, confidence - .08)
-        evidence += "画面清晰度偏低，置信度已下调。"
+        evidence = "本人物区域保持可见并有一定变化，保留为稳定参与线索。"
+        interpretation = "当前存在课堂参与线索，继续观察具体任务回应和提示后的变化。"
+    base = .42 + quality * .36 + visibility * .18
+    if face_presence >= .5:
+        base += .04
     if state == "uncertain":
-        confidence = min(confidence, .48)
-    if audio_activity is not None and state == "confused_or_stuck":
-        evidence += "；声音为整段课堂活动，未定位到该学生。"
-    if lesson_phase:
-        evidence += f"现在在“{lesson_phase}”环节，先按这个背景看。"
-    confidence = round(max(.25, min(.92, confidence)), 3)
+        base = min(base, .48)
+    confidence = round(max(.25, min(.92, base)), 3)
+    if audio_activity is not None:
+        evidence += "；另有整段课堂声音活动记录，但声音未定位到该学生，不作为个人状态依据。"
     return state, STUDENT_STATE_LABELS[state], evidence, interpretation, confidence
 
 
@@ -511,280 +623,61 @@ def _student_score(state, activity, quality):
     return round(10 * max(0., min(1., .65 * activity + .35 * quality)), 1)
 
 
-def _select_key_moments(windows, limit=6):
-    """Demo1-style review shortlist: risky cues first, then participation edges."""
-    priority = {"confused_or_stuck": 0, "uncertain_adult_interference": 1,
-                "low_attention": 2, "engaged": 3, "uncertain": 4}
-    ranked = sorted(windows, key=lambda w: (priority.get(w.get("state"), 9), w["start_sec"]))
-    picks = ranked[:limit]
-    return [{"start_sec": w["start_sec"], "end_sec": w["end_sec"], "state": w["state"],
-             "state_zh": w["state_zh"], "reason": (w.get("interpretation") or "")[:90],
-             "frame": w.get("frame"), "frame_time_sec": w.get("frame_time_sec")}
-            for w in sorted(picks, key=lambda item: item["start_sec"])]
-
-
-def _classroom_rhythm(persons, duration):
-    """Coarse, explainable lesson-rhythm metrics on the same 30-second windows."""
-    import numpy as np
-    windows = {}
-    for person in persons:
-        for window in person.get("windows") or []:
-            windows.setdefault(window["start_sec"], []).append(window)
-    rows = []
-    for start in sorted(windows):
-        items = windows[start]
-        end = max(float(window.get("end_sec") or start + WINDOW_SEC) for window in items)
-        audio = max((float(window.get("audio_activity")) for window in items
-                     if isinstance(window.get("audio_activity"), (int, float))), default=0.0)
-        activity_values = [float(window.get("motion_signal")) for window in items
-                           if isinstance(window.get("motion_signal"), (int, float))]
-        adult_values = [float(window.get("adult_interference")) for window in items
-                        if isinstance(window.get("adult_interference"), (int, float))]
-        rows.append({"start_sec": float(start), "end_sec": end, "audio": audio,
-                     "activity": sum(activity_values) / len(activity_values) if activity_values else 0.0,
-                     "adult": max(adult_values) if adult_values else 0.0})
-    if not rows:
-        return {"window_sec": WINDOW_SEC, "window_count": 0, "teacher_talk_seconds": 0.0,
-                "teacher_talk_ratio": 0.0, "question_wait_events": 0, "question_wait_seconds": 0.0,
-                "individual_support_seconds": 0.0, "individual_support_ratio": 0.0,
-                "note": "没有可用于统计的时间片。"}
-    total = sum(row["end_sec"] - row["start_sec"] for row in rows) or float(duration or 1)
-    teacher = [row for row in rows if row["audio"] >= .35 and row["activity"] < .25]
-    support = [row for row in rows if row["adult"] >= .55]
-    audio_values = [row["audio"] for row in rows]
-    audio_p10 = float(np.percentile(audio_values, 10))
-    audio_p20 = float(np.percentile(audio_values, 20))
-    audio_p90 = float(np.percentile(audio_values, 90))
-    audio_median = float(np.median(audio_values))
-    audio_flat = bool((audio_p90 - audio_p10) < .15)
-    waits = [] if audio_flat else [
-        row for before, row in zip(rows, rows[1:])
-        if before["audio"] >= audio_median
-        and (before["audio"] - row["audio"]) >= .15
-        and row["audio"] <= audio_p20]
-    wait_available = bool(waits)
-
-    def seconds(items):
-        return round(sum(row["end_sec"] - row["start_sec"] for row in items), 1)
-
-    return {"window_sec": WINDOW_SEC, "window_count": len(rows),
-            "teacher_talk_seconds": seconds(teacher),
-            "teacher_talk_ratio": round(seconds(teacher) / total, 3),
-            "question_wait_events": len(waits),
-            "question_wait_seconds": seconds(waits),
-            "wait_available": wait_available,
-            "individual_support_seconds": seconds(support),
-            "individual_support_ratio": round(seconds(support) / total, 3),
-            "audio_flat": audio_flat,
-            "note": ("本课课堂声音持续较高，无法从能量起伏判断提问-等待；" if audio_flat else "")
-                    + "基于30秒时间窗的课堂级近似统计：讲解段=课堂有声音且学生整体安静；"
-                    "提问-等待=有声音窗口后接安静窗口；个别支持=相邻区域活跃且本人安静。"
-                    "声音未定位到个人，也不是逐句 ASR。"}
-
-
-def _support_conclusions(persons, rhythm):
-    """Three lesson-level conclusions plus next-lesson suggestions (teacher-facing)."""
-    total_windows = sum(len(person.get("windows") or []) for person in persons)
-    review = sum(person.get("state_summary", {}).get("review_required", 0) for person in persons)
-    focus = []
-    top = None
-    conclusions = []
-    if persons:
-        top = max(persons, key=lambda person: (
-            person["state_summary"]["counts"]["confused_or_stuck"]
-            + person["state_summary"]["counts"]["uncertain_adult_interference"],
-            person["state_summary"]["counts"]["low_attention"]))
-        counts = top["state_summary"]["counts"]
-        dominant = max(counts, key=counts.get)
-        conclusions.append({
-            "title": "本课状态分布",
-            "text": f"这节课三个人物一共 {total_windows} 个时间片，其中 {review} 段建议你回看；"
-                    f"整体以“{STUDENT_STATE_LABELS[dominant]}”为主的是{top['display_name']}。",
-            "basis": "逐人固定区域变化、相邻区域活动、课堂声音与画质"})
-        focus_states = ("confused_or_stuck", "uncertain_adult_interference", "low_attention")
-        focus = [(window["state"], window["start_sec"], window["end_sec"])
-                 for window in top["windows"] if window["state"] in focus_states]
-        if focus:
-            state, start, end = focus[0]
-            stuck = sum(1 for item in focus if item[0] == "confused_or_stuck")
-            conclusions.append({
-                "title": "优先复核",
-                "text": f"最想请你看的是{top['display_name']} 在{_clock(start)}–{_clock(end)} 的那一段"
-                        f"“{STUDENT_STATE_LABELS[state]}”。这类片段本课有{len(focus)}个，其中困惑·停滞{stuck}个；"
-                        "先看这几段，就能判断下节课要不要调整支持方式。",
-                "basis": f"{top['display_name']}的状态时间片"})
-        else:
-            conclusions.append({
-                "title": "优先复核",
-                "text": "这节课没有出现困惑·停滞、成人干扰或注意力下降的片段，保持观察就好；"
-                        "如果你现场看到的不一样，以你的判断为准。",
-                "basis": "本课状态时间片"})
-    if rhythm.get("audio_flat") or not rhythm.get("wait_available", True):
-        conclusions.append({
-            "title": "课堂节奏",
-            "text": "这节课的声音一直比较满，30 秒一段里没有明显的“讲完停下来”，"
-                    "所以提问-等待没法自动判断；上课时顺手记一下会更准。"
-                    f"旁边有人靠近的时段大约 {rhythm['individual_support_seconds']:.0f} 秒。",
-            "basis": "30 秒时间窗的课堂级近似统计；未检测到可用的声音间隔"})
-    else:
-        conclusions.append({
-            "title": "课堂节奏",
-            "text": f"讲解和示范大约占 {rhythm['teacher_talk_ratio']:.0%} 的时间，"
-                    f"出现 {rhythm['question_wait_events']} 次明显的“讲完停下来”，"
-                    f"旁边有人靠近的时段约 {rhythm['individual_support_seconds']:.0f} 秒。"
-                    "讲解偏长时安静的时间片会变多，需要看看是在听讲还是掉队。",
-            "basis": "30 秒时间窗的课堂级近似统计"})
-    next_lesson = []
-    if top is not None and focus:
-        state, start, end = focus[0]
-        next_lesson.append({
-            "action": f"下节课讲到{_clock(start)}附近时，先只讲当前这一步，再看他有没有跟上来。",
-            "reason": "这节课这个时段出现了需要复核的状态"})
-    if rhythm.get("audio_flat") or not rhythm.get("wait_available", True):
-        next_lesson.append({"action": "下一节课顺手记一下提问和等待的次数，课后和状态时间轴对一下。",
-                            "reason": "声音连续，自动判断提问-等待不准"})
-    elif rhythm["question_wait_events"] < max(1, rhythm["window_count"] // 4):
-        next_lesson.append({"action": "讲完一个例子后先停 5–10 秒，再往下讲，给安静的孩子留出回应时间。",
-                            "reason": "声音里明显的『讲完停下来』偏少"})
-    if rhythm["individual_support_seconds"] > 0:
-        next_lesson.append({"action": "需要个别支持时，一次只看一位，别同时处理几个座位。",
-                            "reason": "这节课有相邻区域活跃的时段"})
-    if not next_lesson:
-        next_lesson.append({"action": "保持现在的节奏，继续用同样的时间段对照。",
-                            "reason": "这节课没有明显的调整信号"})
-    return {"conclusions": conclusions[:3], "next_lesson": next_lesson[:3],
-            "profile": {"attached": False,
-                        "note": "本课结论只基于视频证据；绑定学生后可结合已授权的最小 IEP 支持摘要复核，"
-                                "系统不自动推断诊断或正式成绩。"}}
-
-
-def _person_report(display_name, anchor, windows, average_score, visibility, rhythm=None):
-    """A long, teacher-facing classroom summary that stays tied to the evidence."""
+def _person_report(display_name, anchor, windows, average_score, visibility):
+    """Create a distinct, evidence-bound Demo1-style student report."""
     x = center(anchor)[0]
-    area = "画面左侧" if x < 1/3 else "画面中部" if x < 2/3 else "画面右侧"
-    counts = {state: sum(w.get("state") == state for w in windows) for state in STUDENT_STATE_LABELS}
-    total = max(1, len(windows))
-    minutes = total * WINDOW_SEC / 60
-    top = max(counts, key=counts.get) if any(counts.values()) else "uncertain"
-    review_states = ("confused_or_stuck", "uncertain_adult_interference", "low_attention", "uncertain")
-    lead = (max(review_states, key=lambda state: counts[state])
-            if any(counts[state] for state in review_states) else "engaged")
+    area = "左侧" if x < 1/3 else "中部" if x < 2/3 else "右侧"
+    scored = [w for w in windows if isinstance(w.get("student_score", w.get("score")), (int, float))]
+    high = sorted(scored, key=lambda w: (-w.get("student_score", w.get("score", 0)), w["start_sec"]))[:3]
+    quiet = sorted(scored, key=lambda w: (w.get("student_score", w.get("score", 0)), w["start_sec"]))[:3]
 
-    def periods(state, limit=5):
-        items = [w for w in windows if w.get("state") == state][:limit]
-        return "、".join(f"{_clock(w['start_sec'])}–{_clock(w['end_sec'])}" for w in items)
+    def periods(items):
+        return "、".join(
+            f"{_clock(w['start_sec'])}–{_clock(w['end_sec'])}（{w.get('student_score', w.get('score')):.1f}）"
+            for w in items
+        ) or "暂无可评分片段"
 
-    def phases(items):
-        tally = {}
-        for window in items:
-            phase = window.get("lesson_phase") or "课堂"
-            tally[phase] = tally.get(phase, 0) + 1
-        ordered = sorted(tally.items(), key=lambda item: -item[1])[:3]
-        return "、".join(f"{name} {count} 段" for name, count in ordered) or "暂缺"
-
+    count_by_state = {state: sum(w.get("state") == state for w in windows)
+                      for state in ("movement_high", "movement_moderate", "movement_low", "uncertain")}
+    student_counts = {state: sum(w.get("student_state") == state for w in windows)
+                      for state in STUDENT_STATE_LABELS
+                      if sum(w.get("student_state") == state for w in windows)}
+    student_top = max(student_counts, key=student_counts.get) if student_counts else "uncertain"
     observed = sum(int(w.get("observed_samples", 0)) for w in windows)
     expected = sum(int(w.get("expected_samples", 0)) for w in windows)
-    average = f"{average_score:.1f}" if average_score is not None else "暂无"
-    key = _select_key_moments(windows, 5)
-    key_text = "；".join(f"{_clock(w['start_sec'])} {w['state_zh']}" for w in key) or "暂无"
-    engaged = [w for w in windows if w.get("state") == "engaged"]
-    quiet = [w for w in windows if w.get("state") == "low_attention"]
-    stuck = [w for w in windows if w.get("state") == "confused_or_stuck"]
-    adult = [w for w in windows if w.get("state") == "uncertain_adult_interference"]
-    unclear = [w for w in windows if w.get("state") == "uncertain"]
-
-    parts = [f"{display_name} 这节课的完整小结如下。"]
-    parts.append(
-        f"一、整体情况。这节课约 {minutes:.0f} 分钟，按 30 秒一格共 {total} 段。"
-        f"整体以“{STUDENT_STATE_LABELS[top]}”为主：参与 {counts['engaged']} 段、注意力下降 {counts['low_attention']} 段、"
-        f"困惑·停滞 {counts['confused_or_stuck']} 段、成人干扰下不确定 {counts['uncertain_adult_interference']} 段、"
-        f"无法判断 {counts['uncertain']} 段；参与占全课 {counts['engaged'] / total:.0%}。"
-        f"画面变化参考值平均 {average}，只用来比较这名学生自己的不同时段。"
+    average = f"{average_score:.1f}/10" if average_score is not None else "暂缺"
+    report = (
+        f"{display_name}是首次检测时位于原画面{area}的匿名人物候选；编号按该时点从左到右分配。"
+        f"系统随后独立读取对应固定区域，未把其他人物的截图或数值复制到本区域。全片按30秒整理为{len(windows)}个时间片；"
+        f"该区域在{observed}/{expected}个逐秒样本中满足图像可用条件，可用率约{visibility * 100:.0f}%。"
+        f"这只表示区域图像可读，不代表本人全程在场或身份连续已获验证；人物离位、交叉或换位时需要回看原片。"
+        f"有效时间片的平均学生参与线索参考值为{average}；参考值较高片段为{periods(high)}，"
+        f"变化较少片段为{periods(quiet)}。所有时间片中，中等变化{count_by_state['movement_moderate']}段，"
+        f"较多变化{count_by_state['movement_high']}段，较少变化{count_by_state['movement_low']}段；"
+        f"另有{count_by_state['uncertain']}段证据不足而不评分。该人物以“{STUDENT_STATE_LABELS[student_top]}”线索最多；"
+        "0–10是本人物固定区域的参与证据参考值，只用于定位本人物的不同时间段，"
+        "不适合与其他人物横向排名，也不等同于学习成绩、情绪或医学判断。"
+        "跑步、走位、伸展等正常体育活动不能单凭运动强度判定分心、不配合或扣分；"
+        "画面变化还会受到镜头、光照、遮挡、衣物摆动及人物离开固定区域影响。"
+        "建议按上述时间点回看原片，并结合当时教学目标、现场指令和人工观察解释；当前没有教案目标或教师标注，"
+        "因此不推断专注、情绪、掌握程度、意愿、障碍类型或正式课堂成绩。"
     )
-    parts.append(
-        f"二、参与情况。有动作、像在跟着课堂做的时段共 {counts['engaged']} 段，主要出现在{phases(engaged)}。"
-        + (f"比较集中的活跃时段是 {periods('engaged', 4)}，合计约 {counts['engaged'] * 0.5:.0f} 分钟。"
-           if engaged else "本课没有明显的活跃时段。")
-        + "这些时段说明画面里有持续动作，但具体是在做题、操作还是和同学互动，需要结合当时任务判断。"
-        "如果参与集中在某几个环节，重点看那些环节的任务设计；如果整节课都比较均匀，说明当前活动安排他能跟上。"
-    )
-    if quiet:
-        parts.append(
-            f"三、安静下来的时段。注意力下降共 {counts['low_attention']} 段，主要出现在{phases(quiet)}。"
-            f"先看 {periods('low_attention', 5)} 这几段。"
-            "安静有多种可能：在听讲、在等待、低头看材料，也可能被挡住或走神；"
-            "建议先对照当时的教学环节，不要单凭安静就下结论。"
-        )
-    else:
-        parts.append("三、安静下来的时段。这节课没有出现明显的长时间安静片段。")
-    if stuck:
-        parts.append(
-            f"四、停下来或跟不上的时段。困惑·停滞共 {counts['confused_or_stuck']} 段，出现在{phases(stuck)}。"
-            f"重点是 {periods('confused_or_stuck', 5)}。这些片段通常是前面还有动作、这几分钟突然安静，"
-            "而课堂上仍在讲；更像是在等提示或没跟上，不一定是分心。可以先只重复当前这一步，看他能不能跟上来。"
-        )
-    else:
-        parts.append("四、停下来或跟不上的时段。这节课没有出现“先动后静”的困惑片段。")
-    if adult or unclear:
-        detail = []
-        if adult:
-            detail.append(f"被旁边人挡住 {periods('uncertain_adult_interference', 3)}")
-        if unclear:
-            detail.append(f"画面看不清 {periods('uncertain', 3)}")
-        parts.append(
-            "五、需要你确认的时段。" + "；".join(detail) + "。这些片段系统没有下判断，"
-            "先记下来，课后结合当时的情况或原片确认就好。"
-        )
-    else:
-        parts.append("五、需要你确认的时段。这节课没有出现明显的遮挡或看不清的片段。")
-    parts.append(
-        f"六、最值得回看的片段。建议按顺序看 {key_text}。"
-        "先看“困惑·停滞”和“注意力下降”的时段；参与时段可以快速扫过，确认当时的任务安排是否对得上。"
-        "回看时可以直接把原视频拖到对应时间点，也可以先看旁边的证据截图，再决定要不要看整段。"
-        "时间有限时先看三到五个片段就够了，其余按状态标签快速确认，不必逐段看完。"
-    )
-    next_actions = [STUDENT_STATE_ACTIONS[lead]["speech"]]
-    if rhythm and rhythm.get("wait_available"):
-        next_actions.append("讲完一个例子后停 5–10 秒，再往下讲，给安静的孩子留出回应时间。")
-    elif rhythm:
-        next_actions.append("下一节课顺手记一下提问和等待次数，课后和状态时间轴对一下。")
-    if counts["confused_or_stuck"]:
-        next_actions.append("讲到出现困惑的环节时，先只讲当前这一步，再让他复述或操作一次。")
-    if counts["uncertain_adult_interference"]:
-        next_actions.append("需要个别支持时一次只看一位，避免同时处理几个座位。")
-    parts.append(
-        "七、下节课可以试试。" + " ".join(f"（{index}）{text}" for index, text in enumerate(next_actions, 1))
-        + "不需要一次全用，挑一两条先试，再用同一时段的画面做对照，看看变化是不是真的出现了。"
-        "上完下一节课后再用同样的段落对比一次，就能看出调整有没有效果。"
-    )
-    parts.append(
-        f"八、这份小结的边界。能看清的采样约占 {visibility * 100:.0f}%（{observed}/{expected}），"
-        "只说明画面读得到，不代表他全程在场，身份也没有做人脸核验。"
-        "画面里的动作多少只是参考值，不是成绩，也不是注意力分数；跑步、走位这类正常动作不能单凭运动强度判成走神。"
-        "状态是帮你找到值得回看的片段，最后的判断还是看当时的课堂和你的观察。"
-        "如果某个时段你现场看到的情况和这里不一样，以你的记录为准，也可以把那段标出来，下次分析时优先看。"
-        "想要更细的时间粒度，目前固定是 30 秒一格，更短的窗口还不在这个版本里。"
-    )
-    report = "\n".join(parts)
-    action = (f"这节课“{STUDENT_STATE_LABELS[top]}”的时间片最多（{counts[top]}/{total}）；"
-              f"先回看 {key_text}。{STUDENT_STATE_ACTIONS[lead]['speech']}")
-    return action, {"title": f"{display_name}课堂小结", "text": report,
-                    "character_count": len(report),
-                    "basis": "该人物的固定区域画面变化、相邻区域活动、课堂声音和 30 秒时间片",
+    action = (f"学生状态线索：{STUDENT_STATE_LABELS[student_top]}；参考值较高 {periods(high)}；"
+              f"参考值较低 {periods(quiet)}。该结果用于回看和教学复盘，不替代教师判断。")
+    return action, {"title": f"{display_name}个人观察报告", "text": report,
+                    "character_count": len(report), "basis": "该人物候选对应固定区域的逐秒画面变化与30秒时间片",
                     "formal_score": False}
 
 
 def present_motion_analysis(analysis):
-    """Re-present stored pre-v3.7 analyses with motion wording only.
+    """Update known fixed-region motion prose without changing stored evidence.
 
-    v3.7 analyses already carry Demo1 state cues; this function must never turn
-    a motion index into an attention judgement or rewrite another engine's label.
-    It performs no inference, file access, network request or identity change.
+    v3.2's old active/low response labels used these same motion thresholds.
+    Other engines and attention labels must never be reinterpreted as motion.
+    This performs no inference, file access, network request or identity change.
     """
-    if (not isinstance(analysis, dict)
-            or analysis.get("analysis_version") not in LEGACY_PRESENTATION_VERSIONS
+    if (not isinstance(analysis, dict) or analysis.get("analysis_version") != VERSION
             or analysis.get("score_kind") != "individual_motion_index"
-            or str(analysis.get("state_policy_version", "")).startswith("demo1")
             or not analysis.get("available") or not analysis.get("persons")):
         return analysis
     aliases = {"active_response": "movement_high", "low_response": "movement_low",
@@ -802,8 +695,6 @@ def present_motion_analysis(analysis):
         for window in windows:
             state = aliases.get(window["state"], window["state"])
             window["state"] = state
-            window.pop("recommended_action", None)
-            window.pop("interpretation", None)
             if state in MOTION_LABELS:
                 window["state_zh"] = MOTION_LABELS[state]
                 motion = window.get("movement")
@@ -812,43 +703,94 @@ def present_motion_analysis(analysis):
                     f"此固定区域有 {window.get('observed_samples', 0)}/{window.get('expected_samples', 0)} 个可用采样{change}。"
                     "这是画面变化线索，不表示注意力或掌握程度；区域可用不等于持续确认同一人物。"
                 )
+            if window.get("student_state") not in STUDENT_STATE_LABELS:
+                activity = window.get("motion_signal")
+                audio_activity = window.get("audio_activity")
+                student_state, student_label, student_evidence, interpretation, confidence = _student_state(
+                    activity, audio_activity, float(window.get("visibility", 0)),
+                    float(window.get("confidence", 0)),
+                    [window.get("movement")] if isinstance(window.get("movement"), (int, float)) else [],
+                    int(window.get("expected_samples", 0)),
+                    face_presence=float(window.get("face_presence", 0)),
+                    response_expected=bool(window.get("response_expected", True)),
+                    lesson_phase=window.get("lesson_phase", ""),
+                )
+                window.update(student_state=student_state, student_state_zh=student_label,
+                              student_confidence=confidence, student_evidence=student_evidence,
+                              student_interpretation=interpretation,
+                              student_score=_student_score(student_state, activity, float(window.get("confidence", 0))))
         counts = {state: sum(w["state"] == state for w in windows)
                   for state in dict.fromkeys(w["state"] for w in windows)}
         dominant = max(counts, key=counts.get)
-        dominant_zh = MOTION_LABELS.get(dominant, "画面证据不足")
         person["dominant_state"] = dominant
-        person["dominant_state_zh"] = dominant_zh
-        person["student_state"] = "uncertain"
-        person["student_state_counts"] = {}
-        person["student_summary"] = (
-            f"旧版动作证据：共{len(windows)}个时间片，以“{dominant_zh}”为主；"
-            "旧版只呈现固定区域画面变化线索，不给出参与/注意力判断，请结合原视频复核。")
-        existing = person.get("lesson_report")
-        if not isinstance(existing, dict) or not existing.get("text"):
-            observed = sum(int(w.get("observed_samples", 0)) for w in windows)
-            expected = sum(int(w.get("expected_samples", 0)) for w in windows)
-            text = (
-                f"该人物为旧版动作证据记录，共{len(windows)}个30秒时间片，"
-                f"固定区域有{observed}/{expected}个采样满足图像可用条件。"
-                f"时间片以“{dominant_zh}”为主，0–10仅是区域画面变化参考值，不是注意力、学习或教师成绩。"
-                "旧版分析没有Demo1状态语义，也没有相邻区域成人干扰判断，因此不补写参与、注意力或困惑结论，"
-                "以免把画面变化误标成学生状态。"
-                "区域图像可用率不代表本人全程在场，也没有身份连续性验证；人物离位、交叉、遮挡和镜头移动都会影响结果。"
-                "旧版只读取本区域逐秒画面变化，没有结合相邻区域活动、课堂声音和教学环节；"
-                "单段视频内归一化也使数值只适合同一人物的不同时间段比较，不适合跨人物或跨课程比较。"
-                "跑步、走位、伸展等正常体育活动不能单凭运动强度判定分心。"
-                "如需参与、注意力、困惑或成人干扰线索，请使用当前版本重新分析该视频，再按关键片段回看原片。"
-            )
-            person["lesson_report"] = {"title": f"{person.get('display_name', '人物')}旧版动作记录",
-                                       "text": text, "character_count": len(text),
-                                       "basis": "旧版固定区域画面变化", "formal_score": False}
-        person.setdefault("action_summary", f"旧版记录：{dominant_zh}；不提供状态建议。")
-        summaries.append(f"{person.get('display_name', '人物')}：{dominant_zh}；")
-    result["state_policy_version"] = "legacy_motion_presentation"
-    result["lesson_report"] = result.get("lesson_report") or {
-        "title": "旧版课堂记录", "text": "".join(summaries) + "旧版只保留动作线索，未包含参与/注意力状态建议。",
-        "character_count": len("".join(summaries)) + 30, "basis": "旧版固定区域画面变化", "formal_score": False}
+        person["dominant_state_zh"] = next(w["state_zh"] for w in windows if w["state"] == dominant)
+        student_counts = {state: sum(w.get("student_state") == state for w in windows)
+                          for state in STUDENT_STATE_LABELS
+                          if sum(w.get("student_state") == state for w in windows)}
+        dominant_student = max(student_counts, key=student_counts.get)
+        person["student_state_counts"] = student_counts
+        person["dominant_student_state"] = dominant_student
+        person["dominant_student_state_zh"] = STUDENT_STATE_LABELS[dominant_student]
+        person["student_summary"] = (f"{STUDENT_STATE_LABELS[dominant_student]}线索最多，共{len(windows)}个时间片；"
+                                      "请结合人物截图和原视频确认具体课堂表现。")
+        person["action_summary"], person["lesson_report"] = _person_report(
+            person["display_name"], person["anchor_bbox"], windows,
+            person.get("average_score"), person.get("visibility", 0))
+        person["tracking"] = "按首次检测位置固定区域逐秒独立取样；可用率指区域图像，不自动跨区域认人或确认身份连续。"
+        summaries.append(f"{person['display_name']}：共{len(windows)}个时间片，{person['dominant_student_state_zh']}线索最多；"
+                         f"固定区域图像可用率约{person.get('visibility', 0)*100:.0f}%。")
+    screening = result.get("person_filter_summary") if isinstance(result.get("person_filter_summary"), dict) else None
+    screening_text = (
+        f"系统已按学生筛查规则自动排除疑似老师{screening.get('excluded_teacher', 0)}人、无效人选{screening.get('excluded_blank', 0)}个，"
+        "以下只整理学生候选；筛查为辅助功能，需教师复核。" if screening else "")
+    report = (
+        screening_text +
+        f"本段视频读取了{result.get('observed_frames', 0)}个采样画面，按30秒一个时间片整理{len(people)}个匿名{'学生' if screening else '人物'}候选的学生状态线索。"
+        "候选按首次检测时从左到右编号，各自使用不同的固定区域、截图和时间序列；"
+        "编号只用于核对画面，不能证明姓名或全程身份连续。" + "".join(summaries)
+        + "状态线索结合每个人物的固定区域变化、画面可用率和有限的课堂声音活动；"
+        "不可把不同人物的数值相加、排名或解释为学习成绩、情绪和动作完成质量。"
+        "跑步、步移和伸展等正常体育活动不能单凭活动量判为分心，较少变化也可能是正常等待或保持姿势。"
+        "固定区域图像可用率不是学生出勤率，也不是身份追踪成功率；镜头、光照、遮挡和人物交叉换位都可能影响结果。"
+        "请分别查看各人物的截图、时间轴和个人报告，并结合原片、教学目标及教师现场观察解释，"
+        "无法核对的时间段应保留为待确认，不用其他人物的表现填补。"
+    )
+    result.update(state_policy_version="demo1_student_state_cues_v1", report_version=REPORT_VERSION,
+                  score_note=("页面同时展示 Demo1 风格的学生状态线索：稳定参与、出现回应或操作、参与线索较低、"
+                              "可能需要一步提示和证据不足；这些是基于视频证据的教学复盘线索，不是医学或正式成绩。"
+                              + MOTION_SCORE_NOTE),
+                   lesson_report={"title": "全片学生状态线索概览", "text": report, "character_count": len(report),
+                                  "basis": "逐秒画面样本、逐人物固定区域、有限课堂声音活动和30秒时间片",
+                                 "scope": f"{len(people)}个匿名人物候选", "formal_score": False})
     return result
+
+
+def _manual_seats(value=None) -> list[dict[str, float]]:
+    """Teacher-confirmed fixed seat boxes (normalized), from task config or env."""
+    raw = value if value is not None else os.getenv("REHAB_DEMO2_TRACKING_MANUAL_SEATS", "").strip()
+    if isinstance(raw, str):
+        try:
+            values = json.loads(raw)
+        except (TypeError, ValueError):
+            return []
+    elif isinstance(raw, list):
+        values = raw
+    else:
+        return []
+    if not isinstance(values, list) or not 1 <= len(values) <= MAX_PERSONS:
+        return []
+    seats = []
+    for value in values:
+        if not isinstance(value, dict):
+            return []
+        box = {key: value.get(key) for key in ("x", "y", "width", "height")}
+        if any(type(number) not in (int, float) or not math.isfinite(number) for number in box.values()):
+            return []
+        if (box["x"] < 0 or box["y"] < 0 or box["width"] <= 0 or box["height"] <= 0
+                or box["x"] + box["width"] > 1 or box["y"] + box["height"] > 1):
+            return []
+        seats.append({key: float(number) for key, number in box.items()})
+    return sorted(seats, key=lambda item: item["x"])
 
 
 def analyze(request, detector=None):
@@ -869,18 +811,45 @@ def analyze(request, detector=None):
     if any(float(a["time"]) >= float(b["time"]) for a, b in zip(samples, samples[1:])):
         raise ValueError("non_monotonic_samples")
     detector = detector or Detector()
+    detection_count = 0
     initial = None
     faces = []
     best_initial_rank = None
-    detection_count = 0
+    manual_seats = _manual_seats(request.get("manual_seats"))
+    if manual_seats:
+        # Teacher-confirmed seats bypass the recurring-face heuristic: side
+        # profiles and front-row occlusion otherwise lose to stable adults.
+        for sample in samples[::15][:16]:
+            candidate_image = _read(root, sample["frame"])
+            if candidate_image is None:
+                continue
+            detected = detector(candidate_image)
+            detection_count += 1
+            hits = sum(1 for face in detected
+                       if any(abs(center(face["bbox"])[0] - box["x"] - box["width"] / 2) <= .06
+                              and abs(center(face["bbox"])[1] - box["y"] - box["height"] / 2) <= .09
+                              for box in manual_seats))
+            if hits >= max(2, len(manual_seats) // 2):
+                initial = candidate_image
+                anchor_time = float(sample["time"])
+                break
+        if initial is None:
+            for sample in samples:
+                candidate_image = _read(root, sample["frame"])
+                if candidate_image is not None:
+                    initial, anchor_time = candidate_image, float(sample["time"])
+                    break
+        if initial is None:
+            return unavailable("no_video_samples")
+        faces = [{"bbox": dict(box), "score": 1.0, "source": "manual_seat"} for box in manual_seats]
     opening_observations = []
     # Do not freeze the first blurry frame.  Search a short opening interval
     # and prefer candidates that recur, rather than one accidental high score.
-    for sample in samples[:INITIAL_SEARCH_SAMPLES:3]:
+    for sample in ([] if manual_seats else samples[:INITIAL_SEARCH_SAMPLES:3]):
         candidate_image = _read(root, sample["frame"])
         if candidate_image is None:
             continue
-        candidates = sorted(detector(candidate_image), key=lambda f: center(f["bbox"])[0])[:MAX_PERSONS]
+        candidates = sorted(detector(candidate_image), key=lambda f: center(f["bbox"])[0])[:_candidate_cap()]
         detection_count += 1
         opening_observations.append((sample, candidate_image, candidates))
         if candidates:
@@ -896,16 +865,48 @@ def analyze(request, detector=None):
             faces, initial = candidates, candidate_image
             anchor_time = float(sample["time"])
             best_initial_rank = rank
-    recurring = _initial_face_set(opening_observations)
+    recurring = None if manual_seats else _initial_face_set(opening_observations)
     if recurring is not None:
         faces, initial, anchor_time, _ = recurring
-    if not faces:
+    # Foreground students often appear after the first two minutes or turn
+    # sideways while the teacher speaks.  Scan later samples for up to three
+    # large, lower-half faces and keep them as fixed-seat anchors as well.
+    if faces and not manual_seats:
+        existing_centers = [center(face["bbox"]) for face in faces]
+        additions = []
+        for sample in samples[::15][:48]:
+            candidate_image = _read(root, sample["frame"])
+            if candidate_image is None:
+                continue
+            detected = detector(candidate_image)
+            detection_count += 1
+            for face in detected:
+                cx, cy = center(face["bbox"])
+                if cy < .45 or face["bbox"]["width"] < .02:
+                    continue
+                if any(math.dist((cx, cy), other) < .055 for other in existing_centers):
+                    continue
+                if any(math.dist((cx, cy), center(item[0]["bbox"])) < .055 for item in additions):
+                    continue
+                additions.append((face, sample, candidate_image))
+            if len(additions) >= 8:
+                break
+        additions.sort(key=lambda item: (-item[0]["bbox"]["width"], item[0]["bbox"]["x"]))
+        picked = []
+        for face, _, _ in additions:
+            if any(abs(center(face["bbox"])[0] - center(other["bbox"])[0]) <= .05 for other in picked):
+                continue
+            picked.append(face)
+            if len(picked) >= 3:
+                break
+        faces = faces + picked
+    if not faces and not manual_seats:
         # A title slide or empty classroom at the start is not the whole lesson.
         for sample in samples[INITIAL_SEARCH_SAMPLES::15]:
             candidate_image = _read(root, sample["frame"])
             if candidate_image is None:
                 continue
-            candidates = sorted(detector(candidate_image), key=lambda f: center(f["bbox"])[0])[:MAX_PERSONS]
+            candidates = sorted(detector(candidate_image), key=lambda f: center(f["bbox"])[0])[:_candidate_cap()]
             detection_count += 1
             if candidates:
                 faces, initial, anchor_time = candidates, candidate_image, float(sample["time"])
@@ -917,14 +918,12 @@ def analyze(request, detector=None):
     reference = [_appearance(crop(initial, roi)) for roi in regions]
     head_texture = [_head_texture(initial, box) for box in anchors]
     previous = [None]*len(anchors)
-    # Demo1's adult-interference cue: activity near the seat, outside the seat.
-    rings = [expand(roi, left=1.5, top=.6, right=1.5, bottom=.8) for roi in regions]
-    previous_ring = [None]*len(anchors)
     previous_appearance = [None]*len(anchors)
     previous_face = [None]*len(anchors)
     current_boxes = [dict(box) for box in anchors]
     tracks = [[] for _ in anchors]
     next_detection = anchor_time
+    tracking_detections = 0
     # Fixed background comparison rejects camera cuts; a stationary classroom
     # can be reacquired without letting one student's anchor walk to another.
     previous_scene = None
@@ -933,7 +932,6 @@ def analyze(request, detector=None):
         image = _read(root, sample["frame"])
         if image is None:
             previous = [None]*len(anchors)
-            previous_ring = [None]*len(anchors)
             continue
         scene_view = cv2.resize(image, (80, 45)).astype(float) / 255
         scene_delta = (float(np.abs(scene_view - previous_scene).mean())
@@ -951,6 +949,7 @@ def analyze(request, detector=None):
         if scene_ok and t >= next_detection:
             detected = detector(image)
             detection_count += 1
+            tracking_detections += 1
             next_detection = t + DETECTION_INTERVAL_SEC
         assignments = _assign_faces(detected, anchors, regions, current_boxes) if detected else [None]*len(anchors)
         for i, (anchor, roi) in enumerate(zip(anchors, regions)):
@@ -997,52 +996,35 @@ def analyze(request, detector=None):
                 face_blur = float(cv2.Laplacian(face_gray, cv2.CV_64F).var())
                 face_quality = min(1., .55 * min(1., face_blur / 140.)
                                    + .45 * float(face.get("score", 0.)))
-            ring_motion = None
-            if scene_ok:
-                ring_patch = crop(image, rings[i])
-                ring_gray = cv2.cvtColor(ring_patch, cv2.COLOR_BGR2GRAY)
-                ring_small = cv2.resize(ring_gray, (64, 64), interpolation=cv2.INTER_AREA)
-                if previous_ring[i] is not None:
-                    ring_diff = cv2.absdiff(ring_small, previous_ring[i])
-                    rx0, ry0, rx1, ry1 = _crop_bounds(roi, rings[i], 64, 64)
-                    ring_diff[ry0:ry1, rx0:rx1] = 0
-                    ring_motion = float(ring_diff.mean() / 255)
-                previous_ring[i] = ring_small
             # On missed face detection, retain the actual same-time seat crop,
             # never a photograph borrowed from another time/person.
             # Demo1's student signal is the local fixed-seat image change.
             # Face displacement is retained for localization diagnostics only:
             # camera tracking jitter must never manufacture a response state.
             movement_signal_raw = local_motion
+            face_score = float(face.get("score", 0.)) if face is not None else 0.
+            face_sharpness = _face_sharpness(image, face["bbox"]) if face is not None else 0.
             tracks[i].append(dict(time=t, frame=sample["frame"], bbox=current_boxes[i],
+                                  face_score=face_score, face_sharpness=face_sharpness,
+                                  frame_width=image.shape[1], frame_height=image.shape[0],
                                   visible=usable, motion=motion, quality=quality,
                                   appearance=similarity, face_detected=bool(face),
                                   face_quality=face_quality, scene_ok=scene_ok,
                                   scene_motion=scene_delta, local_motion=local_motion,
                                   face_motion=face_motion, movement_signal_raw=movement_signal_raw,
-                                  local_similarity=local_similarity, ring_motion=ring_motion))
+                                  local_similarity=local_similarity))
     persons = []
-    excluded = []
+    try:
+        from rehab_affect import demo2_person_filter as person_filter
+    except ImportError:
+        person_filter = None
+    filter_config = person_filter.person_filter_config() if person_filter else None
     for i, items in enumerate(tracks):
         values = [x["movement_signal_raw"] for x in items
                   if isinstance(x.get("movement_signal_raw"), (int, float))]
-        face_ratio = sum(1 for x in items if x["face_detected"]) / max(1, len(items))
-        raw_median = float(np.median(values)) if values else 0.0
-        if face_ratio < PERSON_MIN_FACE_RATIO and raw_median < PERSON_MIN_MOTION_MEDIAN:
-            excluded.append({"display_name": f"人物 {i+1}",
-                             "face_confirmation_ratio": round(face_ratio, 4),
-                             "motion_median": round(raw_median, 5),
-                             "reason": "未持续检测到本人脸，且固定区域几乎没有画面变化，"
-                                       "可能是背景、椅子或一次性误检，不计入学生状态。"})
-            continue
         low, high = np.percentile(values, [10, 90]) if values else (0., 0.)
         scale = max(.015, float(high-low))
-        ring_values = [x["ring_motion"] for x in items
-                       if isinstance(x.get("ring_motion"), (int, float))]
-        ring_low, ring_high = np.percentile(ring_values, [10, 90]) if ring_values else (0., 0.)
-        ring_scale = max(.01, float(ring_high - ring_low))
         windows = []
-        previous_activity = None
         for start in range(0, math.ceil(duration), WINDOW_SEC):
             end = min(duration, start+WINDOW_SEC)
             group = [x for x in items if start <= x["time"] < end]
@@ -1064,50 +1046,42 @@ def analyze(request, detector=None):
             representative = max(visible, key=lambda x: (x["face_detected"], x["face_quality"],
                                                          x["quality"], x["appearance"])) if visible else (
                 max(group, key=lambda x: x["quality"]) if group else None)
-            face_in_window = any(x["face_detected"] and start <= x["time"] < end for x in group)
-            nearby_face = any(x["face_detected"] and start-45 <= x["time"] < end+45 for x in items)
+            nearby_face = any(x["face_detected"] and start-15 <= x["time"] < end+15 for x in items)
             quality = float(np.mean([x["quality"] for x in visible])) if visible else 0.
+            state, label, score = "uncertain", "画面证据不足", None
+            evidence = "该位置出现遮挡、离位或镜头变化，未使用旁边人物代替。"
+            if expected == 0:
+                label, evidence = "该时段未采样", "此时间段没有可读取的采样，不等于学生未出现。"
+            elif visible and not nearby_face:
+                label, evidence = "局部画面 / 人脸未确认", "保留本时段原座位画面；缺少邻近人脸核对，不将区域变化当作已确认的学生状态。"
+            elif visibility >= .35 and len(motions) >= min(3, max(1, expected-1)) and quality >= .38:
+                if activity >= .6:
+                    state, label = "movement_high", "动作变化较多"
+                elif activity < .24:
+                    state, label = "movement_low", "动作变化较少"
+                else:
+                    state, label = "movement_moderate", "中等动作变化"
+                # Descriptive activity index, not a reward for moving more.
+                score = round(10*activity, 1)
+                evidence = f"独立观察此人物 {len(visible)}/{expected} 个采样；局部画面变化 {raw:.3f}。这是动作线索，不表示注意力或掌握程度。"
             audio_activity, audio_coverage = _audio_for_window(audio_windows, start, end)
             lesson_phase = _lesson_phase(start, duration)
             teacher_activity = _teacher_activity(start, duration)
             response_expected = lesson_phase in {"引导练习", "个别练习与迁移", "总结与回顾"}
-            ring_visible = [x["ring_motion"] for x in visible
-                            if isinstance(x.get("ring_motion"), (int, float))]
-            adult_interference = (float(np.mean([np.clip((value - ring_low) / ring_scale, 0, 1)
-                                                 for value in ring_visible]))
-                                  if ring_visible else None)
-            score = round(10 * activity, 1) if activity is not None else None
-            if expected == 0:
-                state, label = "uncertain", STUDENT_STATE_LABELS["uncertain"]
-                evidence = "该时段未采样，不等于学生未出现；保留为无法判断。"
-                interpretation = "缺少采样，无法给出状态线索。"
-                confidence = .30
-            elif not visible:
-                state, label = "uncertain", STUDENT_STATE_LABELS["uncertain"]
-                evidence = "该时段固定区域被遮挡、人员离位或镜头变化，保留为无法判断。"
-                interpretation = "该片段需要结合原视频人工确认。"
-                confidence = .35
-            else:
-                state, label, evidence, interpretation, confidence = _student_state(
-                    activity, audio_activity, adult_interference, visibility, quality,
-                    motions, expected, face_presence=face_presence,
-                    response_expected=response_expected, lesson_phase=lesson_phase,
-                    previous_activity=previous_activity,
-                )
-            if state != "uncertain" and not face_in_window:
-                confidence = round(max(.25, confidence - (.05 if nearby_face else .08)), 3)
-                evidence += ("这一小段没直接拍到脸，是按座位画面判断的。" if nearby_face
-                             else "这一小段没拍到脸，只按座位画面看。")
-            student_score = _student_score(state, activity, quality)
-            action = dict(STUDENT_STATE_ACTIONS[state])
-            action["teacher_confirmation_required"] = bool(action["teacher_alert"])
+            student_state, student_label, student_evidence, student_interpretation, student_confidence = _student_state(
+                activity, audio_activity, visibility, quality, motions, expected,
+                face_presence=face_presence, face_motion=face_motion,
+                signal_variance=signal_variance,
+                response_expected=response_expected, lesson_phase=lesson_phase,
+            )
+            student_score = _student_score(student_state, activity, quality)
+            student_action = dict(STUDENT_STATE_ACTIONS[student_state])
+            student_action["teacher_confirmation_required"] = bool(student_action["teacher_alert"])
             w = dict(start_sec=start, end_sec=round(end, 3), state=state, state_zh=label,
                       lesson_phase=lesson_phase, teacher_activity=teacher_activity,
                       response_expected=response_expected,
-                     score=score, confidence=confidence,
-                     evidence=evidence, interpretation=interpretation,
-                     recommended_action=action,
-                     frame=representative["frame"] if representative else "",
+                     score=score, confidence=round(min(.85, visibility*.5+quality*.2), 3),
+                     evidence=evidence, frame=representative["frame"] if representative else "",
                      frame_time_sec=representative["time"] if representative else None,
                      bbox=representative["bbox"] if representative else None,
                      visibility=round(visibility, 3), movement=round(raw, 6) if raw is not None else None,
@@ -1119,43 +1093,40 @@ def analyze(request, detector=None):
                      identity_continuity="seat_region_only_not_biometric_identity",
                      nearby_face_verified=nearby_face,
                       appearance_similarity=round(representative["appearance"], 3) if representative else None,
-                      adult_interference=round(adult_interference, 3) if adult_interference is not None else None,
-                      student_state=state, student_state_zh=label,
-                      student_score=student_score, student_confidence=confidence,
-                      student_evidence=evidence, student_interpretation=interpretation,
+                      student_state=student_state, student_state_zh=student_label,
+                      student_score=student_score, student_confidence=student_confidence,
+                      student_evidence=student_evidence, student_interpretation=student_interpretation,
+                      recommended_action=student_action,
                       audio_activity=round(audio_activity, 3) if audio_activity is not None else None,
                       audio_coverage=round(audio_coverage, 3),
-                      state_basis="Demo1 state cue: fixed-seat local image change, nearby-region activity, classroom audio and window quality")
+                      state_basis="Demo1-style individual evidence cue: fixed-seat local image change; face displacement is localization-only")
             windows.append(w)
-            previous_activity = activity
         scores = [w["score"] for w in windows if w["score"] is not None]
         student_scores = [w["student_score"] for w in windows if w.get("student_score") is not None]
-        counts = {state: sum(w["state"] == state for w in windows) for state in STUDENT_STATE_LABELS}
-        dominant = max(counts, key=counts.get) if any(counts.values()) else "uncertain"
-        key_moments = _select_key_moments(windows)
-        review_required = sum(1 for w in windows if (w.get("recommended_action") or {}).get("teacher_alert"))
-        state_summary = {"counts": counts, "window_count": len(windows),
-                         "ratios": {state: round(value / len(windows), 3)
-                                    for state, value in counts.items()},
-                         "review_required": review_required}
+        student_counts = {state: sum(w.get("student_state") == state for w in windows)
+                          for state in STUDENT_STATE_LABELS}
+        dominant_student = max(student_counts, key=student_counts.get)
+        counts = {state:sum(w["state"] == state for w in windows)
+                  for state in dict.fromkeys(w["state"] for w in windows)}
+        dominant = max(counts, key=counts.get)
         average_score = round(sum(scores)/len(scores), 2) if scores else None
         average_student_score = round(sum(student_scores)/len(student_scores), 2) if student_scores else None
         visibility = round(sum(x["visible"] for x in items)/max(1,len(samples)), 3)
         display_name = f"人物 {i+1}"
+        action_summary, person_report = _person_report(display_name, anchors[i], windows, average_student_score, visibility)
         confirmed = [x for x in items if x["face_detected"]]
         reacquisitions = sum(1 for before, after in zip(items, items[1:])
                              if after["face_detected"] and not before["face_detected"])
         persons.append(dict(person_id=f"person_{i+1:02d}", display_name=display_name, anonymous=True,
+                            identity_source="manual_seat" if manual_seats else "auto_candidate",
+                            manual_seat=bool(manual_seats),
                             anchor_bbox=anchors[i], observation_roi=regions[i], windows=windows,
                             average_score=average_score, average_student_score=average_student_score,
                             dominant_state=dominant,
-                            dominant_state_zh=STUDENT_STATE_LABELS[dominant],
-                            student_state=dominant,
-                            dominant_student_state=dominant,
-                            dominant_student_state_zh=STUDENT_STATE_LABELS[dominant],
-                            student_state_counts=counts,
-                            state_summary=state_summary,
-                            key_moments=key_moments,
+                            dominant_state_zh=next(w["state_zh"] for w in windows if w["state"] == dominant),
+                            dominant_student_state=dominant_student,
+                            dominant_student_state_zh=STUDENT_STATE_LABELS[dominant_student],
+                            student_state_counts=student_counts,
                             detected_samples=sum(x["face_detected"] for x in items),
                             face_confirmed_samples=len(confirmed), reacquisition_count=reacquisitions,
                             same_person_continuity=round(len(confirmed) / max(1, len(items)), 3),
@@ -1163,75 +1134,47 @@ def analyze(request, detector=None):
                                           if confirmed else anchors[i]),
                             portrait_quality=round(max((x["face_quality"] for x in confirmed), default=0.), 3),
                             observed_samples=sum(x["visible"] for x in items), visibility=visibility,
-                            student_summary=(f"这节课整体以“{STUDENT_STATE_LABELS[dominant]}”为主"
-                                             + (f"，有 {review_required} 个片段建议你回看。" if review_required
-                                                else "，没有需要特别回看的片段。")),
-                            action_summary="", lesson_report={},
+                            student_summary=(f"{STUDENT_STATE_LABELS[dominant_student]}线索最多，共{len(windows)}个时间片；"
+                                             "请结合人物截图和原视频确认具体课堂表现。"),
+                            action_summary=action_summary, lesson_report=person_report,
                             tracking="首次从左到右编号；固定人物区域结合每3秒人脸位置复核，禁止跨区域串人"))
-    if not persons:
-        return unavailable("no_persistent_students", excluded=excluded)
-    rhythm = _classroom_rhythm(persons, duration)
-    for person in persons:
-        action_summary, person_report = _person_report(
-            person["display_name"], person["anchor_bbox"], person["windows"],
-            person.get("average_student_score"), person.get("visibility", 0), rhythm)
-        person["action_summary"] = action_summary
-        person["lesson_report"] = person_report
-    support = _support_conclusions(persons, rhythm)
-    summaries = []
-    for item in persons:
-        counts = item["state_summary"]["counts"]
-        summaries.append(
-            f"{item['display_name']}参与 {counts['engaged']} 段、安静下来 {counts['low_attention']} 段、"
-            f"突然停住 {counts['confused_or_stuck']} 段、被挡住 {counts['uncertain_adult_interference']} 段、"
-            f"看不清 {counts['uncertain']} 段")
-    windows_total = len(persons[0]["windows"]) if persons else 0
-    review_total = sum(item["state_summary"]["review_required"] for item in persons)
-    if rhythm.get("wait_available"):
-        rhythm_line = (f"课堂节奏上，讲解和示范大约占 {rhythm['teacher_talk_ratio']:.0%} 的时间，"
-                       f"其中有 {rhythm['question_wait_events']} 次明显的“讲完停下来”。")
-    else:
-        rhythm_line = ("课堂声音比较连续，30 秒一段里暂时分不出讲解和提问-等待；"
-                       "想看得更细，可以上课时顺手记一下提问次数。")
-    report = (
-        f"这节课按 30 秒一段，一共看了 {windows_total} 段，三位同学的画面分别记录如下："
-        + "；".join(summaries) + "。"
-        + f"其中有 {review_total} 个片段建议你抽空回看，重点看状态变成“困惑·停滞”或“注意力下降”的地方——"
-        "安静可能是听讲、等待，也可能是没跟上或被挡住。"
-        + rhythm_line
-        + "这些只是从画面和声音里读到的线索，最后的判断还是看当时的课堂和你的观察。"
-        + (f"另外排除了 {len(excluded)} 个不可靠的人物候选，它们没有被当成学生，也没有生成结论。"
-           if excluded else "")
-    )
-    score_note = ("0–10 只是画面变化的参考值，不是成绩，也不是注意力分数。"
-                  "状态线索用来找出值得回看的片段：安静可能是听讲、等待或遮挡，"
-                  "跑步、走位这类正常动作不能单凭运动强度判成走神。具体怎么理解，还要看当时的课堂。"
-                  "本版本不含机器人动作。")
-    return dict(
+        persons[-1]["candidate_index"] = i
+    face_lists = [[x for x in items if x["face_detected"]] for items in tracks]
+    persons, face_lists = _merge_split_tracks(persons, face_lists)
+    for person, face_items in zip(persons, face_lists):
+        if person_filter is not None:
+            person["filter_features"] = person_filter.track_features(
+                [dict(time=x["time"], bbox=x["bbox"], score=x["face_score"], sharpness=x["face_sharpness"])
+                 for x in face_items],
+                detection_attempts=tracking_detections, frame_width=initial.shape[1],
+                frame_height=initial.shape[0], duration=duration, total_samples=len(samples))
+            limit = int(filter_config["max_track_points"])
+            step = max(1, math.ceil(len(face_items) / limit))
+            person["track_points"] = [
+                [round(x["time"], 2)] + [round(float(x["bbox"][k]), 4) for k in ("x", "y", "width", "height")]
+                for x in face_items[::step]]
+        avatar = _select_avatar(face_items)
+        if avatar is not None:
+            person["avatar"] = avatar
+            person["portrait_bbox"] = dict(avatar["bbox"])
+    if person_filter is not None and persons:
+        for person, info in zip(persons, person_filter.classify_candidates(
+                [p["filter_features"] for p in persons], filter_config)):
+            person["person_filter"] = info
+    return present_motion_analysis(dict(
         available=True, analysis_version=VERSION, persons=persons, window_sec=WINDOW_SEC,
         detected_samples=detection_count, observed_frames=len(samples), max_persons=MAX_PERSONS,
-        score_kind="individual_motion_index",
-        student_score_kind="demo1_state_cue_index",
-        state_policy_version="demo1_student_state_cues_v2",
-        report_version=REPORT_VERSION,
-        classroom_rhythm=rhythm,
-        support_conclusions=support,
-        excluded_candidates=excluded,
-        score_note=score_note,
-        lesson_report={"title": "全片课堂状态线索概览", "text": report,
-                       "character_count": len(report),
-                       "basis": "逐秒画面样本、逐人物固定区域、相邻区域活动、课堂声音和30秒时间片",
-                       "scope": f"{len(persons)}个匿名人物候选", "formal_score": False},
-        network_used=False,
+         score_kind="individual_motion_index", student_score_kind="individual_participation_evidence_index",
+         network_used=False,
+        person_filter_config=filter_config,
         tracking_config={"detection_interval_sec": DETECTION_INTERVAL_SEC,
                          "initial_search_samples": INITIAL_SEARCH_SAMPLES,
                          "small_face_threshold": "tracking_only",
                          "scene_motion_suppression": True,
                          "primary_signal": "fixed_seat_local_motion",
-                         "adult_interference_signal": "ring_motion_outside_seat",
-                         "audio_role": "classroom_context_only",
                          "face_motion_role": "localization_only",
-                         "identity_guard": "left_to_right_lane_plus_current_face_box"})
+                         "identity_guard": "left_to_right_lane_plus_current_face_box"}))
+
 
 
 if __name__ == "__main__":

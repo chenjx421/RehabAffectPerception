@@ -5,6 +5,7 @@ import json
 
 from .assessment_rubric import DIMENSION_WEIGHTS, RUBRIC_VERSION
 from .evaluation_report_contract import build_linkage, build_task_report
+from .score_basis import measurement_basis_sentence
 
 DIMENSIONS = {'accuracy':'任务正确性','independence':'独立完成','consistency':'表现稳定性','transfer':'情境迁移'}
 STATES = {'unknown':'无法判断','participating':'参与任务','repeat_prompt':'需要重复提示',
@@ -109,7 +110,7 @@ def build_report(work):
             examples.append(f'{names.get(r["student_id"],"学生")}在{r["start_sec"]:g}至{r["end_sec"]:g}秒的'
                 f'“{_excerpt(r["goal_id"],24)}”目标中，教师记录“{_excerpt(r["evidence"],70)}”；'
                 f'支持方式为{SUPPORT.get(r.get("support_level"),"未记录")}，'
-                + (f'本目标参考得分{score:.2f}/10。' if score is not None else '本目标证据尚不足以形成总分。'))
+                + (f'本目标参考得分{score:.2f}/10（{measurement_basis_sentence(r)}）。' if score is not None else '本目标证据尚不足以形成总分。'))
         add('目标与课堂证据', ''.join(examples)+'上述为部分证据摘要；完整原文、修订版本及片段位置保留在观察记录中。')
         first = evidence[0]
         known_states = sum(r.get('observed_state','unknown')!='unknown' for r in evidence)
@@ -128,6 +129,10 @@ def build_report(work):
             '对反复需要提示的任务，可由教师决定拆分步骤、增加等待时间或使用视觉支持，再记录独立完成与提示后完成的差异。'
             '对已能完成的任务，可在适当情况下更换相似材料观察迁移；出现拒绝、疲劳或不适线索时，先确认学生需求，避免强迫参与。'
             '这些是待教师选择的教学建议，不是对诊断或治疗的判断。')
+        add('复核覆盖与待办', f'本报告的统计卡片与正文使用同一份任务内数据：关联学生{s["students"]}名，已复核目标{s["reviewed"]}条，'
+            f'可计分目标{s["scored"]}条，待处理记录{s["pending"]+s["reconfirm"]}条（含待复核{s["pending"]}条、待重新确认{s["reconfirm"]}条）。'
+            '待处理记录不进入目标测量条形图，也不参与任何分数计算；完成复核或重新确认身份后，需要重新生成报告，旧报告会因评分版本变化被标记为已过期。'
+            '报告通过任务编号、评价编号和报告编号与课堂视频及评分记录关联，学生显示名仅用于阅读，不作为数据关联依据。')
         add('连续追踪与边界', '本次记录与同一学生、同一目标、相同测量条件和量表版本的后续课程关联，才能讨论短期或长期变化。'
             '单段视频不能证明能力改善、退步或某种教学方法具有因果效果。后续逐课、每周、每月及60日趋势只汇总可比较的复核记录。'
             '身份确认被撤销、视频版本改变或证据失效时，相关评分暂停计入；原始视频到期后，报告需区分已归档观察与仍可回放的媒体证据。')
@@ -135,6 +140,11 @@ def build_report(work):
         add('需要重新确认', f'有{s["reconfirm"]}条记录的身份或视频版本证据失效，已从有效评分中排除。请重新确认学生后编辑复核。')
     if not work['media_available']:
         add('原始媒体状态', '本次原始视频目前不可回放。所列结果来自保留的教师观察记录，并非对已到期或缺失视频进行了重新分析。')
-    return {'title':'课堂观察与学习支持报告','sections':sections,
+    names = {p['student_id']:p['display_name'] for p in work['people']}
+    # Bars only show reviewed, current goals; an empty score stays empty (not 0).
+    measurements = [{'record_id':r['record_id'],'student_id':r['student_id'],'goal_id':r['goal_id'],
+                     'label':f'{names.get(r["student_id"],"学生")} · {_excerpt(r["goal_id"],24)}',
+                     'score':r['assessment']['overall_score']} for r in evidence]
+    return {'title':'课堂观察与学习支持报告','sections':sections,'measurements':measurements,
             'character_count':sum(len(x['text']) for x in sections), 'generation':'本地规则与教师复核记录；未调用外部大模型',
             'ready':bool(evidence),'record_versions':[{'record_id':r['record_id'],'version':r['version']} for r in work['records']]}

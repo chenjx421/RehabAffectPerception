@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .demo2_portal import _BOOK_ICON, _WORKSPACE_STYLE, _account_payload, _document, _workspace_nav
+from .demo2_portal import _WORKSPACE_STYLE, _account_payload, _document
+from .demo2_ui_kit import header_for
 
 
 def render_video_review(account: Any | None = None) -> str:
@@ -54,17 +55,47 @@ dd { margin:0; font-size:14px; font-weight:600; overflow-wrap:anywhere; }
 .evidence-pane dd { font-size:13px; text-align:right; }
 .evidence-pane dt { margin:0; }
 .boundary-note { margin-top:20px; padding-top:16px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); line-height:1.8; }
+.evidence-pane .metric-row dd { display:flex; align-items:center; justify-content:flex-end; gap:6px; }
 .audio-player { width:100%; min-width:0; max-width:100%; height:44px; margin-top:8px; }
 .timeline-section { margin-top:28px; }
 .section-line { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:14px; }
 .section-line h2 { font-size:18px; }
 .section-line span { font-size:12px; color:var(--muted); }
-.segment-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; }
-.segment { min-width:0; min-height:76px; padding:10px; border:0; border-bottom:1px solid var(--line); background:#f8fafc; color:var(--ink); text-align:left; border-radius:4px; }
-.segment:hover { background:#f5f9ff; }
-.segment[aria-pressed=true] { background:var(--blue-soft); box-shadow:inset 0 3px 0 var(--blue); }
-.segment strong { display:block; font:600 13px/1.5 Consolas,monospace; }
-.segment span { display:block; color:var(--muted); font-size:12px; margin-top:6px; }
+.segment-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+.segment { position:relative; min-width:0; min-height:96px; padding:12px 12px 10px; border:1px solid var(--line); background:#fff; color:var(--ink); text-align:left; border-radius:8px; cursor:pointer; transition:border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+.segment:hover { border-color:#9fbbe6; background:#f8fbff; box-shadow:0 2px 8px rgba(33,99,196,.08); }
+.segment[aria-pressed=true] { border-color:var(--blue); background:var(--blue-soft); box-shadow:0 0 0 1px var(--blue) inset; }
+.segment strong { display:flex; align-items:center; gap:6px; font:600 14px/1.5 Consolas,monospace; }
+.segment strong svg { width:16px; height:16px; flex:none; color:var(--blue); }
+.segment span { display:block; color:var(--muted); font-size:12px; margin-top:4px; }
+.segment .mini-track { position:relative; display:block; height:6px; margin-top:10px; border-radius:3px; background:#e4ebf4; overflow:hidden; }
+.segment .mini-track i { position:absolute; top:0; bottom:0; min-width:4px; border-radius:3px; background:var(--blue); }
+.segment .segment-play { margin-top:6px; color:var(--blue-deep); font-weight:600; }
+.process-steps { grid-column:1/-1; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin:0 0 6px; padding:0; list-style:none; counter-reset:step; }
+.process-steps li { position:relative; display:flex; align-items:flex-start; gap:10px; min-width:0; padding:10px 12px; border-radius:8px; background:#f5f7fa; color:var(--muted); font-size:13px; }
+.process-steps li b { display:inline-grid; place-items:center; flex:none; width:26px; height:26px; border-radius:50%; background:#dfe5ec; color:#5d6874; font-size:13px; }
+.process-steps li strong { display:block; font-size:14px; color:inherit; }
+.process-steps li small { display:block; margin-top:2px; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+.process-steps li[data-state=done] { background:#eaf6f0; color:#1d6a48; }
+.process-steps li[data-state=done] b { background:#2f8a5f; color:#fff; }
+.process-steps li[data-state=current] { background:var(--blue-soft); color:var(--blue-deep); box-shadow:inset 0 0 0 2px var(--blue); }
+.process-steps li[data-state=current] b { background:var(--blue); color:#fff; }
+.process-steps li[data-state=error] { background:#fdeeee; color:#9b3030; box-shadow:inset 0 0 0 2px #d77; }
+.process-steps li[data-state=error] b { background:#c0392b; color:#fff; }
+.metric-level { display:inline-flex; align-items:center; gap:6px; }
+.level-pill { display:inline-block; padding:2px 10px; border-radius:12px; font-size:13px; font-weight:700; background:#edf1f4; color:#4f5b67; }
+.level-pill[data-tone=good] { background:#e5f6ed; color:#17684f; }
+.level-pill[data-tone=mid] { background:#fff3d6; color:#8c5b10; }
+.level-pill[data-tone=bad] { background:#ffe9e9; color:#943e3e; }
+.info-wrap { position:relative; display:inline-flex; }
+.info-tip { display:inline-grid; place-items:center; width:22px; height:22px; min-height:22px; padding:0; border:1px solid #b9c7d8; border-radius:50%; background:#fff; color:var(--blue-deep); font:700 12px/1 Georgia,serif; cursor:help; }
+.info-tip:hover,.info-tip[aria-expanded=true] { background:var(--blue-soft); border-color:var(--blue); }
+.tip-bubble { position:absolute; right:0; top:calc(100% + 6px); z-index:20; width:220px; padding:8px 10px; border-radius:6px; background:#26313d; color:#fff; font-size:12px; font-weight:400; line-height:1.6; text-align:left; box-shadow:0 6px 18px rgba(0,0,0,.18); pointer-events:none; visibility:hidden; opacity:0; transition:opacity .12s ease; }
+.info-wrap:hover .tip-bubble,.info-tip:focus-visible+.tip-bubble,.info-tip[aria-expanded=true]+.tip-bubble { visibility:visible; opacity:1; }
+.boundary-fold { margin-top:20px; padding-top:12px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); }
+.boundary-fold summary { cursor:pointer; min-height:36px; display:flex; align-items:center; gap:6px; color:var(--ink); font-size:13px; }
+.boundary-fold p { margin:6px 0; line-height:1.8; }
+.boundary-fold .boundary-note { margin-top:6px; padding-top:0; border-top:0; }
 .pagination { display:flex; justify-content:flex-end; gap:12px; align-items:center; margin-top:16px; font-size:12px; color:var(--muted); }
 .limitations { font-size:12px; color:var(--muted); margin-top:26px; border-top:1px solid var(--line); padding-top:16px; }
 .limitations summary { cursor:pointer; padding-block:4px; }
@@ -89,27 +120,23 @@ dd { margin:0; font-size:14px; font-weight:600; overflow-wrap:anywhere; }
 .identity-summary p { font-size:13px; color:var(--muted); line-height:1.8; margin-top:8px; }
 .identity-summary .button { font-size:13px; margin:10px 8px 0 0; }
 [hidden] { display:none !important; }
-@media(max-width:1050px) { .review-layout { grid-template-columns:minmax(0,1fr) 260px; gap:20px; } .evidence-pane { padding-left:20px; } .segment-grid { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+@media(max-width:1050px) { .review-layout { grid-template-columns:minmax(0,1fr) 260px; gap:20px; } .evidence-pane { padding-left:20px; } .segment-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media(max-width:900px) { .process-steps { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(max-width:780px) { .header-inner,.page-shell { width:calc(100% - 28px); } .review-layout { grid-template-columns:1fr; } .evidence-pane { border-left:0; border-top:1px solid var(--line); padding:20px 0 0; } .recording-meta { gap:10px; } .segment-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } .header-actions .button { width:auto; } .page-heading h1 { font-size:23px; } }
 @media(max-width:720px) { .header-actions .button { flex:0 1 auto; } .review-actions { width:100%; } .review-actions .button { flex:1 1 auto; } }
-@media(max-width:460px) { .segment-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .recording-meta { grid-template-columns:repeat(2,minmax(0,1fr)); } .transport { gap:8px; } .transport output { min-width:96px; font-size:12px; } }
+@media(max-width:460px) { .process-steps { grid-template-columns:1fr; } .segment-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .recording-meta { grid-template-columns:repeat(2,minmax(0,1fr)); } .transport { gap:8px; } .transport output { min-width:96px; font-size:12px; } }
 @media(max-width:650px) { .student-state-grid { grid-template-columns:1fr; } }
 """
     # Arrow, RotateCcw and Download paths are from Lucide (ISC).
     back_icon = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7M5 12h14"/></svg>'
     body = r"""
-<header class="site-header"><div class="header-inner">
-  <a class="brand" href="/demo2/upload">__BOOK__<span class="brand-copy"><strong>RehabAffect</strong><span>课堂视频证据</span></span></a>
-  __WORKSPACE_NAV__
-  <div class="header-actions"><a class="button quiet" id="backLink" href="/demo2/upload">__BACK__返回工作台</a><button class="button quiet" id="logoutButton" type="button">退出</button></div>
-</div></header>
+__RX_HEADER__
 <main class="page-shell" id="mainContent">
   <div class="page-heading"><div><span class="eyebrow" id="courseBatch">课堂记录</span><h1 id="courseTitle">正在读取视频任务</h1><p class="quiet-meta" id="fileMeta"></p></div>
   <div class="review-actions"><button class="button" id="refreshButton" type="button">刷新任务</button><button class="button" id="retryButton" type="button" hidden>重新处理</button><a class="button" id="downloadResult" hidden><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg><span id="downloadLabel">下载证据记录</span></a></div></div>
   <div class="page-message" id="pageMessage" role="alert" tabindex="-1"></div>
-  <section class="process-band" aria-label="视频处理进度"><div><strong id="stageLabel">读取任务</strong><p id="stageDetail" aria-live="polite">正在连接本地工作区</p></div><span class="status-badge" id="stagePercent">--</span><progress id="processingProgress" max="100" value="0" aria-label="视频处理进度"></progress></section>
+  <section class="process-band" aria-label="视频处理进度"><ol class="process-steps" id="processSteps" aria-label="处理步骤"><li data-state="todo"><b aria-hidden="true">1</b><div><strong>已上传</strong><small>原视频已保存</small></div></li><li data-state="todo"><b aria-hidden="true">2</b><div><strong>已解码</strong><small>读取画面与声音</small></div></li><li data-state="todo"><b aria-hidden="true">3</b><div><strong>证据已就绪</strong><small>时间切片已整理</small></div></li><li data-state="todo"><b aria-hidden="true">4</b><div><strong>待教师复核</strong><small>确认学生身份与状态</small></div></li></ol><div><strong id="stageLabel">读取任务</strong><p id="stageDetail" aria-live="polite">正在连接本地工作区</p></div><span class="status-badge" id="stagePercent">--</span><progress id="processingProgress" max="100" value="0" aria-label="视频处理进度"></progress></section>
   <p class="poll-status" id="pollStatus" role="status">处理进度会自动更新；分析完成后直接显示学生课堂状态。</p>
-  <p class="poll-status">当前任务视频证据，不是历史演示；原视频与音轨均需登录授权。</p>
   <section class="student-state-panel" id="studentStatePanel" aria-labelledby="studentStateTitle"><h2 id="studentStateTitle">学生课堂状态</h2><p>系统按本次视频中的可见人物生成时间段状态，先看结果即可；姓名和 IEP 关联放在后续档案操作。</p><div class="student-state-grid" id="studentStateCards"><div class="student-state-empty">后台分析完成后显示学生状态。</div></div></section>
   <details class="identity-summary" aria-labelledby="identityTitle"><summary id="identityTitle">后续：身份绑定与学生档案</summary><p id="identitySummary" role="status">尚未读取本任务已确认帧与学校名册。</p><p>身份确认只对精确采样帧有效。全画面的动作变化与同期音轨不能归因于某位学生，不代表个人学习结论。</p><a class="button primary" id="identityLink" hidden>确认画面中的学生</a><button class="button" id="refreshIdentitySummary" type="button" disabled>刷新身份摘要</button><a class="button" id="courseDossierLink" hidden>关联学生资料</a></details>
   <div class="review-layout">
@@ -118,20 +145,25 @@ dd { margin:0; font-size:14px; font-weight:600; overflow-wrap:anywhere; }
       <div class="transport"><button class="icon-button" id="replayButton" title="回到当前片段开头" aria-label="回到当前片段开头" disabled><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11a9 9 0 1 1 9 9 9.75 9.75 0 0 1-6.74-2.74L3 15M3 3v8h8"/></svg></button><input id="seekSlider" type="range" min="0" max="1" step="0.1" value="0" aria-label="录像时间" disabled><output id="playTime">00:00 / 00:00</output></div>
       <div class="clip-controls" role="group" aria-label="当前片段回看"><label><input id="clipOnly" type="checkbox" disabled />只看当前片段</label><label><input id="loopClip" type="checkbox" disabled />循环本片段</label><output id="clipRange" aria-live="polite">尚未选择片段</output></div>
       <dl class="recording-meta"><div><dt>录像时长</dt><dd id="durationMetric">--</dd></div><div><dt>画面分辨率</dt><dd id="resolutionMetric">--</dd></div><div><dt>音轨</dt><dd id="audioMetric">--</dd></div><div><dt>证据片段</dt><dd id="segmentMetric">--</dd></div></dl>
-      <section class="timeline-section" aria-labelledby="timelineTitle"><div class="section-line"><h2 id="timelineTitle">时间切片</h2><span id="segmentCount">等待处理结果</span></div><div class="segment-grid" id="segments"></div><div class="empty-state" id="segmentsEmpty">处理结束后显示原片时间切片</div><div class="pagination" id="pagination" hidden><button class="icon-button" id="previousPage" title="上一页" aria-label="上一页">__BACK__</button><span id="pageCount"></span><button class="icon-button" id="nextPage" title="下一页" aria-label="下一页"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 5 7 7-7 7M5 12h14"/></svg></button></div></section>
+      <section class="timeline-section" aria-labelledby="timelineTitle"><div class="section-line"><h2 id="timelineTitle">时间切片</h2><span id="segmentCount">等待处理结果</span></div><p class="poll-status">点击任一卡片，播放器会跳到该片段开头开始播放；蓝色条表示片段在整段录像中的位置。</p><div class="segment-grid" id="segments"></div><div class="empty-state" id="segmentsEmpty">处理结束后显示原片时间切片</div><div class="pagination" id="pagination" hidden><button class="icon-button" id="previousPage" title="上一页" aria-label="上一页">__BACK__</button><span id="pageCount"></span><button class="icon-button" id="nextPage" title="下一页" aria-label="下一页"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 5 7 7-7 7M5 12h14"/></svg></button></div></section>
     </section>
-    <aside class="evidence-pane" aria-labelledby="evidenceTitle"><h2 id="evidenceTitle">当前片段</h2><div class="period" id="selectedPeriod">--:--</div><span class="status-badge warning" id="reviewState">等待分析</span>
-      <h3>画面记录</h3><dl><div><dt>采样帧数</dt><dd id="sampleCount">--</dd></div><div><dt>平均亮度</dt><dd id="brightnessMetric">--</dd></div><div><dt>清晰度指标</dt><dd id="sharpnessMetric">--</dd></div><div><dt>画面变化幅度</dt><dd id="motionMetric">--</dd></div></dl>
-      <h3>同期声音</h3><dl><div><dt>音轨状态</dt><dd id="segmentAudio">--</dd></div><div><dt>声音能量 RMS</dt><dd id="rmsMetric">--</dd></div></dl><audio class="audio-player" id="audioPlayer" aria-label="本任务同期音轨" controls preload="none" hidden></audio><p class="poll-status" id="audioNotice"></p>
-      <p class="boundary-note">状态来自本次视频的可见画面与声音线索，不是诊断，也不是正式评价分数。学生姓名和 IEP 需要后续确认后再归档。</p><div class="scope-status" id="scopeStatus">等待学生状态分析</div>
+    <aside class="evidence-pane" id="evidencePane" aria-labelledby="evidenceTitle"><h2 id="evidenceTitle">当前片段</h2><div class="period" id="selectedPeriod">--:--</div><span class="status-badge warning" id="reviewState">等待分析</span>
+      <h3>画面记录</h3><dl><div><dt>采样帧数</dt><dd id="sampleCount">--</dd></div><div class="metric-row"><dt>画面亮度</dt><dd><span class="level-pill" id="brightnessMetric" data-tone="none">--</span><span class="info-wrap"><button class="info-tip" type="button" data-tip="brightnessMetricTip" aria-expanded="false" aria-describedby="brightnessMetricTip" aria-label="查看画面亮度原始数值" title="平均亮度原始值（0–255）：--">i</button><span class="tip-bubble" role="tooltip" id="brightnessMetricTip">平均亮度原始值（0–255）：--</span></span></dd></div><div class="metric-row"><dt>清晰度</dt><dd><span class="level-pill" id="sharpnessMetric" data-tone="none">--</span><span class="info-wrap"><button class="info-tip" type="button" data-tip="sharpnessMetricTip" aria-expanded="false" aria-describedby="sharpnessMetricTip" aria-label="查看清晰度原始数值" title="清晰度指标原始值（越大越清晰）：--">i</button><span class="tip-bubble" role="tooltip" id="sharpnessMetricTip">清晰度指标原始值（越大越清晰）：--</span></span></dd></div><div class="metric-row"><dt>画面变化幅度</dt><dd><span class="level-pill" id="motionMetric" data-tone="none">--</span><span class="info-wrap"><button class="info-tip" type="button" data-tip="motionMetricTip" aria-expanded="false" aria-describedby="motionMetricTip" aria-label="查看画面变化幅度原始数值" title="画面变化原始值（0–1）：--">i</button><span class="tip-bubble" role="tooltip" id="motionMetricTip">画面变化原始值（0–1）：--</span></span></dd></div></dl>
+      <h3>同期声音</h3><dl><div><dt>音轨状态</dt><dd id="segmentAudio">--</dd></div><div class="metric-row"><dt>声音</dt><dd><span class="level-pill" id="rmsMetric" data-tone="none">--</span><span class="info-wrap"><button class="info-tip" type="button" data-tip="rmsMetricTip" aria-expanded="false" aria-describedby="rmsMetricTip" aria-label="查看声音原始数值" title="声音能量 RMS 原始值（0–1）：--">i</button><span class="tip-bubble" role="tooltip" id="rmsMetricTip">声音能量 RMS 原始值（0–1）：--</span></span></dd></div></dl><audio class="audio-player" id="audioPlayer" aria-label="本任务同期音轨" controls preload="none" hidden></audio><p class="poll-status" id="audioNotice"></p>
+      <div class="scope-status" id="scopeStatus">等待学生状态分析</div>
+      <details class="boundary-fold" id="boundaryFold"><summary>使用边界说明（未生成学生学习结论）</summary><p class="boundary-note">状态来自本次视频的可见画面与声音线索，不是诊断，也不是正式评价分数。学生姓名和 IEP 需要后续确认后再归档。</p><p>以上画面与声音等级只是技术记录，不代表学生情绪或掌握程度；全画面的变化与同期声音不能归因于某位学生。</p><p>当前任务视频证据，不是历史演示；原视频与音轨均需登录授权。</p><p>本页未生成学生学习结论。</p></details>
     </aside>
   </div>
   <details class="limitations"><summary>处理范围与数据来源</summary><p>原视频保留60天，原视频及派生音轨均需登录授权后访问。</p><ul id="limitationsList"></ul><p id="versionMeta"></p></details>
 </main>
-""".replace("__BOOK__", _BOOK_ICON).replace("__BACK__", back_icon).replace("__WORKSPACE_NAV__", _workspace_nav("upload"))
+""".replace("__RX_HEADER__", header_for(
+        account, "upload", admin_active="tasks", page="video",
+        extra_actions='<a class="button quiet" id="backLink" href="/demo2/upload">__BACK__返回工作台</a>',
+    )).replace("__BACK__", back_icon)
     script = r"""
 const ACCOUNT=__ACCOUNT__;
 const id=new URLSearchParams(location.search).get('id')||'';
+let jumpedIndex=null,jumpTime=(()=>{const raw=new URLSearchParams(location.search).get('t');const n=raw==null||raw===''?NaN:Number(raw);return Number.isFinite(n)&&n>=0&&n<=10800?n:null;})();
 const $=id=>document.getElementById(id);
 const video=$('classVideo'),audio=$('audioPlayer');
 let task=null,result=null,segments=[],selected=-1,page=0,loadedResult=false,pollTimer=null;
@@ -163,6 +195,36 @@ function renderStudentStates(){
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const time=value=>{const n=Math.max(0,Math.floor(Number(value)||0));return `${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;};
 const metric=(value,digits=1)=>typeof value==='number'&&Number.isFinite(value)?value.toFixed(digits):'未取得';
+// Teacher-facing grades; the raw technical value stays available in the "i" tip.
+const LEVELS={
+  brightnessMetric:{digits:1,raw:'平均亮度原始值（0–255）',grade:v=>v<70?['偏暗','mid']:v>200?['偏亮','mid']:['适中','good']},
+  sharpnessMetric:{digits:1,raw:'清晰度指标原始值（越大越清晰）',grade:v=>v<50?['模糊','bad']:v<200?['一般','mid']:['清晰','good']},
+  motionMetric:{digits:4,raw:'画面变化原始值（0–1）',grade:v=>v<0.01?['几乎静止','none']:v<0.05?['轻微','good']:['明显','mid']},
+  rmsMetric:{digits:4,raw:'声音能量 RMS 原始值（0–1）',grade:v=>v<0.02?['安静','none']:v<0.15?['正常','good']:['较响','mid']},
+};
+function levelOf(name,value){const spec=LEVELS[name];return typeof value==='number'&&Number.isFinite(value)?spec.grade(value):null;}
+function showLevel(name,value,missing='未取得'){
+  const spec=LEVELS[name],level=levelOf(name,value),node=$(name),tip=$(name+'Tip');
+  node.textContent=level?level[0]:missing;node.dataset.tone=level?level[1]:'none';
+  const raw=spec.raw+'：'+(level?metric(value,spec.digits):missing);tip.textContent=raw;
+  const button=tip.previousElementSibling;if(button){button.title=raw;button.setAttribute('aria-expanded','false');}
+}
+function resetLevels(){Object.keys(LEVELS).forEach(name=>{$(name).textContent='--';$(name).dataset.tone='none';$(name+'Tip').textContent=LEVELS[name].raw+'：--';});}
+const STEP_NAMES=[['已上传','原视频已保存'],['已解码','读取画面与声音'],['证据已就绪','时间切片已整理'],['待教师复核','确认学生身份与状态']];
+const lateStages=['audio','extracting_audio','measuring_audio','audio_measured','audio_absent','summarizing','writing_result','finalizing'];
+function stepStates(status,stage,expired,cancelled){
+  if(cancelled)return [['todo','任务已取消'],['todo',''],['todo',''],['todo','']];
+  if(status==='waiting_upload')return [['current','视频还在上传'],['todo',''],['todo',''],['todo','']];
+  if(status==='failed')return [['done',''],['error','处理未完成，可重新处理'],['todo',''],['todo','']];
+  if(status==='evidence_ready'||(expired&&loadedResult))return [['done',''],['done',''],['done',''],['current',expired?'原片已到期，仍可查看记录':'请确认画面中的学生']];
+  if(legacyStatuses.includes(status))return [['done',''],['current','点击“开始处理”'],['todo',''],['todo','']];
+  if(activeStatuses.includes(status))return lateStages.includes(stage)?[['done',''],['done',''],['current','正在整理证据'],['todo','']]:[['done',''],['current',status==='queued'?'排队中，可离开本页':'正在读取画面'],['todo',''],['todo','']];
+  return [['todo',''],['todo',''],['todo',''],['todo','']];
+}
+function renderSteps(status,stage,expired,cancelled){
+  const states=stepStates(status,stage,expired,cancelled);
+  $('processSteps').innerHTML=states.map(([state,hint],index)=>`<li data-state="${state}"${state==='current'?' aria-current="step"':''}><b aria-hidden="true">${state==='done'?'✓':state==='error'?'!':index+1}</b><div><strong>${STEP_NAMES[index][0]}</strong><small>${esc(hint||(state==='done'?'已完成':STEP_NAMES[index][1]))}</small></div><span class="sr-only">${state==='done'?'已完成':state==='current'?'当前步骤':state==='error'?'出错':'未开始'}</span></li>`).join('');
+}
 const stageNames={queued:'等待处理',processing:'处理中',validating:'检查任务文件',hashing:'核对原片',probing:'检查媒体',probe:'检查媒体',sampling_video:'读取画面',sampling:'读取画面',decoding:'读取画面',audio:'提取音轨',extracting_audio:'提取音轨',measuring_audio:'整理声音记录',audio_measured:'声音记录已整理',audio_absent:'原片无音轨，继续整理画面',summarizing:'整理时间切片',writing_result:'保存证据记录',finalizing:'保存证据',evidence_ready:'证据已就绪',failed:'处理未完成',waiting_upload:'等待上传',precheck_complete:'历史预检记录',uploaded_pending_worker:'历史预检记录',expired:'原片已到期',cancelled:'任务已取消'};
 function notice(text,focus=false){$('pageMessage').textContent=text;$('pageMessage').className='page-message visible';if(focus)$('pageMessage').focus();}
 function clearNotice(){$('pageMessage').className='page-message';$('pageMessage').textContent='';}
@@ -234,7 +296,8 @@ function updatePlayback(){
 function drawSegments(){
   page=Math.max(0,Math.min(page,Math.max(0,Math.ceil(segments.length/PAGE_SIZE)-1)));
   const visible=segments.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE);
-  $('segments').innerHTML=visible.map((s,i)=>`<button type="button" class="segment" data-index="${page*PAGE_SIZE+i}" aria-pressed="${page*PAGE_SIZE+i===selected}"><strong>${time(s.start_sec)} - ${time(s.end_sec)}</strong><span>${Number(s.visual?.sampled_frames||0)} 帧 · ${esc(segmentStateText(s))}</span></button>`).join('');
+  const total=Number(result?.media?.duration_sec)>0?Number(result.media.duration_sec):Math.max(1,...segments.map(s=>s.end_sec));
+  $('segments').innerHTML=visible.map((s,i)=>{const left=Math.max(0,Math.min(100,s.start_sec/total*100)),width=Math.max(0,Math.min(100-left,(s.end_sec-s.start_sec)/total*100));return `<button type="button" class="segment" data-index="${page*PAGE_SIZE+i}" aria-pressed="${page*PAGE_SIZE+i===selected}" aria-label="播放片段 ${time(s.start_sec)} 到 ${time(s.end_sec)}" title="从 ${time(s.start_sec)} 开始播放"><strong><svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>${time(s.start_sec)} - ${time(s.end_sec)}</strong><span>${Number(s.visual?.sampled_frames||0)} 帧 · ${esc(segmentStateText(s))}</span><span class="mini-track" aria-hidden="true"><i style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%"></i></span></button>`;}).join('');
   $('segmentsEmpty').hidden=segments.length>0;$('pagination').hidden=segments.length<=PAGE_SIZE;
   $('pageCount').textContent=`${page+1} / ${Math.max(1,Math.ceil(segments.length/PAGE_SIZE))}`;
   $('previousPage').disabled=page===0;$('nextPage').disabled=(page+1)*PAGE_SIZE>=segments.length;
@@ -244,11 +307,11 @@ function selectSegment(index,seek=true){
   $('selectedPeriod').textContent=`${time(s.start_sec)} - ${time(s.end_sec)}`;
   const states=stateWindowsFor(s);$('reviewState').textContent=states.length?'学生状态已生成':'画面记录已生成';$('reviewState').className='status-badge '+(states.length?'success':'warning');
   $('sampleCount').textContent=s.visual?.sampled_frames==null?'未取得':String(s.visual.sampled_frames);
-  $('brightnessMetric').textContent=metric(s.visual?.mean_brightness);
-  $('sharpnessMetric').textContent=metric(s.visual?.mean_sharpness);
-  $('motionMetric').textContent=metric(s.visual?.mean_motion,4);
+  showLevel('brightnessMetric',s.visual?.mean_brightness);
+  showLevel('sharpnessMetric',s.visual?.mean_sharpness);
+  showLevel('motionMetric',s.visual?.mean_motion);
   $('segmentAudio').textContent=s.audio?.available?'已提取同期音轨':result?.media?.has_audio===false?'原片无音轨':'未取得声音证据';
-  $('rmsMetric').textContent=metric(s.audio?.rms,4);
+  showLevel('rmsMetric',s.audio?.rms,result?.media?.has_audio===false?'无音轨':'未取得');
   if(seek&&mediaAvailable()){
     pendingVideoTime=s.start_sec;pendingAudioTime=s.start_sec;audio.pause();
     if(video.readyState>=1&&!video.hidden){seekMedia(video,pendingVideoTime);pendingVideoTime=null;updatePlayback();}
@@ -264,7 +327,7 @@ function followPlayback(player){if(clipMode())return;const position=Number(playe
 function clearEvidence(){
   result=null;segments=[];selected=-1;page=0;loadedResult=false;
   resetClipControls();
-  ['durationMetric','resolutionMetric','audioMetric','segmentMetric','sampleCount','brightnessMetric','sharpnessMetric','motionMetric','segmentAudio','rmsMetric'].forEach(name=>$(name).textContent='--');
+  ['durationMetric','resolutionMetric','audioMetric','segmentMetric','sampleCount','segmentAudio'].forEach(name=>$(name).textContent='--');resetLevels();
   $('selectedPeriod').textContent='--:--';$('reviewState').textContent='等待分析';$('segmentCount').textContent='等待处理结果';$('scopeStatus').textContent='等待学生状态分析';$('studentStateCards').innerHTML='<div class="student-state-empty">后台分析完成后显示学生状态。</div>';
   $('downloadResult').hidden=true;$('downloadResult').removeAttribute('href');$('downloadLabel').textContent='下载证据记录';$('limitationsList').innerHTML='';$('versionMeta').textContent='';
   audio.pause();audio.removeAttribute('src');audio.load();audio.hidden=true;$('audioNotice').textContent='';drawSegments();
@@ -297,7 +360,15 @@ function displayResult(value){
   renderStudentStates();
   const analysis=simpleAnalysis();$('scopeStatus').textContent=analysis?.available?`已生成 ${analysis.persons?.length||0} 名人物的课堂状态时间段，可直接查看。`:'暂未生成稳定人物状态，请检查画面后刷新。';
   $('downloadResult').hidden=false;$('downloadLabel').textContent='下载证据记录';$('downloadResult').href=sameOriginUrl(task.secure_result_download_url||task.result_download_url)||'/api/v1/demo2/upload/result?id='+encodeURIComponent(id);
-  if(segments.length)selectSegment(0,false);else{$('reviewState').textContent='暂无可查看切片';$('selectedPeriod').textContent='--:--';}
+  if(segments.length&&jumpTime!==null){
+    // ?t=<秒> from measurement evidence links: open the slice containing that time and seek once.
+    let index=segments.findIndex(s=>jumpTime>=s.start_sec&&jumpTime<s.end_sec);
+    if(index<0)index=jumpTime>=segments[segments.length-1].start_sec?segments.length-1:0;
+    page=Math.floor(index/PAGE_SIZE);selectSegment(index,false);
+    if(video.readyState>=1)seekMedia(video,jumpTime);else pendingVideoTime=jumpTime;
+    jumpTime=null;jumpedIndex=index;
+  }else if(segments.length)selectSegment(jumpedIndex!==null&&jumpedIndex<segments.length?jumpedIndex:0,false);
+  else if(!segments.length){$('reviewState').textContent='暂无可查看切片';$('selectedPeriod').textContent='--:--';}
   drawSegments();updatePlayback();
 }
 function schedulePoll(delay){clearTimeout(pollTimer);if(!stopped&&!document.hidden&&!changingTask)pollTimer=setTimeout(()=>refresh(),delay);}
@@ -313,6 +384,7 @@ async function refresh(){
     $('backLink').href=ACCOUNT.role==='company_admin'?'/demo2/admin':'/demo2/upload?course_id='+encodeURIComponent(task.course_id||'');
     const status=task.analysis_status;const expired=mediaExpired();const cancelled=task.upload_status==='cancelled'||status==='cancelled';
     const numeric=Number(task.processing_progress);const known=task.processing_progress!=null&&Number.isFinite(numeric);const progress=Math.max(0,Math.min(100,numeric||0));
+    renderSteps(status,task.processing_stage,expired,cancelled);
     $('stageLabel').textContent=expired?'原片已到期 / 清理':cancelled?'任务已取消':stageNames[status]||'等待后台状态';
     $('stagePercent').textContent=status==='evidence_ready'?'100%':known?progress+'%':'--';
     if(known||status==='evidence_ready')$('processingProgress').value=status==='evidence_ready'?100:progress;else $('processingProgress').removeAttribute('value');
@@ -341,11 +413,21 @@ async function refresh(){
     if(!fatal)nextPoll=Math.min(30000,5000*++pollFailures);
   }finally{refreshing=false;$('refreshButton').disabled=false;$('retryButton').disabled=false;if(nextPoll)schedulePoll(nextPoll);}
 }
-$('segments').addEventListener('click',event=>{const button=event.target.closest('[data-index]');if(button)selectSegment(Number(button.dataset.index));});
+let playAfterSeek=false;
+function playSelected(){
+  if(video.hidden||!mediaAvailable()||typeof video.play!=='function')return;
+  if(video.readyState<1){playAfterSeek=true;return;}
+  playAfterSeek=false;Promise.resolve(video.play()).catch(()=>notice('浏览器阻止了自动播放，请点击播放器上的播放按钮。'));
+}
+$('segments').addEventListener('click',event=>{const button=event.target.closest('[data-index]');if(!button)return;selectSegment(Number(button.dataset.index));playSelected();});
+function closeInfoTips(except){const buttons=document.querySelectorAll?.('.info-tip[aria-expanded="true"]')||[];for(const item of buttons){if(item!==except)item.setAttribute('aria-expanded','false');}}
+$('evidencePane').addEventListener('click',event=>{const button=event.target.closest?.('.info-tip');if(!button)return;const open=button.getAttribute('aria-expanded')!=='true';closeInfoTips(button);button.setAttribute('aria-expanded',String(open));});
+document.addEventListener?.('click',event=>{if(!event.target?.closest?.('.info-wrap'))closeInfoTips(null);});
+document.addEventListener?.('keydown',event=>{if(event.key==='Escape')closeInfoTips(null);});
 $('previousPage').addEventListener('click',()=>{page--;drawSegments();});$('nextPage').addEventListener('click',()=>{page++;drawSegments();});
 $('seekSlider').addEventListener('input',()=>{if(video.hidden||video.readyState<1)return;seekMedia(video,$('seekSlider').value);enforceClip(video);followPlayback(video);updatePlayback();});
 $('replayButton').addEventListener('click',()=>selectSegment(selected));
-video.addEventListener('loadedmetadata',()=>{if(!mediaAvailable())return;$('seekSlider').disabled=false;$('replayButton').disabled=selected<0;if(pendingVideoTime!==null){seekMedia(video,pendingVideoTime);pendingVideoTime=null;}syncClipControls();updatePlayback();});
+video.addEventListener('loadedmetadata',()=>{if(!mediaAvailable())return;$('seekSlider').disabled=false;$('replayButton').disabled=selected<0;if(pendingVideoTime!==null){seekMedia(video,pendingVideoTime);pendingVideoTime=null;}syncClipControls();updatePlayback();if(playAfterSeek)playSelected();});
 video.addEventListener('timeupdate',()=>{enforceClip(video);updatePlayback();followPlayback(video);});
 audio.addEventListener('timeupdate',()=>{enforceClip(audio);followPlayback(audio);});
 [video,audio].forEach(player=>{
@@ -388,4 +470,4 @@ document.addEventListener('visibilitychange',()=>{clearTimeout(pollTimer);if(!do
 refresh();
 refreshIdentity();
 """.replace("__ACCOUNT__", _account_payload(account))
-    return _document(title="课堂视频证据 · RehabAffect", body=body, page_style=style, script=script)
+    return _document(title="课堂视频证据", body=body, page_style=style, script=script)

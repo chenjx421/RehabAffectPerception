@@ -19,7 +19,7 @@ Integration contract:
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any
+from typing import Any, Callable
 import unicodedata
 
 
@@ -38,6 +38,10 @@ _SCHOOLS = (
     ("sh-qp-shiyan", "上海市青浦区实验中学"),
     ("sh-qp-xujing", "上海市青浦区徐泾中学"),
 )
+
+
+# Directory metadata copied into selection details for national selections.
+NATIONAL_DETAIL_KEYS = ("school_code", "school_type", "province_code", "city_code", "district_code", "region_label")
 
 
 class SchoolSelectionError(ValueError):
@@ -100,13 +104,17 @@ def _context(value: Any) -> dict[str, str]:
     return context
 
 
-def normalize_school_selection(payload: Any) -> dict[str, Any]:
+def normalize_school_selection(payload: Any, *, resolve_entry: Callable[[str], dict[str, Any] | None] | None = None) -> dict[str, Any]:
     """Normalize selection only, NOT authorization or permission to persist.
 
     directory: {selection_source: 'directory', directory_id: local key}
     other: {selection_source: 'other', province, city, district, school_name,
             street (required, max 80), address (required, max 300)}
     existing: {selection_source: 'existing', city, district, school_name}
+    national: {selection_source: 'national', directory_id: curated key, national
+              school_code, or an approved manual code via ``resolve_entry``}
+    manual: {selection_source: 'manual', province_code, city_code, district_code,
+             school_name} -> pending review; the store assigns the manual code.
 
     Client-supplied provenance/verification/tenant keys are rejected. 'existing'
     preserves the three fields byte-for-byte and must pass prepare's comparison.
@@ -118,8 +126,12 @@ def normalize_school_selection(payload: Any) -> dict[str, Any]:
         "directory": {"selection_source", "directory_id"},
         "other": {"selection_source", "province", "street", "address", *CONTEXT_LIMITS},
         "existing": {"selection_source", *CONTEXT_LIMITS},
+        "national": {"selection_source", "directory_id"},
+        "manual": {"selection_source", "province_code", "city_code", "district_code", "school_name"},
     }
-    if not isinstance(mode, str) or mode not in expected or set(payload) != expected[mode]:
+    optional = {"manual": {"street", "address"}}.get(mode if isinstance(mode, str) else "", set())
+    if not isinstance(mode, str) or mode not in expected or not (
+            expected[mode] <= set(payload) <= expected[mode] | optional):
         raise SchoolSelectionError("invalid_school_selection", "学校选择字段无效")
     details = {"selection_source": mode, "directory_id": None, "province": None,
                "street": None, "address": None, "address_status": "pending",
@@ -133,6 +145,35 @@ def normalize_school_selection(payload: Any) -> dict[str, Any]:
             raise SchoolSelectionError("unknown_school_entry", "学校条目不存在，请重新选择")
         context = {key: entry[key] for key in CONTEXT_LIMITS}
         details.update({key: entry[key] for key in details if key in entry})
+    elif mode == "national":
+        from .demo2_school_directory import find_entry
+        entry = find_entry(payload["directory_id"])
+        if entry is None and resolve_entry is not None and isinstance(payload["directory_id"], str):
+            entry = resolve_entry(payload["directory_id"])
+        if entry is None:
+            raise SchoolSelectionError("unknown_school_entry", "学校条目不存在，请重新搜索选择")
+        context = {key: entry[key] for key in CONTEXT_LIMITS}
+        details.update({key: entry.get(key) for key in details if key in entry and key != "selection_source"})
+        details.update({key: entry.get(key) for key in NATIONAL_DETAIL_KEYS})
+        details["directory_id"] = entry["directory_id"]
+    elif mode == "manual":
+        from .demo2_school_directory import resolve_region_codes
+        region = resolve_region_codes(payload["province_code"], payload["city_code"], payload["district_code"])
+        if region is None:
+            raise SchoolSelectionError("invalid_school_region", "请依次选择省、市、区县")
+        context = {"city": region["city"], "district": region["district"],
+                   "school_name": _text(payload["school_name"], "school_name", CONTEXT_LIMITS["school_name"])}
+        if len(context["school_name"]) < 4:
+            raise SchoolSelectionError("invalid_school_selection", "请填写学校全称（至少 4 个字）")
+        details.update({"province": region["province"], "province_code": region["province_code"],
+                        "city_code": region["city_code"], "district_code": region["district_code"],
+                        "school_code": None, "school_type": None, "review_status": "pending"})
+        for key, limit in (("street", 80), ("address", 300)):
+            raw = payload.get(key, "")
+            if raw is None or (isinstance(raw, str) and not raw.strip()):
+                details[key] = None
+            else:
+                details[key] = _text(raw, key, limit)
     elif mode == "other":
         context = {key: _text(payload[key], key, limit) for key, limit in CONTEXT_LIMITS.items()}
         details["province"] = _text(payload["province"], "province", 80)
@@ -146,7 +187,8 @@ def normalize_school_selection(payload: Any) -> dict[str, Any]:
 
 
 def prepare_school_selection(
-    payload: Any, *, current_context: dict[str, str], has_existing_students: bool
+    payload: Any, *, current_context: dict[str, str], has_existing_students: bool,
+    resolve_entry: Callable[[str], dict[str, Any] | None] | None = None,
 ) -> dict[str, Any]:
     """Pure guard. Caller supplies trusted owner state in the write transaction.
 
@@ -162,7 +204,8 @@ def prepare_school_selection(
     if "expected_context" not in payload or _context(payload["expected_context"]) != current:
         raise SchoolSelectionError("school_context_changed", "学校信息已变化，请刷新后重新确认", 409)
     result = normalize_school_selection({key: value for key, value in payload.items()
-                                         if key not in {"expected_context", "confirmed"}})
+                                         if key not in {"expected_context", "confirmed"}},
+                                        resolve_entry=resolve_entry)
     changed = current != result["context"]
     if result["details"]["selection_source"] == "existing" and changed:
         raise SchoolSelectionError("school_context_changed", "现有学校信息不一致，请刷新页面", 409)

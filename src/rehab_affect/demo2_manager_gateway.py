@@ -19,13 +19,16 @@ import hmac
 import http.client
 import ipaddress
 import json
+import logging
 import math
+import os
 import re
 import secrets
 import socket
 import threading
 import time
 from collections import OrderedDict
+from datetime import datetime
 from dataclasses import dataclass
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -39,6 +42,9 @@ SESSION_COOKIE_NAME = "rehab_demo2_session"
 MAX_BODY_BYTES = 15 * 1024 * 1024
 DOSSIER_MAX_BODY_BYTES = 12 * 1024 * 1024
 DOSSIER_API_PREFIX = "/api/v1/demo2/dossier"
+DOCUMENT_PARSE_PATH = "/api/v1/demo2/documents/parse"
+# 20 MB document plus multipart framing; every other route keeps MAX_BODY_BYTES.
+DOCUMENT_MAX_BODY_BYTES = 20 * 1024 * 1024 + 256 * 1024
 TIMEOUT_SECONDS = 10.0
 BODY_TIMEOUT_SECONDS = 30.0
 UPLOAD_BODY_TIMEOUT_SECONDS = 180.0
@@ -47,15 +53,28 @@ UPLOAD_UPSTREAM_TIMEOUT_SECONDS = 120.0
 _UPLOAD_CHUNK_PATHS = frozenset({"/api/v1/demo2/upload/chunks", "/api/seewo_demo2/video_chunk"})
 _UPLOAD_RESUME_PATH = "/api/v1/demo2/upload/resume"
 RESUME_MAX_BODY_BYTES = 128 * 1024
+REJECT_BODY_DRAIN_MAX_BYTES = 64 * 1024
+REJECT_DRAIN_TIMEOUT_SECONDS = 5.0
+REJECT_DRAIN_IDLE_SECONDS = 2.0
+# After answering an oversize rejection, discard (never buffer) a bounded tail
+# so the client can read the response before the socket closes.
+REJECT_LINGER_MAX_BYTES = 256 * 1024
+REJECT_LINGER_SECONDS = 1.0
+REJECT_LINGER_IDLE_SECONDS = 0.25
+_DISCARD_BLOCK_BYTES = 16 * 1024
+_UPLOAD_BODY_PREFIXES = ("/api/v1/demo2/upload/", "/api/seewo_demo2/video_")
+REJECT_DEBUG_LOG_DIR_ENV = "REHAB_DEMO2_GATEWAY_DEBUG_LOG_DIR"
+REJECT_LOGGER = logging.getLogger("rehab_affect.gateway_reject")
+_REJECT_LOG_LOCK = threading.Lock()
 AUTH_PATH = "/api/v1/demo2/auth/me"
 _PAGES = frozenset({
     "/demo2/safety",
     "/demo2/course-batch", "/demo2/teaching-support",
-    "/demo2/login", "/demo2/school", "/demo2/upload", "/demo2/admin",
-    "/demo2/analysis", "/demo2/video", "/demo2/privacy", "/demo2/help", "/demo2/register", "/demo2/membership",
+    "/demo2/login", "/demo2/home", "/demo2/school", "/demo2/upload", "/demo2/admin",
+    "/demo2/analysis", "/demo2/course-overview", "/demo2/video", "/demo2/privacy", "/demo2/help", "/demo2/register", "/demo2/membership",
     "/demo2/students", "/demo2/identity",
     "/demo2/simple-result",
-    "/demo2/admin/channels",
+    "/demo2/admin/channels", "/demo2/admin/schools",
     "/demo2/measurement", "/demo2/admin/measurements", "/demo2/capture", "/demo2/evaluation",
     "/demo2/dossier", "/demo2/course-dossier", "/demo2/admin/dossiers", "/seewo_student_demo2",
     "/demo2/student-summary", "/demo2/admin/student-summaries",
@@ -64,12 +83,16 @@ _GET_API = frozenset({
     "/api/v1/demo2/applicability",
     "/api/v1/demo2/safety", "/api/v1/demo2/safety/media",
     "/api/v1/demo2/course-analysis", "/api/v1/demo2/course-analysis/tasks",
+    "/api/v1/demo2/course-overview",
     "/api/v1/demo2/course-analysis/report",
+    "/api/v1/demo2/reports", "/api/v1/demo2/reports/download",
+    "/api/v1/demo2/admin/reports", "/api/v1/demo2/admin/tasks", "/api/v1/demo2/home/summary",
     "/api/v1/demo2/course-batch", "/api/v1/demo2/teaching-support",
     AUTH_PATH, "/api/v1/demo2/school/context", "/api/v1/demo2/upload/workspace",
+    "/api/v1/demo2/schools/search", "/api/v1/demo2/schools/regions", "/api/v1/demo2/admin/schools",
     "/api/v1/demo2/upload/task", "/api/v1/demo2/upload/media",
     "/api/v1/demo2/upload/result", "/api/v1/demo2/admin/summary",
-    "/api/v1/demo2/simple-result", "/api/v1/demo2/simple-result/frame",
+    "/api/v1/demo2/simple-result", "/api/v1/demo2/simple-result/frame", "/api/v1/demo2/simple-result/persons",
     "/api/v1/demo2/membership/config", "/api/v1/demo2/membership", "/api/v1/demo2/admin/memberships",
     "/api/v1/demo2/identity/roster", "/api/v1/demo2/identity/workspace",
     "/api/v1/demo2/identity/frame", "/api/v1/demo2/identity/export", "/api/v1/demo2/identity/detect",
@@ -77,10 +100,19 @@ _GET_API = frozenset({
     "/api/v1/demo2/admin/channels",
     "/api/v1/demo2/dossier/student", "/api/v1/demo2/dossier/task", "/api/v1/demo2/dossier/admin",
     "/api/v1/demo2/dossier/document", "/api/v1/demo2/dossier/reference",
+    "/api/v1/demo2/dossier/iep-context", "/api/v1/demo2/dossier/access", "/api/v1/demo2/dossier/analysis-context",
+    "/api/v1/demo2/dossier/iep-intake/status",
     "/api/seewo_demo2/video_result_download",
     "/api/v1/demo2/measurements", "/api/v1/demo2/admin/measurements", "/api/v1/demo2/evaluations",
+    "/api/v1/demo2/measurements/completeness", "/api/v1/demo2/measurements/prefill",
+    "/api/v1/demo2/measurements/score-basis", "/api/v1/demo2/evaluations/score-basis",
+    "/api/v1/demo2/measurements/report/download",
+    "/api/v1/demo2/evaluations/course",
     "/api/v1/demo2/student-summaries/student", "/api/v1/demo2/student-summaries/admin",
     "/api/v1/demo2/student-summaries/export",
+    "/api/v1/demo2/course-tasks", "/api/v1/demo2/course-tasks/document",
+    "/api/v1/demo2/course-tasks/original", "/api/v1/demo2/course-tasks/summary",
+    DOCUMENT_PARSE_PATH,
 })
 _POST_API = frozenset({
     "/api/v1/demo2/applicability",
@@ -89,24 +121,35 @@ _POST_API = frozenset({
     "/api/v1/demo2/auth/login", "/api/v1/demo2/auth/logout", "/api/v1/demo2/auth/register",
     "/api/v1/demo2/auth/sms-code", "/api/v1/demo2/membership/orders",
     "/api/v1/demo2/school/context", "/api/v1/demo2/upload/tasks",
+    "/api/v1/demo2/admin/schools/review",
     "/api/v1/demo2/upload/chunks", "/api/v1/demo2/upload/tasks/cancel",
     _UPLOAD_RESUME_PATH,
     "/api/v1/demo2/upload/tasks/retry", "/api/v1/demo2/upload/tasks/enqueue",
     "/api/v1/demo2/identity/students", "/api/v1/demo2/identity/bindings",
     "/api/v1/demo2/identity/bindings/revoke",
-    "/api/v1/demo2/identity/task-school",
+    "/api/v1/demo2/identity/task-school", "/api/v1/demo2/identity/debug-event",
     "/api/v1/demo2/identity/track", "/api/v1/demo2/admin/channels",
     "/api/v1/demo2/dossier/authorization", "/api/v1/demo2/dossier/authorization/withdraw",
     "/api/v1/demo2/dossier/documents", "/api/v1/demo2/dossier/documents/delete", "/api/v1/demo2/dossier/references",
+    "/api/v1/demo2/dossier/references/withdraw",
+    "/api/v1/demo2/dossier/iep-intake/summary", "/api/v1/demo2/dossier/iep-intake/commit",
     "/api/seewo_demo2/security_acceptance", "/api/seewo_demo2/video_task", "/api/seewo_demo2/video_chunk",
     "/api/v1/demo2/measurements", "/api/v1/demo2/measurements/withdraw",
+    "/api/v1/demo2/measurements/completeness/backfill",
     "/api/v1/demo2/evaluations", "/api/v1/demo2/evaluations/preview", "/api/v1/demo2/evaluations/withdraw",
+    "/api/v1/demo2/evaluations/debug-event",
     "/api/v1/demo2/student-summaries/authorization", "/api/v1/demo2/student-summaries/snapshots",
     "/api/v1/demo2/student-summaries/authorization/withdraw",
     "/api/v1/demo2/student-summaries/automatic",
+    "/api/v1/demo2/ui/client-error", "/api/v1/demo2/ui/nav-event", "/api/v1/demo2/help/debug-event",
+    "/api/v1/demo2/course-tasks/draft", "/api/v1/demo2/course-tasks/confirm",
+    "/api/v1/demo2/simple-result/person-filter", "/api/v1/demo2/simple-result/archive",
+    "/api/v1/demo2/simple-result/person-switch",
+    DOCUMENT_PARSE_PATH,
 })
 _PUBLIC_UPSTREAM = frozenset({
     "/demo2/login", "/demo2/privacy", "/demo2/help", "/demo2/register", AUTH_PATH,
+    "/api/v1/demo2/ui/client-error", "/api/v1/demo2/ui/nav-event", "/api/v1/demo2/help/debug-event",
     "/api/v1/demo2/auth/login", "/api/v1/demo2/auth/logout", "/api/v1/demo2/auth/register",
     "/api/v1/demo2/auth/sms-code", "/api/v1/demo2/membership/config",
 })
@@ -178,6 +221,37 @@ def _allowed(method: str, path: str) -> bool:
     if method == "GET":
         return path in _PAGES or path in _GET_API
     return method == "POST" and path in _POST_API
+
+
+def _upload_body_path(path: str | None) -> bool:
+    """Upload chunk/resume bodies stay unread until every gate has passed."""
+    return path is None or path in _UPLOAD_CHUNK_PATHS or path == _UPLOAD_RESUME_PATH or path.startswith(_UPLOAD_BODY_PREFIXES)
+
+
+def _log_token(value: Any, *, limit: int = 128) -> str:
+    text = str(value)
+    return text if re.fullmatch(r"[A-Za-z0-9_./:-]{1,%d}" % limit, text) else "<invalid>"
+
+
+def log_rejection(entry: dict[str, Any]) -> dict[str, Any]:
+    """Write one structured rejection line; logging never blocks a response.
+
+    Only method, path (never the query), declared length, drain outcome,
+    byte counts and status/code are kept. Cookies, secrets and bodies are not.
+    """
+    line = json.dumps(entry, ensure_ascii=False, separators=(",", ":"))
+    REJECT_LOGGER.debug(line)
+    folder = os.getenv(REJECT_DEBUG_LOG_DIR_ENV, "").strip()
+    if folder:
+        try:
+            directory = Path(folder)
+            directory.mkdir(parents=True, exist_ok=True)
+            target = directory / f"gateway_reject_{entry['ts'][:10].replace('-', '')}.jsonl"
+            with _REJECT_LOG_LOCK, target.open("a", encoding="utf-8") as handle:
+                handle.write(line + "\n")
+        except (OSError, TypeError, ValueError):
+            REJECT_LOGGER.warning("gateway rejection log write failed")
+    return entry
 
 
 class _Failures:
@@ -257,12 +331,31 @@ class _GatewayHandler(BaseHTTPRequestHandler):
     def setup(self) -> None:
         self.request.settimeout(TIMEOUT_SECONDS)
         super().setup()
+        self._reset_reject_state()
+
+    def _reset_reject_state(self) -> None:
+        self._reject_path: str | None = None
+        self._reject_length: int | None = None
+        # pending -> drained | empty | upload_unread | oversize_unread |
+        # unknown_length | drain_failed | consumed (body read by a normal route)
+        self._drain_outcome = "pending"
+        self._body_bytes_read = 0
+        self._lingered_bytes = 0
+        self._rejected = False
+        self._reject_status = 0
+        self._reject_code = ""
+        self._started_at = time.monotonic()
 
     def log_message(self, format: str, *args: Any) -> None:
         pass
 
     def send_error(self, code: int, message: str | None = None, explain: str | None = None) -> None:
+        # Request-line/header parse failures never reach _dispatch.
+        if not hasattr(self, "_drain_outcome"):
+            self._reset_reject_state()
         self._error(code, "invalid_request", "Request rejected")
+        if not getattr(self, "_in_dispatch", False):
+            self._finish_rejection()
 
     def _headers(self, status: int, headers: list[tuple[str, str]]) -> None:
         self.send_response(status)
@@ -281,8 +374,17 @@ class _GatewayHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def _error(self, status: int, code: str, message: str) -> None:
+        self._mark_rejected(status, code)
         body = json.dumps({"ok": False, "error": {"code": code, "message": message}}, ensure_ascii=False).encode()
         self._respond(status, body, headers=[("Retry-After", "60")] if status == 429 else None)
+
+    def _mark_rejected(self, status: int, code: str) -> None:
+        # Drain before the status line is written: closing with a small unread
+        # body makes Windows clients see a reset instead of our 401/404.
+        self._drain_rejected_body()
+        self._rejected = True
+        self._reject_status = status
+        self._reject_code = code
 
     def _expired(self) -> bool:
         return time.time() >= self.server.config.expires_at
@@ -349,11 +451,103 @@ class _GatewayHandler(BaseHTTPRequestHandler):
         if lengths and not re.fullmatch(r"[0-9]{1,10}", lengths[0]):
             raise _InvalidFraming("Invalid Content-Length")
         length = int(lengths[0]) if lengths else 0
-        if length > MAX_BODY_BYTES:
+        # Framing is unambiguous from here, so a rejection may drain safely.
+        self._reject_length = length
+        limit = DOCUMENT_MAX_BODY_BYTES if getattr(self, "_reject_path", None) == DOCUMENT_PARSE_PATH else MAX_BODY_BYTES
+        if length > limit:
             raise OverflowError("Request body too large")
         if self.command != "POST" and length:
             raise _InvalidFraming("Body not allowed")
         return length
+
+    def _discard(self, limit: int, *, total_seconds: float, idle_seconds: float) -> tuple[int, bool]:
+        """Read and drop up to ``limit`` bytes; memory stays one small block."""
+        deadline = time.monotonic() + total_seconds
+        discarded = 0
+        try:
+            while discarded < limit:
+                available = deadline - time.monotonic()
+                if available <= 0:
+                    return discarded, False
+                self.connection.settimeout(min(idle_seconds, available))
+                block = self.rfile.read1(min(_DISCARD_BLOCK_BYTES, limit - discarded))
+                if not block:
+                    return discarded, False
+                discarded += len(block)
+            return discarded, True
+        except (OSError, ValueError):
+            return discarded, False
+        finally:
+            try:
+                self.connection.settimeout(TIMEOUT_SECONDS)
+            except OSError:
+                pass
+
+    def _drain_rejected_body(self) -> str:
+        """Consume only small non-upload bodies before sending a rejection.
+
+        Closing a connection with unread request bytes can surface as a client
+        reset on Windows. Upload and resume routes deliberately remain
+        unread until their invitation/account gates pass; oversize bodies are
+        never read into memory.
+        """
+        if self._drain_outcome != "pending":
+            return self._drain_outcome
+        length = self._reject_length
+        if length is None:
+            self._drain_outcome = "unknown_length"
+        elif length == 0:
+            self._drain_outcome = "empty"
+        elif _upload_body_path(self._reject_path):
+            self._drain_outcome = "upload_unread"
+        elif length > REJECT_BODY_DRAIN_MAX_BYTES:
+            self._drain_outcome = "oversize_unread"
+        else:
+            read, complete = self._discard(length, total_seconds=REJECT_DRAIN_TIMEOUT_SECONDS,
+                                           idle_seconds=REJECT_DRAIN_IDLE_SECONDS)
+            self._body_bytes_read += read
+            self._drain_outcome = "drained" if complete else "drain_failed"
+        return self._drain_outcome
+
+    def _finish_rejection(self) -> None:
+        """Half-close after a rejection so the response is delivered intact."""
+        if not self._rejected:
+            return
+        self.close_connection = True
+        unread = self._drain_outcome in {"oversize_unread", "upload_unread", "unknown_length", "drain_failed"}
+        try:
+            if unread:
+                self.wfile.flush()
+                self.connection.shutdown(socket.SHUT_WR)
+            if self._drain_outcome == "oversize_unread" and self._reject_length:
+                self._lingered_bytes, _ = self._discard(
+                    min(self._reject_length, REJECT_LINGER_MAX_BYTES),
+                    total_seconds=REJECT_LINGER_SECONDS, idle_seconds=REJECT_LINGER_IDLE_SECONDS)
+        except OSError:
+            pass
+        self._log_rejection()
+
+    def _log_rejection(self) -> dict[str, Any]:
+        try:
+            raw_target = self.requestline.split()[1] if len(self.requestline.split()) >= 2 else ""
+        except (AttributeError, IndexError):
+            raw_target = ""
+        path = self._reject_path or raw_target.split("?", 1)[0]
+        return log_rejection({
+            "ts": datetime.now().astimezone().isoformat(timespec="milliseconds"),
+            "event": "gateway_rejected",
+            "method": _log_token(getattr(self, "command", None) or "-", limit=16),
+            "path": _log_token(path or "-", limit=256),
+            "content_length": self._reject_length,
+            "upload_route": bool(self._reject_path) and _upload_body_path(self._reject_path),
+            "drain": self._drain_outcome,
+            "drained": self._drain_outcome == "drained",
+            "body_bytes_read": self._body_bytes_read,
+            "lingered_bytes": self._lingered_bytes,
+            "status": self._reject_status,
+            "code": _log_token(self._reject_code or "-", limit=64),
+            "duration_ms": round((time.monotonic() - self._started_at) * 1000, 1),
+        })
 
     def handle_expect_100(self) -> bool:
         self._error(400, "invalid_framing", "Expect and chunked requests are not supported")
@@ -387,6 +581,7 @@ class _GatewayHandler(BaseHTTPRequestHandler):
                     raise _IncompleteBody("Incomplete request body")
                 blocks.append(block)
                 remaining -= len(block)
+                self._body_bytes_read = getattr(self, "_body_bytes_read", 0) + len(block)
             return b"".join(blocks)
         finally:
             self.connection.settimeout(TIMEOUT_SECONDS)
@@ -433,7 +628,7 @@ catch(e){secret='';document.getElementById('status').textContent='邀请无效�
 
     def _upstream_headers(self, cookies: dict[str, str]) -> dict[str, str]:
         result = {"Host": f"127.0.0.1:{self.server.config.upstream_port}", "Connection": "close"}
-        for key in ("Accept", "Accept-Language", "Content-Type", "Range", "If-Range"):
+        for key in ("Accept", "Accept-Language", "Content-Type", "Range", "If-Range", "X-WeGlow-Brand"):
             if self.headers.get(key):
                 result[key] = self.headers[key]
         if cookies.get(SESSION_COOKIE_NAME):
@@ -446,6 +641,17 @@ catch(e){secret='';document.getElementById('status').textContent='邀请无效�
             raise TimeoutError("Invitation expired")
         return http.client.HTTPConnection("127.0.0.1", self.server.config.upstream_port,
                                           timeout=min(timeout, remaining))
+
+    def _open_connection(self, timeout: float) -> Any:
+        """Open the upstream connection while keeping test doubles compatible."""
+        try:
+            return self._connection(timeout=timeout)
+        except TypeError as exc:
+            # A few embedded callers provide a zero-argument connection
+            # factory.  Do not hide unrelated TypeErrors from the real factory.
+            if "unexpected keyword argument 'timeout'" not in str(exc):
+                raise
+            return self._connection()
 
     def _authenticated(self, cookies: dict[str, str]) -> bool:
         if not cookies.get(SESSION_COOKIE_NAME):
@@ -478,7 +684,7 @@ catch(e){secret='';document.getElementById('status').textContent='邀请无效�
         path = target.split("?", 1)[0]
         upload = self.command == "POST" and (path in _UPLOAD_CHUNK_PATHS or path == _UPLOAD_RESUME_PATH)
         upstream_timeout = UPLOAD_UPSTREAM_TIMEOUT_SECONDS if upload else TIMEOUT_SECONDS
-        connection = self._connection(timeout=upstream_timeout)
+        connection = self._open_connection(upstream_timeout)
         started = False
         try:
             headers = self._upstream_headers(cookies)
@@ -564,6 +770,15 @@ catch(e){secret='';document.getElementById('status').textContent='邀请无效�
             connection.close()
 
     def _dispatch(self) -> None:
+        self._reset_reject_state()
+        self._in_dispatch = True
+        try:
+            self._dispatch_request()
+        finally:
+            self._in_dispatch = False
+            self._finish_rejection()
+
+    def _dispatch_request(self) -> None:
         try:
             if self._expired():
                 self._error(410, "invitation_expired", "邀请已到期")
@@ -571,6 +786,7 @@ catch(e){secret='';document.getElementById('status').textContent='邀请无效�
             # BaseHTTPRequestHandler collapses leading // in self.path. Validate
             # the original target so this normalization cannot bypass our gate.
             path, target = _safe_target(self.requestline.split()[1])
+            self._reject_path = path
             length = self._body_length()
             if len(self.headers.get_all("Host", [])) != 1:
                 raise ValueError("Exactly one Host required")
@@ -596,6 +812,7 @@ catch(e){secret='';document.getElementById('status').textContent='邀请无效�
                 if "?" in target or length > 8192:
                     self._gate_failure()
                     return
+                self._drain_outcome = "consumed"
                 self._authorize(self._read_body(length))
                 return
             try:
@@ -614,12 +831,14 @@ catch(e){secret='';document.getElementById('status').textContent='邀请无效�
                 self._error(404, "route_not_allowed", "Not found")
                 return
             if path == "/api/v1/demo2/auth/login" and self.server.login_attempts.blocked("global", failure=True):
+                self._mark_rejected(429, "login_rate_limited")
                 self._respond(429, json.dumps({"ok": False, "error": {
                     "code": "login_rate_limited", "message": "登录尝试过于频繁，请五分钟后重试",
                 }}, ensure_ascii=False).encode(), headers=[("Retry-After", "300")])
                 return
             if path not in _PUBLIC_UPSTREAM and not self._authenticated(cookies):
                 if path in _PAGES or legacy_return:
+                    self._mark_rejected(303, "login_required")
                     self._respond(303, headers=[("Location", "/demo2/login")])
                 else:
                     self._error(401, "authentication_required", "请先登录平台账号")
@@ -639,7 +858,8 @@ catch(e){secret='';document.getElementById('status').textContent='邀请无效�
                 return
             # Forward raw binary and legacy JSON unchanged, including the exact
             # query. The application retains task ownership and chunk validation.
-            body = self._read_body(length, upload=path in _UPLOAD_CHUNK_PATHS,
+            self._drain_outcome = "consumed"
+            body = self._read_body(length, upload=path in _UPLOAD_CHUNK_PATHS or path == DOCUMENT_PARSE_PATH,
                                    invite_expires_at=int(cookies[INVITE_COOKIE_NAME].split(".")[1])) if self.command == "POST" else b""
             if self._expired():
                 self._error(410, "invitation_expired", "邀请已到期")
@@ -652,7 +872,10 @@ catch(e){secret='';document.getElementById('status').textContent='邀请无效�
                 return
             self._proxy(target, body, cookies)
         except OverflowError:
-            self._error(413, "body_too_large", "请求体不能超过 15 MiB")
+            if getattr(self, "_reject_path", None) == DOCUMENT_PARSE_PATH:
+                self._error(413, "document_too_large", "文件不能超过 20 MB")
+            else:
+                self._error(413, "body_too_large", "请求体不能超过 15 MiB")
         except _UpstreamTimeout:
             self._error(410 if self._expired() else 504, "upstream_timeout", "平台验证超时，请稍后重试")
         except (socket.timeout, TimeoutError):
