@@ -682,6 +682,8 @@ def create_handler(
     measurement_store = None
     goal_plan_lock = Lock()
     goal_plan_store = None
+    share_lock = Lock()
+    share_store = None
     evaluation_lock = Lock()
     evaluation_store = None
     document_lock = Lock()
@@ -820,6 +822,17 @@ def create_handler(
 
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
+            if parsed.path.startswith('/share/report/'):
+                token = parsed.path.rsplit('/', 1)[-1]
+                try:
+                    body, filename = self._share_call('get', token)
+                except Demo2APIError as exc:
+                    self._send_demo2_json({'ok': False, 'error': {'code': exc.code, 'message': exc.message}}, status=exc.status)
+                    return
+                self._send_text_payload(body, content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                                        extra_headers={'Content-Disposition': f'attachment; filename="{filename}"',
+                                                       'Cache-Control': 'no-store, private'})
+                return
             if parsed.path in {
                 "/demo2/login", "/demo2/home", "/demo2/find", "/demo2/lesson", "/demo2/upload", "/demo2/admin", "/demo2/admin/channels", "/demo2/admin/schools", "/demo2/analysis", "/demo2/course-overview", "/demo2/course-batch", "/demo2/teaching-support",
                 "/demo2/register", "/demo2/privacy", "/demo2/help", "/demo2/school",
@@ -1611,6 +1624,39 @@ def create_handler(
                     self._send_text_payload(data, content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                             extra_headers={"Content-Disposition": f'attachment; filename="student-assessment-{student_id[:8]}.docx"',
                                                            "Cache-Control": "no-store, private"})
+                elif parsed.path == f"{DEMO2_API_PREFIX}/assessment/share":
+                    self._require_role(account, "school_uploader")
+                    self._require_json_command()
+                    payload = self._read_json(max_bytes=4096)
+                    task_id = str((payload or {}).get("task_id") or "")
+                    student_id = str((payload or {}).get("student_id") or "")
+                    if not task_id or not student_id:
+                        raise Demo2APIError(400, "task_student_required", "请提供课堂和学生")
+                    token = self._session_cookie_token()
+                    task = student_store.account_video_task(token, task_id)
+                    workspace = self._measurement_call("workspace", token)
+                    student = next((s for s in workspace.get("students") or [] if s.get("student_id") == student_id), None)
+                    if student is None:
+                        raise Demo2APIError(403, "student_forbidden", "该学生不在当前学校名册")
+                    records = [r for r in workspace.get("records") or [] if r.get("student_id") == student_id]
+                    plans = self._goal_plan_call("list_for_student", _account_id(account), student_id)
+                    plan = plans[0] if plans else None
+                    lesson_goals = []
+                    try:
+                        course = self._course_task_call("for_course", token, task.get("course_id") or "")
+                        current = (course or {}).get("current") or {}
+                        lesson_goals = [g for g in (current.get("goals") or []) if isinstance(g, dict)]
+                    except Exception:
+                        lesson_goals = []
+                    overview = self._course_overview(account, task_id)
+                    if isinstance(overview, dict) and isinstance(overview.get("overview"), dict):
+                        overview = overview["overview"]
+                    builder = importlib.import_module('.demo2_assessment_report', package=__package__)
+                    data = builder.build_assessment_report(task=task, student=student, plan=plan,
+                                                           lesson_goals=lesson_goals, records=records, overview=overview)
+                    created = self._share_call('create', _account_id(account), f"student-assessment-{student_id[:8]}.docx", data, 24)
+                    self._send_demo2_json({'ok': True, 'url': '/share/report/' + created['token'],
+                                           'expires_at': created['expires_at']}, status=201)
                 elif parsed.path == f"{DEMO2_API_PREFIX}/course-overview":
                     self._require_role(account, 'school_uploader', 'company_admin')
                     task_id, = self._identity_query(parsed, ('task_id',))
@@ -2047,6 +2093,39 @@ def create_handler(
                 if parsed.path == f"{DEMO2_API_PREFIX}/admin/schools/review":
                     self._handle_school_review_post(parsed, account)
                     return
+                if parsed.path == f"{DEMO2_API_PREFIX}/assessment/share":
+                    self._require_role(account, "school_uploader")
+                    self._require_json_command()
+                    payload = self._read_json(max_bytes=4096)
+                    task_id = str((payload or {}).get("task_id") or "")
+                    student_id = str((payload or {}).get("student_id") or "")
+                    if not task_id or not student_id:
+                        raise Demo2APIError(400, "task_student_required", "请提供课堂和学生")
+                    token = self._session_cookie_token()
+                    task = student_store.account_video_task(token, task_id)
+                    workspace = self._measurement_call("workspace", token)
+                    student = next((s for s in workspace.get("students") or [] if s.get("student_id") == student_id), None)
+                    if student is None:
+                        raise Demo2APIError(403, "student_forbidden", "该学生不在当前学校名册")
+                    records = [r for r in workspace.get("records") or [] if r.get("student_id") == student_id]
+                    plans = self._goal_plan_call("list_for_student", _account_id(account), student_id)
+                    plan = plans[0] if plans else None
+                    lesson_goals = []
+                    try:
+                        course = self._course_task_call("for_course", token, task.get("course_id") or "")
+                        current = (course or {}).get("current") or {}
+                        lesson_goals = [g for g in (current.get("goals") or []) if isinstance(g, dict)]
+                    except Exception:
+                        lesson_goals = []
+                    overview = self._course_overview(account, task_id)
+                    if isinstance(overview, dict) and isinstance(overview.get("overview"), dict):
+                        overview = overview["overview"]
+                    builder = importlib.import_module('.demo2_assessment_report', package=__package__)
+                    data = builder.build_assessment_report(task=task, student=student, plan=plan,
+                                                           lesson_goals=lesson_goals, records=records, overview=overview)
+                    created = self._share_call('create', _account_id(account), f"student-assessment-{student_id[:8]}.docx", data, 24)
+                    self._send_demo2_json({'ok': True, 'url': '/share/report/' + created['token'],
+                                           'expires_at': created['expires_at']}, status=201)
                 if parsed.path == f"{DEMO2_API_PREFIX}/documents/parse":
                     self._require_student_access(account)
                     if _account_role(account) != "school_uploader":
@@ -3500,6 +3579,17 @@ def create_handler(
                 return getattr(measurement_store, method)(*args)
             except (backend.MeasurementError, backend.IdentityError) as exc:
                 raise Demo2APIError(exc.status, exc.code, exc.message) from None
+
+        def _share_call(self, method: str, *args: Any) -> Any:
+            nonlocal share_store
+            backend = importlib.import_module('.demo2_share_store', package=__package__)
+            try:
+                with share_lock:
+                    if share_store is None:
+                        share_store = backend.Demo2ShareStore(student_store)
+                return getattr(share_store, method)(*args)
+            except backend.ShareError as exc:
+                raise Demo2APIError(exc.status, exc.code, "分享链接不存在或已过期") from None
 
         def _goal_plan_call(self, method: str, *args: Any) -> Any:
             nonlocal goal_plan_store

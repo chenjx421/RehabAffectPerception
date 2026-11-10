@@ -7,6 +7,7 @@ conclusion. Missing links remain visible rather than being filled with a score.
 from __future__ import annotations
 
 import html
+import json
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -34,7 +35,7 @@ CSS = """
 .as-card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:14px 0}
 .as-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}.as-kpi{background:#f4f8fd;border:1px solid #e2ebf5;border-radius:8px;padding:10px 12px}.as-kpi span{display:block;color:var(--muted);font-size:12px}.as-kpi strong{font-size:20px}
 .as-table{width:100%;border-collapse:collapse;font-size:13px}.as-table th,.as-table td{border-bottom:1px solid var(--line);padding:9px;text-align:left;vertical-align:top}.as-table th{background:#f4f8fd;color:#3d4e63;font-weight:600}.as-status{display:inline-block;padding:2px 7px;border-radius:4px;background:#eef5ff;color:var(--blue);font-size:12px}.as-status.ok{background:#eef9f3;color:var(--ok)}.as-status.warn{background:#fff8ec;color:var(--warn)}
-.as-note{color:var(--muted);font-size:12px;border-left:3px solid var(--blue);padding-left:10px}.as-link{color:var(--blue);text-decoration:none}.as-empty{background:#fff;border:1px solid var(--line);border-radius:8px;padding:20px;color:var(--muted)}
+.as-note{color:var(--muted);font-size:12px;border-left:3px solid var(--blue);padding-left:10px}.as-share{margin-top:8px;font-size:12px;background:#f4f8fd;border:1px solid var(--line);border-radius:6px;padding:8px;max-width:560px;word-break:break-all}.as-actions{display:flex;gap:8px;flex-wrap:wrap}.as-link{color:var(--blue);text-decoration:none}.as-empty{background:#fff;border:1px solid var(--line);border-radius:8px;padding:20px;color:var(--muted)}
 .as-trend-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:7px 0;border-bottom:1px dashed var(--line)}.as-trend-row>span:first-child{min-width:80px;font-weight:600}.as-point{background:#f4f8fd;border:1px solid #e2ebf5;border-radius:4px;padding:3px 7px;color:var(--muted);font-size:12px}.as-point b{color:var(--ink)}.as-stages{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.as-stage{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#f8fafc}.as-stage b{display:block;font-size:16px}.as-stage span{color:var(--muted);font-size:12px}.as-stage em{font-style:normal;color:var(--warn);font-size:12px}@media(max-width:760px){.as-grid{grid-template-columns:1fr 1fr}.as-stages{grid-template-columns:1fr 1fr}.as-table{min-width:720px}.as-wrap{overflow-x:auto}}
 """
 
@@ -109,7 +110,7 @@ def render_assessment(account: dict[str, Any], task: dict[str, Any], student: di
     body = f'''<main class="page-shell">
 <section class="as-head"><div><span class="eyebrow">学生综合评估 · 证据链</span><h1>{_e(student.get("display_name") or "学生")}</h1>
 <p class="lead">{_e(task.get("course_name") or "课堂")} · {_e(task.get("lesson_date") or "日期未记录")} · 只读汇总</p></div>
-<div class="as-actions"><a class="button" href="/demo2/goal-plan?task_id={_e(task.get("task_id"))}&student_id={_e(student.get("student_id"))}">编辑目标草案</a><a class="button" href="/api/v1/demo2/assessment/report?task_id={_e(task.get("task_id"))}&student_id={_e(student.get("student_id"))}">下载 Word 报告</a></div></section>
+<div class="as-actions"><a class="button" href="/demo2/goal-plan?task_id={_e(task.get("task_id"))}&student_id={_e(student.get("student_id"))}">编辑目标草案</a><a class="button" href="/api/v1/demo2/assessment/report?task_id={_e(task.get("task_id"))}&student_id={_e(student.get("student_id"))}">下载 Word 报告</a><button class="button" id="shareBtn" type="button">生成 24 小时分享链接</button><div class="as-share" id="shareResult" hidden></div></div></section>
 <div class="as-grid"><div class="as-kpi"><span>目标草案</span><strong>{_e(plan_badge)}</strong></div><div class="as-kpi"><span>本课测量</span><strong>{len(student_records)} 条</strong></div><div class="as-kpi"><span>已复核</span><strong>{len(reviewed)} 条</strong></div><div class="as-kpi"><span>课程结论</span><strong>{_e(_score(course_score))}{" " + _e(grade) if grade else ""}</strong></div></div>
 <section class="as-card"><h2>目标与证据链</h2>
 <p class="as-note">链路：长期目标 → 短期目标 → 本课目标 → 测量 → 视频证据。未关联或未复核时明确显示缺口，不自动补分。</p>
@@ -119,6 +120,21 @@ def render_assessment(account: dict[str, Any], task: dict[str, Any], student: di
 <section class="as-card"><h2>课程结论的来源</h2><p class="as-note">课程评价是教师评分；学生目标达成度来自本课已复核测量。两者合成结论，但当前仍未把每名学生的长期/短期目标自动纳入课程总览；本页只展示已存在的证据。</p>
 <p><a class="as-link" href="/demo2/course-overview?task_id={_e(task.get("task_id"))}">打开课程总览</a> · <a class="as-link" href="/demo2/measurement?student_id={_e(student.get("student_id"))}">打开学生测量</a></p></section>
 </main>'''
+    task_json = json.dumps(str(task.get("task_id") or ""), ensure_ascii=False)
+    student_json = json.dumps(str(student.get("student_id") or ""), ensure_ascii=False)
     header = teacher_header("measurement", account, page="measurement")
     return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>学生综合评估 · WeGlow</title><style>{_COMMON_STYLE}{_WORKSPACE_STYLE}{CSS}</style>{UI_KIT_STYLE}</head><body>{header}{body}{UI_KIT_SCRIPT}</body></html>'''
+<title>学生综合评估 · WeGlow</title><style>{_COMMON_STYLE}{_WORKSPACE_STYLE}{CSS}</style>{UI_KIT_STYLE}</head><body>{header}{body}{UI_KIT_SCRIPT}<script>
+(function(){{
+  var btn=document.getElementById('shareBtn'),box=document.getElementById('shareResult');
+  if(!btn)return;
+  btn.addEventListener('click',function(){{
+    btn.disabled=true;box.hidden=true;
+    fetch('/api/v1/demo2/assessment/share',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{task_id:{task_json},student_id:{student_json}}})}})
+      .then(function(r){{return r.json().catch(function(){{return {{}};}}).then(function(j){{if(!r.ok||j.ok===false)throw new Error((j.error&&j.error.message)||'生成失败');return j;}});}})
+      .then(function(j){{var url=location.origin+j.url;box.innerHTML='24 小时只读报告链接：<a href="'+url+'" target="_blank" rel="noopener">'+url+'</a><br><small>拿到链接的人无需登录即可下载 Word 报告；到期自动失效。</small>';box.hidden=false;}})
+      .catch(function(e){{box.textContent=e.message||'生成失败';box.hidden=false;}})
+      .then(function(){{btn.disabled=false;}});
+  }});
+}})();
+</script></body></html>'''
