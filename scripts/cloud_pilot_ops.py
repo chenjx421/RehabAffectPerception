@@ -67,6 +67,25 @@ def _health(url: str, db: Path, min_free_gb: float) -> dict:
     return result
 
 
+def _restore_check(backup: Path) -> dict:
+    import tempfile
+    if not backup.is_file():
+        return {"ok": False, "error": "backup_not_found"}
+    with tempfile.TemporaryDirectory(prefix="rx-restore-") as folder:
+        raw_path = Path(folder) / "restore.sqlite3"
+        try:
+            with gzip.open(backup, "rb") as src:
+                raw_path.write_bytes(src.read())
+            with sqlite3.connect(f"file:{raw_path}?mode=ro", uri=True) as conn:
+                integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+                tables = conn.execute("SELECT count(*) FROM sqlite_master WHERE type='table'").fetchone()[0]
+                accounts = conn.execute("SELECT count(*) FROM platform_accounts").fetchone()[0] if tables else 0
+            return {"ok": integrity == "ok" and tables > 0, "integrity": integrity,
+                    "tables": tables, "accounts": accounts, "bytes": raw_path.stat().st_size}
+        except Exception as exc:
+            return {"ok": False, "error": type(exc).__name__}
+
+
 def _security(db: Path, url: str) -> dict:
     """Non-invasive production checks; missing headers are reported, not hidden."""
     import stat
@@ -136,6 +155,8 @@ def main() -> int:
     h.add_argument("--url", default="http://127.0.0.1:9184/demo2/login")
     h.add_argument("--db", type=Path, required=True)
     h.add_argument("--min-free-gb", type=float, default=5.0)
+    rs = sub.add_parser("restore-check")
+    rs.add_argument("--backup", type=Path, required=True)
     sec = sub.add_parser("security")
     sec.add_argument("--db", type=Path, required=True)
     sec.add_argument("--url", default="http://127.0.0.1:9184/demo2/login")
@@ -146,6 +167,10 @@ def main() -> int:
     args = parser.parse_args()
     if args.command == "backup":
         print(json.dumps(_backup(args.db, args.out, max(1, args.keep), args.dry_run), ensure_ascii=False))
+    elif args.command == "restore-check":
+        result = _restore_check(args.backup)
+        print(json.dumps(result, ensure_ascii=False))
+        return 0 if result["ok"] else 1
     elif args.command == "security":
         result = _security(args.db, args.url)
         print(json.dumps(result, ensure_ascii=False))
