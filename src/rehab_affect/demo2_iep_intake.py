@@ -37,7 +37,7 @@ OPERATIONS = frozenset({
     "iep_required_rejected", "iep_reference_create", "iep_reuse_existing", "iep_status",
     "iep_document_create", "iep_commit",
 })
-MAX_ITEMS = 40
+MAX_ITEMS = 80
 MAX_ITEM_CHARS = 300
 MAX_MANUAL_CHARS = 1000
 MAX_SUMMARY_FIELD_CHARS = 2000
