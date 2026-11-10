@@ -7,6 +7,7 @@ conclusion. Missing links remain visible rather than being filled with a score.
 from __future__ import annotations
 
 import html
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from .demo2_portal import _COMMON_STYLE, _WORKSPACE_STYLE
@@ -34,7 +35,7 @@ CSS = """
 .as-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}.as-kpi{background:#f4f8fd;border:1px solid #e2ebf5;border-radius:8px;padding:10px 12px}.as-kpi span{display:block;color:var(--muted);font-size:12px}.as-kpi strong{font-size:20px}
 .as-table{width:100%;border-collapse:collapse;font-size:13px}.as-table th,.as-table td{border-bottom:1px solid var(--line);padding:9px;text-align:left;vertical-align:top}.as-table th{background:#f4f8fd;color:#3d4e63;font-weight:600}.as-status{display:inline-block;padding:2px 7px;border-radius:4px;background:#eef5ff;color:var(--blue);font-size:12px}.as-status.ok{background:#eef9f3;color:var(--ok)}.as-status.warn{background:#fff8ec;color:var(--warn)}
 .as-note{color:var(--muted);font-size:12px;border-left:3px solid var(--blue);padding-left:10px}.as-link{color:var(--blue);text-decoration:none}.as-empty{background:#fff;border:1px solid var(--line);border-radius:8px;padding:20px;color:var(--muted)}
-@media(max-width:760px){.as-grid{grid-template-columns:1fr 1fr}.as-table{min-width:720px}.as-wrap{overflow-x:auto}}
+.as-stages{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.as-stage{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#f8fafc}.as-stage b{display:block;font-size:16px}.as-stage span{color:var(--muted);font-size:12px}.as-stage em{font-style:normal;color:var(--warn);font-size:12px}@media(max-width:760px){.as-grid{grid-template-columns:1fr 1fr}.as-stages{grid-template-columns:1fr 1fr}.as-table{min-width:720px}.as-wrap{overflow-x:auto}}
 """
 
 
@@ -70,6 +71,14 @@ def render_assessment(account: dict[str, Any], task: dict[str, Any], student: di
                 index, _e(g.get("goal") or "（未填写）"),
                 _e(lesson.get("description") if lesson else (lesson_id or "—")),
                 status, score, link))
+    base_text = str((plan or {}).get("confirmed_at") or (plan or {}).get("updated_at") or task.get("lesson_date") or "")
+    try:
+        base_date = datetime.fromisoformat(base_text.replace("Z", "+00:00")).date() if base_text else date.today()
+    except ValueError:
+        base_date = date.today()
+    stages = "".join(
+        f'<div class="as-stage"><b>第 {week} 周</b><span>{(base_date + timedelta(weeks=week)).isoformat()}</span><em>待复测</em></div>'
+        for week in (1, 2, 4, 8))
     plan_status = (plan or {}).get("status") or "none"
     plan_badge = {"confirmed": "已确认", "draft": "草案，待教师确认", "none": "未生成目标草案"}.get(plan_status, plan_status)
     student_records = [r for r in records if str(r.get("student_id") or "") == str(student.get("student_id") or "")]
@@ -85,6 +94,7 @@ def render_assessment(account: dict[str, Any], task: dict[str, Any], student: di
 <section class="as-card"><h2>目标与证据链</h2>
 <p class="as-note">链路：长期目标 → 短期目标 → 本课目标 → 测量 → 视频证据。未关联或未复核时明确显示缺口，不自动补分。</p>
 <div class="as-wrap"><table class="as-table"><thead><tr><th>#</th><th>短期目标</th><th>本课目标</th><th>测量状态</th><th>综合分</th><th>视频证据</th></tr></thead><tbody>{''.join(rows) if rows else '<tr><td colspan="6">尚未生成并确认短期目标。</td></tr>'}</tbody></table></div></section>
+<section class="as-card"><h2>阶段复测排程（草案）</h2><p class="as-note">从目标确认/更新日期起算 1、2、4、8 周；当前只显示待复测日期，尚未接入提醒和阶段趋势对比。到期后请在学生测量中补记并复核。</p><div class="as-stages">{stages}</div></section>
 <section class="as-card"><h2>课程结论的来源</h2><p class="as-note">课程评价是教师评分；学生目标达成度来自本课已复核测量。两者合成结论，但当前仍未把每名学生的长期/短期目标自动纳入课程总览；本页只展示已存在的证据。</p>
 <p><a class="as-link" href="/demo2/course-overview?task_id={_e(task.get("task_id"))}">打开课程总览</a> · <a class="as-link" href="/demo2/measurement?student_id={_e(student.get("student_id"))}">打开学生测量</a></p></section>
 </main>'''
