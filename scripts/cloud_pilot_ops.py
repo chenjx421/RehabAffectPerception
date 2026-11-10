@@ -86,6 +86,34 @@ def _restore_check(backup: Path) -> dict:
             return {"ok": False, "error": type(exc).__name__}
 
 
+def _stages(db: Path, today: str) -> dict:
+    from datetime import date, timedelta
+    try:
+        current = date.fromisoformat(today)
+    except ValueError:
+        current = date.today()
+    rows = []
+    with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
+        try:
+            plans = conn.execute("SELECT student_id, subject, status, confirmed_at, updated_at FROM demo2_goal_plans").fetchall()
+        except sqlite3.Error:
+            plans = []
+    for student_id, subject, status, confirmed_at, updated_at in plans:
+        base = str(confirmed_at or updated_at or "")[:10]
+        try:
+            start = date.fromisoformat(base)
+        except ValueError:
+            continue
+        for week in (1, 2, 4, 8):
+            when = start + timedelta(weeks=week)
+            if when <= current:
+                rows.append({"student_id": student_id, "subject": subject, "week": week,
+                             "due_date": when.isoformat(), "days_overdue": (current - when).days,
+                             "status": status})
+    rows.sort(key=lambda row: (row["due_date"], row["student_id"], row["week"]))
+    return {"today": current.isoformat(), "due_count": len(rows), "due": rows}
+
+
 def _security(db: Path, url: str) -> dict:
     """Non-invasive production checks; missing headers are reported, not hidden."""
     import stat
@@ -155,6 +183,9 @@ def main() -> int:
     h.add_argument("--url", default="http://127.0.0.1:9184/demo2/login")
     h.add_argument("--db", type=Path, required=True)
     h.add_argument("--min-free-gb", type=float, default=5.0)
+    st = sub.add_parser("stages")
+    st.add_argument("--db", type=Path, required=True)
+    st.add_argument("--today", default="")
     rs = sub.add_parser("restore-check")
     rs.add_argument("--backup", type=Path, required=True)
     sec = sub.add_parser("security")
@@ -167,6 +198,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.command == "backup":
         print(json.dumps(_backup(args.db, args.out, max(1, args.keep), args.dry_run), ensure_ascii=False))
+    elif args.command == "stages":
+        print(json.dumps(_stages(args.db, args.today), ensure_ascii=False))
     elif args.command == "restore-check":
         result = _restore_check(args.backup)
         print(json.dumps(result, ensure_ascii=False))
