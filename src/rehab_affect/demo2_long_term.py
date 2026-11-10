@@ -85,7 +85,7 @@ def render_long_term(account, token: str, student_id: str, workspace: dict, iep:
   <div><span class="eyebrow">长期观测 · 教育支持</span>
   <h1>{_e(student.get("display_name") or "学生")}</h1>
   <p class="lead">{_e(student.get("class_name") or "")} {_e(student.get("student_code") or "")}</p></div>
-  <a class="button" href="/demo2/measurement?student_id={_e(student_id)}">返回学生测量</a>
+  <div class="lt-head-actions"><a class="button" href="/demo2/goal-plan?student_id={_e(student_id)}">长期目标拆短期目标</a><a class="button" href="/demo2/measurement?student_id={_e(student_id)}">返回学生测量</a></div>
 </section>
 <div class="iep-banner {tone}"><strong>{_e(label)}{_e(version)}</strong><span>{_e(note)}</span>
 <a class="button quiet" href="/demo2/dossier?student_id={_e(student_id)}">管理 IEP 与授权</a></div>
@@ -105,7 +105,7 @@ def _shell(account, body: str) -> str:
 :root{{--ink:#172b4d;--muted:#5f7186;--line:#dbe5ef;--blue:#1f63c6;--blue-pale:#eef5ff;--ok:#0d6042;--warn:#8a4b00;--bg:#f6f8fb}}
 *{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}}
 .page-shell{{width:min(1120px,calc(100% - 32px));margin:0 auto;padding:28px 0 60px}}
-.lt-head{{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:18px}}h1{{font-size:28px;margin:2px 0}}h2{{font-size:18px;margin:28px 0 10px}}.lead{{color:var(--muted);margin:0}}
+.lt-head{{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:18px}}h1{{font-size:28px;margin:2px 0}}.lt-head-actions{{display:flex;gap:8px;flex-wrap:wrap}}h2{{font-size:18px;margin:28px 0 10px}}.lead{{color:var(--muted);margin:0}}
 .eyebrow{{font-size:11px;letter-spacing:.12em;color:var(--blue);font-weight:800}}
 .iep-banner{{display:flex;gap:12px;align-items:center;flex-wrap:wrap;border-left:4px solid var(--line);background:#fff;padding:12px 16px;border-radius:8px;margin:16px 0}}
 .iep-banner.ok{{border-color:#1d9b70;background:#eef9f3}}.iep-banner.warn{{border-color:#c98a1b;background:#fff8ec}}.iep-banner span{{color:var(--muted);font-size:13px}}

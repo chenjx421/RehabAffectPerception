@@ -675,6 +675,8 @@ def create_handler(
     dossier_lock = Lock()
     measurement_lock = Lock()
     measurement_store = None
+    goal_plan_lock = Lock()
+    goal_plan_store = None
     evaluation_lock = Lock()
     evaluation_store = None
     document_lock = Lock()
@@ -821,7 +823,7 @@ def create_handler(
                 "/demo2/simple-result",
                 "/demo2/dossier", "/demo2/course-dossier", "/demo2/admin/dossiers",
                 "/demo2/student-summary", "/demo2/admin/student-summaries",
-                "/demo2/measurement", "/demo2/long-term", "/demo2/admin/measurements", "/demo2/capture", "/demo2/evaluation", "/demo2/safety",
+                "/demo2/measurement", "/demo2/long-term", "/demo2/goal-plan", "/demo2/admin/measurements", "/demo2/capture", "/demo2/evaluation", "/demo2/safety",
             }:
                 self._handle_demo2_page(parsed.path)
                 return
@@ -1159,6 +1161,13 @@ def create_handler(
                     self._send_text_payload(renderer.render_long_term(account, token, student_id, workspace, iep).encode('utf-8'),
                                             content_type="text/html; charset=utf-8",
                                             extra_headers={'Cache-Control': 'no-store, private'})
+                elif path == "/demo2/goal-plan":
+                    self._require_role(account, "school_uploader")
+                    workspace = self._measurement_call("workspace", self._session_cookie_token())
+                    renderer = importlib.import_module('.demo2_goal_plan', package=__package__)
+                    self._send_text_payload(renderer.render_goal_plan(account, workspace).encode('utf-8'),
+                                            content_type='text/html; charset=utf-8',
+                                            extra_headers={'Cache-Control': 'no-store, private'})
                 elif path in {"/demo2/measurement", "/demo2/admin/measurements"}:
                     self._require_role(account, "company_admin" if path.startswith('/demo2/admin/') else "school_uploader")
                     renderer = importlib.import_module('.demo2_measurement', package=__package__)
@@ -1392,6 +1401,21 @@ def create_handler(
                         self._send_course_task_file(text.encode('utf-8'), filename, 'text/markdown; charset=utf-8')
                 elif parsed.path == f"{DEMO2_API_PREFIX}/measurements":
                     self._send_demo2_json({'ok': True, 'workspace': self._measurement_call('workspace', self._session_cookie_token())})
+                elif parsed.path == f"{DEMO2_API_PREFIX}/goal-plans":
+                    self._require_role(account, 'school_uploader')
+                    query = parse_qs(parsed.query, keep_blank_values=True)
+                    if set(query) - {'student_id', 'subject'} or any(len(v) != 1 for v in query.values()):
+                        raise Demo2APIError(400, 'invalid_request', '目标草案查询参数无效')
+                    sid = query.get('student_id', [''])[0]
+                    subject = query.get('subject', [''])[0]
+                    if not sid:
+                        self._send_demo2_json({'ok': True, 'plan': None})
+                    else:
+                        workspace = self._measurement_call('workspace', self._session_cookie_token())
+                        if not any(item.get('student_id') == sid for item in workspace.get('students') or []):
+                            raise Demo2APIError(403, 'student_forbidden', '该学生不在当前学校名册')
+                        plan = self._goal_plan_call('get', _account_id(account), sid, subject)
+                        self._send_demo2_json({'ok': True, 'plan': plan})
                 elif parsed.path == f"{DEMO2_API_PREFIX}/measurements/completeness":
                     self._require_role(account, 'school_uploader')
                     task_id, = self._identity_query(parsed, ('task_id',))
@@ -1907,6 +1931,17 @@ def create_handler(
                                                candidate_count=len(parse_result.get("candidates") or []),
                                                duration_ms=(time.monotonic() - parse_started) * 1000)
                     self._send_demo2_json({"ok": True, "result": parse_result})
+                    return
+                if parsed.path == f"{DEMO2_API_PREFIX}/goal-plans":
+                    self._require_role(account, 'school_uploader')
+                    self._require_json_command()
+                    payload = self._read_json(max_bytes=64 * 1024)
+                    sid = str((payload or {}).get('student_id') or '')
+                    workspace = self._measurement_call('workspace', self._session_cookie_token())
+                    if not any(item.get('student_id') == sid for item in workspace.get('students') or []):
+                        raise Demo2APIError(403, 'student_forbidden', '该学生不在当前学校名册')
+                    plan = self._goal_plan_call('save', _account_id(account), payload)
+                    self._send_demo2_json({'ok': True, 'plan': plan}, status=201)
                     return
                 if parsed.path == f"{DEMO2_API_PREFIX}/membership/orders":
                     payload = self._read_json(max_bytes=8192)
@@ -3329,6 +3364,17 @@ def create_handler(
                         measurement_store = backend.Demo2MeasurementStore(student_store)
                 return getattr(measurement_store, method)(*args)
             except (backend.MeasurementError, backend.IdentityError) as exc:
+                raise Demo2APIError(exc.status, exc.code, exc.message) from None
+
+        def _goal_plan_call(self, method: str, *args: Any) -> Any:
+            nonlocal goal_plan_store
+            backend = importlib.import_module('.demo2_goal_plan_store', package=__package__)
+            try:
+                with goal_plan_lock:
+                    if goal_plan_store is None:
+                        goal_plan_store = backend.Demo2GoalPlanStore(student_store)
+                return getattr(goal_plan_store, method)(*args)
+            except backend.GoalPlanError as exc:
                 raise Demo2APIError(exc.status, exc.code, exc.message) from None
 
         def _measurement_link_call(self, method: str, *args: Any, **kwargs: Any) -> Any:
