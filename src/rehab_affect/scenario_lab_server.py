@@ -823,7 +823,7 @@ def create_handler(
                 "/demo2/simple-result",
                 "/demo2/dossier", "/demo2/course-dossier", "/demo2/admin/dossiers",
                 "/demo2/student-summary", "/demo2/admin/student-summaries",
-                "/demo2/measurement", "/demo2/long-term", "/demo2/goal-plan", "/demo2/assessment", "/demo2/course-assessment", "/demo2/admin/measurements", "/demo2/capture", "/demo2/evaluation", "/demo2/safety",
+                "/demo2/measurement", "/demo2/long-term", "/demo2/goal-plan", "/demo2/assessment", "/demo2/course-assessment", "/demo2/class-summary", "/demo2/admin/measurements", "/demo2/capture", "/demo2/evaluation", "/demo2/safety",
             }:
                 self._handle_demo2_page(parsed.path)
                 return
@@ -1160,6 +1160,20 @@ def create_handler(
                     renderer = importlib.import_module('.demo2_long_term', package=__package__)
                     self._send_text_payload(renderer.render_long_term(account, token, student_id, workspace, iep).encode('utf-8'),
                                             content_type="text/html; charset=utf-8",
+                                            extra_headers={'Cache-Control': 'no-store, private'})
+                elif path == "/demo2/class-summary":
+                    self._require_role(account, "school_uploader")
+                    workspace = self._measurement_call("workspace", self._session_cookie_token())
+                    plans_by_student = {}
+                    for student in workspace.get("students") or []:
+                        sid = student.get("student_id")
+                        if sid:
+                            plans_by_student[sid] = self._goal_plan_call("list_for_student", _account_id(account), sid)
+                    query = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+                    class_name = (query.get("class_name") or [""])[0].strip()
+                    renderer = importlib.import_module('.demo2_class_summary', package=__package__)
+                    self._send_text_payload(renderer.render_class_summary(account, workspace, plans_by_student, class_name).encode('utf-8'),
+                                            content_type='text/html; charset=utf-8',
                                             extra_headers={'Cache-Control': 'no-store, private'})
                 elif path == "/demo2/course-assessment":
                     self._require_role(account, "school_uploader")
