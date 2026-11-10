@@ -59,6 +59,76 @@ RUBRIC = {
 
 _SUBJECTS = ["生活语文", "生活数学", "生活适应", "劳动技能", "唱游与律动", "绘画与手工", "运动与保健", "信息技术", "康复训练", "艺术休闲"]
 
+# Selected goal descriptors from the ministry curriculum standard (2016 edition).
+# This is a reference library, not a prescription for an individual student.
+CURRICULUM = {
+    "生活语文": {
+        "低年级（1–3）": {
+            "倾听与说话": [
+                "能在别人对自己讲话时注意倾听。",
+                "能听懂常用的词语，并作出适当回应。",
+                "能听懂简单的句子，并作出适当回应。",
+                "能听懂生活中的常用语言。",
+                "能模仿运用生活中的常用语言。",
+                "能用简短的语言表达个人基本需求。",
+                "能使用人称代词（你/我/他）。",
+                "能作简单的自我介绍（姓名、班级、家庭成员）。",
+                "能在生活情境中进行简单对话。",
+                "能听懂生活中常用的普通话，学说普通话。",
+            ],
+            "识字与写字": [
+                "能关注汉字，萌发识字兴趣。",
+                "能区别一般图形与汉字。",
+                "认读生活中常用汉字 10–50 个。",
+                "掌握正确的握笔姿势。",
+                "认识汉字的笔画。",
+                "能用铅笔描写或抄写生活中常用汉字。",
+                "能按从左到右的格式书写。",
+            ],
+            "阅读": [
+                "对书感兴趣，能模仿成人样子看书。",
+                "能以基本正确的阅读姿势阅读。",
+                "能从图片中找出熟悉的人、物和生活情景。",
+                "知道图片上的文字和画面是对应的。",
+                "能阅读背景简单的图画，了解大意。",
+                "能认识句号、逗号、问号、感叹号。",
+                "能用普通话朗读简单句。",
+                "会诵读儿歌、古诗 5–10 首。",
+                "愿意阅读，感受阅读的乐趣。",
+            ],
+            "综合性学习": [
+                "熟悉班级环境，能与同伴一起交谈，获取有关信息。",
+                "观察校园环境，能用自己的方式说出观察所得。",
+                "能参加班级、学校活动，初步养成良好的语言行为习惯。",
+            ],
+        }
+    },
+    "生活数学": {
+        "第一学段（1–3）": {
+            "知识技能": [
+                "经历从日常生活中认识常见的量的过程，了解日常生活中常见的量。",
+                "理解 10 以内数的意义；体会加与减的意义，能计算 10 以内的加法和减法。",
+                "认识简单几何体（球）和常见平面图形，初步形成识图能力。",
+                "能根据给定的一个标准，对事物做初步的分类。",
+            ],
+            "数学思考": [
+                "了解生活中常见的量，感受常见的量在生活中的作用。",
+                "运用 10 以内的数描述现实生活中的简单现象，初步形成数感。",
+                "尝试表达自己的想法。",
+            ],
+            "问题解决": [
+                "在教师指导下，通过观察、比较、操作等方法发现简单问题，并尝试解决。",
+                "经历与他人合作交流解决问题的过程。",
+            ],
+            "情感态度": [
+                "在他人引导下，感受参与数学学习活动的乐趣。",
+                "在他人引导下，感受数学活动中的成功。",
+                "感受数学与日常生活的紧密联系。",
+            ],
+        }
+    },
+}
+
 
 def _rubric_html() -> str:
     parts = []
@@ -80,6 +150,7 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any]) -> str:
           "class_name": s.get("class_name") or "", "student_code": s.get("student_code") or ""} for s in students],
         ensure_ascii=False,
     ).replace("</", "<\\/")
+    curriculum_json = json.dumps(CURRICULUM, ensure_ascii=False).replace("</", "<\\/")
     header = teacher_header("measurement", account, page="measurement")
     options = "".join(
         f'<option value="{_e(s.get("student_id"))}">{_e(s.get("display_name") or "学生")}'
@@ -95,9 +166,13 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any]) -> str:
   <div class="gp-grid">
     <label>学生<select id="studentSelect">{options}</select></label>
     <label>学科<select id="subjectSelect">{''.join(f'<option>{_e(s)}</option>' for s in _SUBJECTS)}</select></label>
+    <label>年级段<select id="gradeSelect"></select></label>
+    <label>课标领域<select id="domainSelect"></select></label>
     <label>周期（周）<input id="weeksInput" type="number" min="1" max="36" value="4"></label>
   </div>
-  <label class="full">长期目标（来自 IEP / 学期课程目标）<textarea id="longTerm" rows="3" placeholder="例：一学期内能听懂并执行生活语文课堂中的两步指令。"></textarea></label>
+  <label class="full">课标目标（选一条作为长期目标来源）<select id="curriculumSelect"></select></label>
+  <div class="gp-actions"><button class="button primary" id="applyCurriculumBtn" type="button">用课标目标生成长期目标</button><span class="gp-hint" id="curriculumHint">长期目标仍可修改；课标只提供参考，不是学生个人 IEP。</span></div>
+  <label class="full">长期目标（由课标目标生成，可修改）<textarea id="longTerm" rows="3" placeholder="选择课标目标后点“用课标目标生成长期目标”。"></textarea></label>
   <label class="full">当前基线 / 已有能力<textarea id="baseline" rows="2" placeholder="例：能执行一步指令；两步指令需要手势提示。"></textarea></label>
   <div class="gp-actions"><button class="button primary" id="decomposeBtn" type="button">生成短期目标草案</button><button class="button" id="clearBtn" type="button">清空</button><span class="gp-hint" id="statusHint">草案不会自动写入测量；确认后再进入课堂。</span></div>
 </section>
@@ -108,7 +183,7 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any]) -> str:
   <p class="gp-boundary">边界：本页只做目标拆解草案；IEP 的法定目标、诊断与安置结论仍由学校 IEP 团队确认。</p>
 </section>
 
-<section class="gp-card"><h2>学校评价指标（只读参考）</h2><p class="lead">来自学校提供的课堂教学基本评价指标、课堂评价表和二年级生活语文/生活数学课程学习评价表。用于检查目标是否可评价，不直接生成分数。</p>{_rubric_html()}</section>
+<section class="gp-card"><h2>学校评价指标（只读参考）</h2><p class="lead">来自学校提供的课堂教学基本评价指标、课堂评价表和二年级生活语文/生活数学课程学习评价表。用于检查目标是否可评价，不直接生成分数。</p><p class="gp-boundary">课标目标来源：教育部《培智学校义务教育课程标准（2016年版）》。课标提供的是课程目标参考，不是学生个人 IEP；已确认的草案仍需特教老师按学生基线复核。</p>{_rubric_html()}</section>
 </main>'''
     return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>长期目标拆短期目标 · WeGlow</title><style>{_COMMON_STYLE}{_WORKSPACE_STYLE}
@@ -127,7 +202,7 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any]) -> str:
 .status-ok{{color:#0d6042}}.status-warn{{color:#8a4b00}}
 @media(max-width:760px){{.gp-grid{{grid-template-columns:1fr}}}}
 </style>{UI_KIT_STYLE}</head><body>{header}{body}
-<script>window.GP_STUDENTS={students_json};</script>
+<script>window.GP_STUDENTS={students_json};window.GP_CURRICULUM={curriculum_json};</script>
 {UI_KIT_SCRIPT}
 <script>
 (function(){{
@@ -136,6 +211,30 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any]) -> str:
   var $=function(id){{return document.getElementById(id);}};
   var rows=[];
   function esc(x){{return String(x==null?'':x).replace(/[&<>"']/g,function(c){{return {{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c];}});}}
+  var CURRICULUM=window.GP_CURRICULUM||{{}};
+  function curriculumFor(){{var subject=$('subjectSelect').value,grade=$('gradeSelect').value;return (CURRICULUM[subject]||{{}})[grade]||null;}}
+  function refreshGrades(){{
+    var subject=$('subjectSelect').value,data=CURRICULUM[subject]||{{}},grades=Object.keys(data);
+    $('gradeSelect').innerHTML=grades.map(function(g){{return '<option>'+esc(g)+'</option>';}}).join('');
+    if(!grades.length){{$('gradeSelect').innerHTML='<option value="">暂无课标条目</option>';}}
+    refreshDomains();
+  }}
+  function refreshDomains(){{
+    var data=curriculumFor()||{{}},domains=Object.keys(data);
+    $('domainSelect').innerHTML=domains.map(function(d){{return '<option>'+esc(d)+'</option>';}}).join('');
+    if(!domains.length)$('domainSelect').innerHTML='<option value="">暂无领域</option>';
+    refreshGoals();
+  }}
+  function refreshGoals(){{
+    var data=curriculumFor()||{{}},goals=data[$('domainSelect').value]||[];
+    $('curriculumSelect').innerHTML=goals.map(function(g,i){{return '<option value="'+i+'">'+esc(g)+'</option>';}}).join('');
+    if(!goals.length)$('curriculumSelect').innerHTML='<option value="">暂无目标，请手动填写长期目标</option>';
+    updateCurriculumHint();
+  }}
+  function updateCurriculumHint(){{
+    var data=curriculumFor(),goals=data?data[$('domainSelect').value]||[]:[];
+    $('curriculumHint').textContent=data?'已载入课标条目 '+goals.length+' 条；点按钮生成，长期目标仍可修改。':'该学科/年级暂无内置课标条目，请手动填写长期目标。';
+  }}
   function selectedStudent(){{var id=$('studentSelect').value;return students.filter(function(s){{return s.student_id===id;}})[0]||null;}}
   function storageKey(){{var s=selectedStudent();return 'weglow-goal-plan:'+(s?s.student_id:'none')+':'+$('subjectSelect').value;}}
   function decompose(longTerm,weeks){{
@@ -173,6 +272,18 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any]) -> str:
       .catch(function(){{loadLocal();}});
   }}
   function payload(){{return {{student_id:selectedStudent()?selectedStudent().student_id:'',subject:$('subjectSelect').value,weeks:parseInt($('weeksInput').value,10)||4,long_term:$('longTerm').value.trim(),baseline:$('baseline').value.trim(),goals:rows}};}}
+  $('subjectSelect').onchange=function(){{refreshGrades();}};
+  $('gradeSelect').onchange=function(){{refreshDomains();}};
+  $('domainSelect').onchange=function(){{refreshGoals();}};
+  $('applyCurriculumBtn').onclick=function(){{
+    var data=curriculumFor(),goals=data?data[$('domainSelect').value]||[]:[];
+    var idx=parseInt($('curriculumSelect').value,10);
+    if(!goals.length||isNaN(idx)||!goals[idx]){{$('curriculumHint').textContent='当前学科/年级没有可选课标条目，请手动填写长期目标。';return;}}
+    var goal=goals[idx].replace(/[。；;]+$/,'');
+    $('longTerm').value='本学期目标：'+goal+'（课标'+$('gradeSelect').value+'）';
+    $('statusHint').textContent='已用课标目标生成长期目标；请按学生基线修改，再生成短期目标。';
+    $('statusHint').className='gp-hint status-ok';
+  }};
   $('decomposeBtn').onclick=function(){{var t=$('longTerm').value.trim();if(!t){{$('statusHint').textContent='请先填写长期目标。';$('statusHint').className='gp-hint status-warn';return;}}rows=decompose(t,$('weeksInput').value);$('resultCard').hidden=false;render();$('statusHint').textContent='已生成规则草案，请逐条修改并请特教老师确认。';$('statusHint').className='gp-hint status-ok';}};
   $('addGoalBtn').onclick=function(){{rows.push({{goal:'',criterion:'3 次机会至少 2 次完成',evidence:'',support:''}});$('resultCard').hidden=false;render();}};
   function persist(status,btn){{
@@ -190,7 +301,8 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any]) -> str:
   $('confirmBtn').onclick=function(){{persist('confirmed',$('confirmBtn'));}};
   $('exportBtn').onclick=function(){{var b=new Blob([JSON.stringify(payload(),null,2)],{{type:'application/json'}});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='goal-plan.json';a.click();URL.revokeObjectURL(a.href);}};
   $('clearBtn').onclick=function(){{rows=[];$('longTerm').value='';$('baseline').value='';$('resultCard').hidden=true;}};
-  $('studentSelect').onchange=load;$('subjectSelect').onchange=load;
+  refreshGrades();
+  $('studentSelect').onchange=load;$('subjectSelect').onchange=function(){{refreshGrades();load();}};
   load();
   var lt=$('longTermLink');if(lt&&selectedStudent())lt.href='/demo2/long-term?student_id='+encodeURIComponent(selectedStudent().student_id);
 }})();
