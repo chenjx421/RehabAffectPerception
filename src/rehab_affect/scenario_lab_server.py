@@ -823,7 +823,7 @@ def create_handler(
                 "/demo2/simple-result",
                 "/demo2/dossier", "/demo2/course-dossier", "/demo2/admin/dossiers",
                 "/demo2/student-summary", "/demo2/admin/student-summaries",
-                "/demo2/measurement", "/demo2/long-term", "/demo2/goal-plan", "/demo2/admin/measurements", "/demo2/capture", "/demo2/evaluation", "/demo2/safety",
+                "/demo2/measurement", "/demo2/long-term", "/demo2/goal-plan", "/demo2/assessment", "/demo2/admin/measurements", "/demo2/capture", "/demo2/evaluation", "/demo2/safety",
             }:
                 self._handle_demo2_page(parsed.path)
                 return
@@ -1160,6 +1160,38 @@ def create_handler(
                     renderer = importlib.import_module('.demo2_long_term', package=__package__)
                     self._send_text_payload(renderer.render_long_term(account, token, student_id, workspace, iep).encode('utf-8'),
                                             content_type="text/html; charset=utf-8",
+                                            extra_headers={'Cache-Control': 'no-store, private'})
+                elif path == "/demo2/assessment":
+                    self._require_role(account, "school_uploader")
+                    token = self._session_cookie_token()
+                    query = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+                    task_id = (query.get("task_id") or [""])[0].strip()
+                    student_id = (query.get("student_id") or [""])[0].strip()
+                    if not task_id or not student_id:
+                        raise Demo2APIError(400, "task_student_required", "请提供课堂和学生")
+                    task = student_store.account_video_task(token, task_id)
+                    workspace = self._measurement_call("workspace", token)
+                    student = next((s for s in workspace.get("students") or [] if s.get("student_id") == student_id), None)
+                    if student is None:
+                        raise Demo2APIError(403, "student_forbidden", "该学生不在当前学校名册")
+                    records = [r for r in workspace.get("records") or []
+                               if r.get("task_id") == task_id and r.get("student_id") == student_id]
+                    plans = self._goal_plan_call("list_for_student", _account_id(account), student_id)
+                    subject = (query.get("subject") or [""])[0].strip()
+                    plan = next((p for p in plans if not subject or p.get("subject") == subject), plans[0] if plans else None)
+                    lesson_goals = []
+                    try:
+                        course = self._course_task_call("for_course", token, task.get("course_id") or "")
+                        current = (course or {}).get("current") or {}
+                        lesson_goals = [g for g in (current.get("goals") or []) if isinstance(g, dict)]
+                    except Exception:
+                        lesson_goals = []
+                    overview = self._course_overview(account, task_id)
+                    if isinstance(overview, dict) and isinstance(overview.get("overview"), dict):
+                        overview = overview["overview"]
+                    renderer = importlib.import_module('.demo2_assessment', package=__package__)
+                    self._send_text_payload(renderer.render_assessment(account, task, student, plan, lesson_goals, records, overview).encode('utf-8'),
+                                            content_type='text/html; charset=utf-8',
                                             extra_headers={'Cache-Control': 'no-store, private'})
                 elif path == "/demo2/goal-plan":
                     self._require_role(account, "school_uploader")

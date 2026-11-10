@@ -166,7 +166,7 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any], lesson_
     body = f'''<main class="page-shell">
 <section class="gp-head"><div><span class="eyebrow">个别化目标 · 教师工作台</span><h1>长期目标拆短期目标</h1>
 <p class="lead">先把长期目标拆成可教的短期目标，再挂到本节课的视频证据。这里生成的是<strong>规则草案</strong>，必须由特教老师修改并确认，不能自动替代 IEP。</p></div>
-<a class="button" href="/demo2/long-term?student_id=" id="longTermLink">长期观测</a></section>
+<div class="gp-actions"><a class="button" href="/demo2/long-term?student_id=" id="longTermLink">长期观测</a><a class="button" id="assessmentLink" href="#" hidden>学生综合评估</a></div></section>
 
 <section class="gp-card">
   <div class="gp-grid">
@@ -299,8 +299,12 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any], lesson_
   }}
   function applyPlan(d){{$('longTerm').value=d.long_term||'';$('baseline').value=d.baseline||'';$('weeksInput').value=d.weeks||4;rows=d.goals||[];$('resultCard').hidden=!rows.length;render();}}
   function loadLocal(){{try{{var raw=localStorage.getItem(storageKey());if(raw){{applyPlan(JSON.parse(raw));return;}}}}catch(e){{}}rows=[];$('resultCard').hidden=true;}}
+  function updateAssessmentLink(){{
+    var s=selectedStudent(),a=$('assessmentLink'),task=window.GP_TASK_ID||'';
+    if(!a)return;if(task&&s){{a.href='/demo2/assessment?task_id='+encodeURIComponent(task)+'&student_id='+encodeURIComponent(s.student_id);a.hidden=false;}}else{{a.hidden=true;}}
+  }}
   function load(){{
-    var s=selectedStudent();var lt=$('longTermLink');if(lt)lt.href='/demo2/long-term?student_id='+encodeURIComponent(s?s.student_id:'');
+    var s=selectedStudent();var lt=$('longTermLink');if(lt)lt.href='/demo2/long-term?student_id='+encodeURIComponent(s?s.student_id:'');updateAssessmentLink();
     if(!s){{rows=[];$('resultCard').hidden=true;return;}}
     var subject=$('subjectSelect').value;
     fetch('/api/v1/demo2/goal-plans?student_id='+encodeURIComponent(s.student_id)+'&subject='+encodeURIComponent(subject),{{cache:'no-store',credentials:'same-origin'}})
@@ -339,7 +343,7 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any], lesson_
   $('exportBtn').onclick=function(){{var b=new Blob([JSON.stringify(payload(),null,2)],{{type:'application/json'}});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='goal-plan.json';a.click();URL.revokeObjectURL(a.href);}};
   $('clearBtn').onclick=function(){{rows=[];$('longTerm').value='';$('baseline').value='';$('resultCard').hidden=true;}};
   refreshGrades();
-  $('studentSelect').onchange=load;$('subjectSelect').onchange=function(){{refreshGrades();load();}};
+  $('studentSelect').onchange=load;$('subjectSelect').onchange=function(){{refreshGrades();load();}};updateAssessmentLink();
   load();
   var lt=$('longTermLink');if(lt&&selectedStudent())lt.href='/demo2/long-term?student_id='+encodeURIComponent(selectedStudent().student_id);
 }})();

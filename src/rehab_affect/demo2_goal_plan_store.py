@@ -90,6 +90,13 @@ class Demo2GoalPlanStore:
                              (account_id, student_id, subject)).fetchone()
             return self._public(row) if row else None
 
+    def list_for_student(self, account_id: str, student_id: str) -> list[dict[str, Any]]:
+        with self.records._connect() as db:
+            self._ensure(db)
+            rows = db.execute("SELECT * FROM demo2_goal_plans WHERE account_id=? AND student_id=? ORDER BY updated_at DESC",
+                              (account_id, student_id)).fetchall()
+            return [self._public(row) for row in rows]
+
     def save(self, account_id: str, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise GoalPlanError(400, "invalid_goal_plan", "请求格式无效")
