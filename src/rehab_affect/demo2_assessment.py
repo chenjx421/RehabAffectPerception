@@ -109,7 +109,7 @@ def render_assessment(account: dict[str, Any], task: dict[str, Any], student: di
     body = f'''<main class="page-shell">
 <section class="as-head"><div><span class="eyebrow">学生综合评估 · 证据链</span><h1>{_e(student.get("display_name") or "学生")}</h1>
 <p class="lead">{_e(task.get("course_name") or "课堂")} · {_e(task.get("lesson_date") or "日期未记录")} · 只读汇总</p></div>
-<a class="button" href="/demo2/goal-plan?task_id={_e(task.get("task_id"))}&student_id={_e(student.get("student_id"))}">编辑目标草案</a></section>
+<div class="as-actions"><a class="button" href="/demo2/goal-plan?task_id={_e(task.get("task_id"))}&student_id={_e(student.get("student_id"))}">编辑目标草案</a><a class="button" href="/api/v1/demo2/assessment/report?task_id={_e(task.get("task_id"))}&student_id={_e(student.get("student_id"))}">下载 Word 报告</a></div></section>
 <div class="as-grid"><div class="as-kpi"><span>目标草案</span><strong>{_e(plan_badge)}</strong></div><div class="as-kpi"><span>本课测量</span><strong>{len(student_records)} 条</strong></div><div class="as-kpi"><span>已复核</span><strong>{len(reviewed)} 条</strong></div><div class="as-kpi"><span>课程结论</span><strong>{_e(_score(course_score))}{" " + _e(grade) if grade else ""}</strong></div></div>
 <section class="as-card"><h2>目标与证据链</h2>
 <p class="as-note">链路：长期目标 → 短期目标 → 本课目标 → 测量 → 视频证据。未关联或未复核时明确显示缺口，不自动补分。</p>
