@@ -1163,9 +1163,21 @@ def create_handler(
                                             extra_headers={'Cache-Control': 'no-store, private'})
                 elif path == "/demo2/goal-plan":
                     self._require_role(account, "school_uploader")
-                    workspace = self._measurement_call("workspace", self._session_cookie_token())
+                    token = self._session_cookie_token()
+                    workspace = self._measurement_call("workspace", token)
+                    query = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+                    task_id = query.get("task_id", [""])[0].strip()
+                    lesson_goals = []
+                    if task_id:
+                        try:
+                            task = student_store.account_video_task(token, task_id)
+                            course = self._course_task_call("for_course", token, task.get("course_id") or "")
+                            current = (course or {}).get("current") or {}
+                            lesson_goals = [g for g in (current.get("goals") or []) if isinstance(g, dict)]
+                        except Exception:
+                            lesson_goals = []
                     renderer = importlib.import_module('.demo2_goal_plan', package=__package__)
-                    self._send_text_payload(renderer.render_goal_plan(account, workspace).encode('utf-8'),
+                    self._send_text_payload(renderer.render_goal_plan(account, workspace, lesson_goals, task_id).encode('utf-8'),
                                             content_type='text/html; charset=utf-8',
                                             extra_headers={'Cache-Control': 'no-store, private'})
                 elif path in {"/demo2/measurement", "/demo2/admin/measurements"}:

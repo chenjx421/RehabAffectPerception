@@ -143,7 +143,7 @@ def _rubric_html() -> str:
     return "".join(parts)
 
 
-def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any]) -> str:
+def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any], lesson_goals: list[dict[str, Any]] | None = None, task_id: str = "") -> str:
     students = [s for s in workspace.get("students") or [] if s.get("student_id")]
     students_json = json.dumps(
         [{"student_id": s.get("student_id"), "display_name": s.get("display_name") or "学生",
@@ -151,6 +151,12 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any]) -> str:
         ensure_ascii=False,
     ).replace("</", "<\\/")
     curriculum_json = json.dumps(CURRICULUM, ensure_ascii=False).replace("</", "<\\/")
+    lesson_goals_json = json.dumps(lesson_goals or [], ensure_ascii=False).replace("</", "<\\/")
+    lesson_goal_options = "".join(
+        f'<option value="{_e(g.get("goal_code") or "")}">{_e(g.get("goal_code") or "目标")} · {_e((g.get("description") or "")[:26])}</option>'
+        for g in (lesson_goals or []))
+    task_note = (f'已载入本课目标 {len(lesson_goals or [])} 条，可把短期目标挂到本课目标。' if task_id else
+                 '未指定课堂；先保存目标草案，再从课堂分析页带 task_id 打开本页做本课映射。')
     header = teacher_header("measurement", account, page="measurement")
     options = "".join(
         f'<option value="{_e(s.get("student_id"))}">{_e(s.get("display_name") or "学生")}'
@@ -177,11 +183,15 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any]) -> str:
   <div class="gp-actions"><button class="button primary" id="decomposeBtn" type="button">生成短期目标草案</button><button class="button" id="clearBtn" type="button">清空</button><span class="gp-hint" id="statusHint">草案不会自动写入测量；确认后再进入课堂。</span></div>
 </section>
 
+<p class="gp-hint" id="taskNote">{task_note}</p>
+
 <section class="gp-card" id="resultCard" hidden>
   <div class="gp-result-head"><div><h2>短期目标草案</h2><p class="lead">每条都应可观察、可计数；不需要的目标直接删除。</p></div><div class="gp-actions"><button class="button" id="addGoalBtn" type="button">新增一条</button><button class="button primary" id="saveBtn" type="button">保存草案</button><button class="button" id="confirmBtn" type="button">教师确认</button><button class="button" id="exportBtn" type="button">导出 JSON</button></div></div>
-  <div class="table-wrap"><table class="goal-table"><thead><tr><th>#</th><th>短期目标</th><th>通过标准</th><th>视频/课堂证据</th><th>支持方式</th><th></th></tr></thead><tbody id="goalRows"></tbody></table></div>
+  <div class="table-wrap"><table class="goal-table"><thead><tr><th>#</th><th>短期目标</th><th>本课目标</th><th>通过标准</th><th>视频/课堂证据</th><th>支持方式</th><th></th></tr></thead><tbody id="goalRows"></tbody></table></div>
   <p class="gp-boundary">边界：本页只做目标拆解草案；IEP 的法定目标、诊断与安置结论仍由学校 IEP 团队确认。</p>
 </section>
+
+<section class="gp-card" id="evidenceCard" hidden><h2>本课证据链</h2><p class="lead">短期目标 → 本课目标 → 测量记录。未生成测量或未关联时，会明确标出缺口，不自动补分。</p><div class="table-wrap"><table class="goal-table"><thead><tr><th>短期目标</th><th>本课目标</th><th>测量状态</th><th>综合分</th><th>视频证据</th></tr></thead><tbody id="evidenceRows"></tbody></table></div><p class="gp-boundary">视频证据只指向该学生在本课的片段；教师未复核的记录不会显示为达成。</p></section>
 
 <section class="gp-card"><h2>学校评价指标（只读参考）</h2><p class="lead">来自学校提供的课堂教学基本评价指标、课堂评价表和二年级生活语文/生活数学课程学习评价表。用于检查目标是否可评价，不直接生成分数。</p><p class="gp-boundary">课标目标来源：教育部《培智学校义务教育课程标准（2016年版）》。课标提供的是课程目标参考，不是学生个人 IEP；已确认的草案仍需特教老师按学生基线复核。</p>{_rubric_html()}</section>
 </main>'''
@@ -202,7 +212,7 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any]) -> str:
 .status-ok{{color:#0d6042}}.status-warn{{color:#8a4b00}}
 @media(max-width:760px){{.gp-grid{{grid-template-columns:1fr}}}}
 </style>{UI_KIT_STYLE}</head><body>{header}{body}
-<script>window.GP_STUDENTS={students_json};window.GP_CURRICULUM={curriculum_json};</script>
+<script>window.GP_STUDENTS={students_json};window.GP_CURRICULUM={curriculum_json};window.GP_LESSON_GOALS={lesson_goals_json};window.GP_TASK_ID={json.dumps(task_id, ensure_ascii=False)};</script>
 {UI_KIT_SCRIPT}
 <script>
 (function(){{
@@ -247,22 +257,45 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any]) -> str:
     function second(){{return behavior?'减少提示后，能'+core:'减少提示后完成：'+text;}}
     function third(){{return behavior?'独立做到：能'+core+'，并尝试在新课堂情境中保持':'独立完成：'+text+'，并尝试迁移到新材料/新情境';}}
     return [
-      {{goal:first(), criterion:'3 次机会至少 2 次完成；允许视觉/手势提示', evidence:'视频中可选择 1 段包含提示与完成的片段', support:'视觉提示、手势、分段指令', weeks:a}},
-      {{goal:second(), criterion:'3 次机会至少 2 次完成；提示减少到 1 次', evidence:'视频中教师提示次数与完成情况', support:'仅保留必要口头/视觉提示', weeks:b}},
-      {{goal:third(), criterion:'3 次机会至少 2 次独立完成；新情境至少 1 次', evidence:'视频中无提示完成或换材料后的片段', support:'自然情境、同伴示范', weeks:c}}
+      {{goal:first(), criterion:'3 次机会至少 2 次完成；允许视觉/手势提示', evidence:'视频中可选择 1 段包含提示与完成的片段', support:'视觉提示、手势、分段指令', weeks:a, lesson_goal_id:''}},
+      {{goal:second(), criterion:'3 次机会至少 2 次完成；提示减少到 1 次', evidence:'视频中教师提示次数与完成情况', support:'仅保留必要口头/视觉提示', weeks:b, lesson_goal_id:''}},
+      {{goal:third(), criterion:'3 次机会至少 2 次独立完成；新情境至少 1 次', evidence:'视频中无提示完成或换材料后的片段', support:'自然情境、同伴示范', weeks:c, lesson_goal_id:''}}
     ];
+  }}
+  var TASK_ID=window.GP_TASK_ID||'';
+  function loadEvidence(){{
+    if(!TASK_ID||!rows.length){{$('evidenceCard').hidden=true;return;}}
+    var s=selectedStudent();if(!s){{$('evidenceCard').hidden=true;return;}}
+    fetch('/api/v1/demo2/measurements',{{cache:'no-store',credentials:'same-origin'}})
+      .then(function(r){{return r.json();}})
+      .then(function(j){{
+        var recs=((j.workspace&&j.workspace.records)||[]).filter(function(r){{return r.task_id===TASK_ID&&r.student_id===s.student_id;}});
+        var byGoal={{}};recs.forEach(function(r){{byGoal[r.goal_id]=r;}});
+        $('evidenceRows').innerHTML=rows.map(function(g){{
+          var m=g.lesson_goal_id?byGoal[g.lesson_goal_id]:null;
+          var status=m?(m.reviewed?'已复核':(m.assessment&&m.assessment.score!=null?'已评分待复核':'待复核')):'未生成测量';
+          var score=m&&m.assessment?m.assessment.score:null;
+          var evidence=m?'<a href="/demo2/simple-result?task_id='+encodeURIComponent(TASK_ID)+'">查看本课结果</a>':'—';
+          return '<tr><td>'+esc(g.goal||'')+'</td><td>'+esc(g.lesson_goal_id||'未关联本课目标')+'</td><td>'+esc(status)+'</td><td>'+esc(score==null?'—':score)+'</td><td>'+evidence+'</td></tr>';
+        }}).join('');
+        $('evidenceCard').hidden=false;
+      }}).catch(function(){{$('evidenceCard').hidden=true;}});
   }}
   function render(){{
     var host=$('goalRows');host.innerHTML=rows.map(function(r,i){{
+      var lessonOptions='<option value="">— 未关联 —</option>'+((window.GP_LESSON_GOALS||[]).map(function(g){{return '<option value="'+esc(g.goal_code||'')+'"'+(r.lesson_goal_id===g.goal_code?' selected':'')+'>'+esc((g.goal_code||'目标')+' · '+((g.description||'').slice(0,24)))+'</option>';}}).join(''));
       return '<tr data-i="'+i+'"><td class="idx">'+(i+1)+'</td>'+
         '<td><textarea data-k="goal">'+esc(r.goal)+'</textarea></td>'+
+        '<td><select data-k="lesson_goal_id">'+lessonOptions+'</select></td>'+
         '<td><textarea data-k="criterion">'+esc(r.criterion)+'</textarea></td>'+
         '<td><textarea data-k="evidence">'+esc(r.evidence)+'</textarea></td>'+
         '<td><textarea data-k="support">'+esc(r.support)+'</textarea></td>'+
         '<td><button class="rm" type="button" data-rm="'+i+'" aria-label="删除">×</button></td></tr>';
     }}).join('');
     host.querySelectorAll('[data-k]').forEach(function(el){{el.addEventListener('input',function(){{rows[+el.closest('tr').dataset.i][el.dataset.k]=el.value;}});}});
+    host.querySelectorAll('select[data-k="lesson_goal_id"]').forEach(function(el){{el.addEventListener('change',function(){{rows[+el.closest('tr').dataset.i].lesson_goal_id=el.value;loadEvidence();}});}});
     host.querySelectorAll('[data-rm]').forEach(function(btn){{btn.onclick=function(){{rows.splice(+btn.dataset.rm,1);render();}};}});
+    setTimeout(loadEvidence,0);
   }}
   function applyPlan(d){{$('longTerm').value=d.long_term||'';$('baseline').value=d.baseline||'';$('weeksInput').value=d.weeks||4;rows=d.goals||[];$('resultCard').hidden=!rows.length;render();}}
   function loadLocal(){{try{{var raw=localStorage.getItem(storageKey());if(raw){{applyPlan(JSON.parse(raw));return;}}}}catch(e){{}}rows=[];$('resultCard').hidden=true;}}
@@ -289,7 +322,7 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any]) -> str:
     $('statusHint').className='gp-hint status-ok';
   }};
   $('decomposeBtn').onclick=function(){{var t=$('longTerm').value.trim();if(!t){{$('statusHint').textContent='请先填写长期目标。';$('statusHint').className='gp-hint status-warn';return;}}rows=decompose(t,$('weeksInput').value);$('resultCard').hidden=false;render();$('statusHint').textContent='已生成规则草案，请逐条修改并请特教老师确认。';$('statusHint').className='gp-hint status-ok';}};
-  $('addGoalBtn').onclick=function(){{rows.push({{goal:'',criterion:'3 次机会至少 2 次完成',evidence:'',support:''}});$('resultCard').hidden=false;render();}};
+  $('addGoalBtn').onclick=function(){{rows.push({{goal:'',lesson_goal_id:'',criterion:'3 次机会至少 2 次完成',evidence:'',support:''}});$('resultCard').hidden=false;render();}};
   function persist(status,btn){{
     var data=payload();if(!data.student_id){{$('statusHint').textContent='请先选择学生。';$('statusHint').className='gp-hint status-warn';return;}}
     if(!data.long_term.trim()){{$('statusHint').textContent='请先填写长期目标。';$('statusHint').className='gp-hint status-warn';return;}}
@@ -297,7 +330,7 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any]) -> str:
     data.status=status;btn.disabled=true;
     fetch('/api/v1/demo2/goal-plans',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify(data)}})
       .then(function(r){{return r.json().catch(function(){{return {{}};}}).then(function(j){{if(!r.ok||j.ok===false)throw new Error((j.error&&j.error.message)||'保存失败');return j;}});}})
-      .then(function(j){{localStorage.setItem(storageKey(),JSON.stringify(data));$('statusHint').textContent=status==='confirmed'?'已保存并经教师确认；可进入课堂目标映射。':'已保存草案；正式使用前仍需教师确认。';$('statusHint').className='gp-hint status-ok';}})
+      .then(function(j){{localStorage.setItem(storageKey(),JSON.stringify(data));$('statusHint').textContent=status==='confirmed'?'已保存并经教师确认；可进入课堂目标映射。':'已保存草案；正式使用前仍需教师确认。';$('statusHint').className='gp-hint status-ok';loadEvidence();}})
       .catch(function(e){{$('statusHint').textContent=e.message||'保存失败';$('statusHint').className='gp-hint status-warn';}})
       .then(function(){{btn.disabled=false;}});
   }}

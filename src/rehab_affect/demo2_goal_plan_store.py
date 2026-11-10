@@ -116,6 +116,7 @@ class Demo2GoalPlanStore:
                 "criterion": _text(item.get("criterion"), 500, False, f"第 {index} 条通过标准"),
                 "evidence": _text(item.get("evidence"), 500, False, f"第 {index} 条视频/课堂证据"),
                 "support": _text(item.get("support"), 500, False, f"第 {index} 条支持方式"),
+                "lesson_goal_id": _text(item.get("lesson_goal_id"), 120, False, f"第 {index} 条本课目标"),
             })
         if not any(g["goal"] for g in goals):
             raise GoalPlanError(400, "invalid_goal_plan", "请至少填写一条短期目标")
