@@ -1206,7 +1206,7 @@ def create_handler(
                     if student is None:
                         raise Demo2APIError(403, "student_forbidden", "该学生不在当前学校名册")
                     records = [r for r in workspace.get("records") or []
-                               if r.get("task_id") == task_id and r.get("student_id") == student_id]
+                               if r.get("student_id") == student_id]
                     plans = self._goal_plan_call("list_for_student", _account_id(account), student_id)
                     subject = (query.get("subject") or [""])[0].strip()
                     plan = next((p for p in plans if not subject or p.get("subject") == subject), plans[0] if plans else None)

@@ -35,7 +35,7 @@ CSS = """
 .as-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}.as-kpi{background:#f4f8fd;border:1px solid #e2ebf5;border-radius:8px;padding:10px 12px}.as-kpi span{display:block;color:var(--muted);font-size:12px}.as-kpi strong{font-size:20px}
 .as-table{width:100%;border-collapse:collapse;font-size:13px}.as-table th,.as-table td{border-bottom:1px solid var(--line);padding:9px;text-align:left;vertical-align:top}.as-table th{background:#f4f8fd;color:#3d4e63;font-weight:600}.as-status{display:inline-block;padding:2px 7px;border-radius:4px;background:#eef5ff;color:var(--blue);font-size:12px}.as-status.ok{background:#eef9f3;color:var(--ok)}.as-status.warn{background:#fff8ec;color:var(--warn)}
 .as-note{color:var(--muted);font-size:12px;border-left:3px solid var(--blue);padding-left:10px}.as-link{color:var(--blue);text-decoration:none}.as-empty{background:#fff;border:1px solid var(--line);border-radius:8px;padding:20px;color:var(--muted)}
-.as-stages{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.as-stage{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#f8fafc}.as-stage b{display:block;font-size:16px}.as-stage span{color:var(--muted);font-size:12px}.as-stage em{font-style:normal;color:var(--warn);font-size:12px}@media(max-width:760px){.as-grid{grid-template-columns:1fr 1fr}.as-stages{grid-template-columns:1fr 1fr}.as-table{min-width:720px}.as-wrap{overflow-x:auto}}
+.as-trend-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:7px 0;border-bottom:1px dashed var(--line)}.as-trend-row>span:first-child{min-width:80px;font-weight:600}.as-point{background:#f4f8fd;border:1px solid #e2ebf5;border-radius:4px;padding:3px 7px;color:var(--muted);font-size:12px}.as-point b{color:var(--ink)}.as-stages{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.as-stage{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#f8fafc}.as-stage b{display:block;font-size:16px}.as-stage span{color:var(--muted);font-size:12px}.as-stage em{font-style:normal;color:var(--warn);font-size:12px}@media(max-width:760px){.as-grid{grid-template-columns:1fr 1fr}.as-stages{grid-template-columns:1fr 1fr}.as-table{min-width:720px}.as-wrap{overflow-x:auto}}
 """
 
 
@@ -81,9 +81,27 @@ def render_assessment(account: dict[str, Any], task: dict[str, Any], student: di
         f'<div class="as-stage"><b>第 {week} 周</b><span>{(base_date + timedelta(weeks=week)).isoformat()}</span>'
         f'<em>{"已到期待补测" if (base_date + timedelta(weeks=week)) <= today else "待复测"}</em></div>'
         for week in (1, 2, 4, 8))
+    trend_rows = []
+    for g in goals:
+        lesson_id = str(g.get("lesson_goal_id") or "")
+        if not lesson_id:
+            continue
+        points = [r for r in records if str(r.get("goal_id") or "") == lesson_id]
+        points.sort(key=lambda r: str(r.get("lesson_date") or r.get("updated_at") or ""))
+        if len(points) <= 1:
+            continue
+        cells = []
+        for r in points:
+            score = (r.get("assessment") or {}).get("score")
+            cells.append(f'<span class="as-point"><b>{_e(r.get("lesson_date") or "日期未记录")}</b> {_score(score)}</span>')
+        trend_rows.append(f'<div class="as-trend-row"><span>{_e(lesson_id)}</span>{"".join(cells)}</div>')
+    trend_html = ('<section class="as-card"><h2>跨阶段趋势</h2><p class="as-note">同一目标在不同课堂的测量分；只展示已存在的记录，不推断缺失阶段。</p>'
+                  + ''.join(trend_rows) + '</section>' if trend_rows else
+                  '<section class="as-card"><h2>跨阶段趋势</h2><p class="as-note">当前只有本课记录，还没有跨课堂趋势；到期补测后会在这里对比。</p></section>')
     plan_status = (plan or {}).get("status") or "none"
     plan_badge = {"confirmed": "已确认", "draft": "草案，待教师确认", "none": "未生成目标草案"}.get(plan_status, plan_status)
-    student_records = [r for r in records if str(r.get("student_id") or "") == str(student.get("student_id") or "")]
+    task_records = [r for r in records if str(r.get("task_id") or "") == str(task.get("task_id") or "")]
+    student_records = [r for r in task_records if str(r.get("student_id") or "") == str(student.get("student_id") or "")]
     reviewed = [r for r in student_records if r.get("reviewed")]
     conclusion = (overview or {}).get("conclusion") if isinstance(overview, dict) else {}
     course_score = conclusion.get("score") if isinstance(conclusion, dict) else None
@@ -97,6 +115,7 @@ def render_assessment(account: dict[str, Any], task: dict[str, Any], student: di
 <p class="as-note">链路：长期目标 → 短期目标 → 本课目标 → 测量 → 视频证据。未关联或未复核时明确显示缺口，不自动补分。</p>
 <div class="as-wrap"><table class="as-table"><thead><tr><th>#</th><th>短期目标</th><th>本课目标</th><th>测量状态</th><th>综合分</th><th>视频证据</th></tr></thead><tbody>{''.join(rows) if rows else '<tr><td colspan="6">尚未生成并确认短期目标。</td></tr>'}</tbody></table></div></section>
 <section class="as-card"><h2>阶段复测排程（草案）</h2><p class="as-note">从目标确认/更新日期起算 1、2、4、8 周；当前只显示待复测日期，尚未接入提醒和阶段趋势对比。到期后请在学生测量中补记并复核。</p><div class="as-stages">{stages}</div></section>
+{trend_html}
 <section class="as-card"><h2>课程结论的来源</h2><p class="as-note">课程评价是教师评分；学生目标达成度来自本课已复核测量。两者合成结论，但当前仍未把每名学生的长期/短期目标自动纳入课程总览；本页只展示已存在的证据。</p>
 <p><a class="as-link" href="/demo2/course-overview?task_id={_e(task.get("task_id"))}">打开课程总览</a> · <a class="as-link" href="/demo2/measurement?student_id={_e(student.get("student_id"))}">打开学生测量</a></p></section>
 </main>'''
