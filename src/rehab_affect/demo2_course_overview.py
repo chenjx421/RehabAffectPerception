@@ -840,7 +840,7 @@ __OVERVIEW_CSS__
 <header></header>
 <main>
 <div class="ov-page-head"><div><div class="ov-kicker" id="ovKicker">教师工作台 · 课堂复核与分析</div><h1>课程总览（系统大纲）</h1><p>同时看每个学生的评价和整体课程指标，判断这节课好还是不好。等级为试行口径。</p></div>
-<div class="ov-page-actions"><a class="rx-btn rx-btn-secondary" id="ovAnalysisLink" href="/demo2/analysis">返回课堂分析</a><a class="rx-btn rx-btn-secondary" id="ovEvaluationLink" href="/demo2/evaluation">课程评价</a><a class="rx-btn rx-btn-secondary" id="ovEvidenceLink" href="#">证据总览</a><button class="rx-btn rx-btn-primary" id="ovRefresh" type="button">刷新</button></div></div>
+<div class="ov-page-actions"><a class="rx-btn rx-btn-secondary" id="ovAnalysisLink" href="/demo2/analysis">返回课堂分析</a><a class="rx-btn rx-btn-secondary" id="ovEvaluationLink" href="/demo2/evaluation">课程评价</a><a class="rx-btn rx-btn-secondary" id="ovEvidenceLink" href="#">证据总览</a><a class="rx-btn rx-btn-secondary" id="ovClassLink" href="/demo2/class-summary">班级学情</a><button class="rx-btn rx-btn-primary" id="ovRefresh" type="button">刷新</button></div></div>
 <div id="ovMessage" role="alert"></div>
 <div id="ovRoot" class="ov-root" aria-live="polite"><div class="ov-card">正在汇总本课数据…</div></div>
 </main>
@@ -850,7 +850,7 @@ __OVERVIEW_JS__
   'use strict';
   var taskId=new URLSearchParams(location.search).get('task_id')||'', viewer='__VIEWER__';
   var $=function(id){return document.getElementById(id);};
-  if(viewer==='company_admin'){$('ovKicker').textContent='公司后台 · 任务查询';$('ovAnalysisLink').href='/demo2/admin#taskQueryTitle';$('ovAnalysisLink').textContent='返回任务查询';$('ovEvaluationLink').hidden=true;$('ovEvidenceLink').hidden=true;}
+  if(viewer==='company_admin'){$('ovKicker').textContent='公司后台 · 任务查询';$('ovAnalysisLink').href='/demo2/admin#taskQueryTitle';$('ovAnalysisLink').textContent='返回任务查询';$('ovEvaluationLink').hidden=true;$('ovEvidenceLink').hidden=true;$('ovClassLink').hidden=true;}
   else{$('ovAnalysisLink').href='/demo2/analysis?task_id='+encodeURIComponent(taskId);$('ovEvaluationLink').href='/demo2/evaluation?task_id='+encodeURIComponent(taskId);$('ovEvidenceLink').href='/demo2/course-assessment?task_id='+encodeURIComponent(taskId);}
   function load(){
     $('ovMessage').textContent='';$('ovRefresh').disabled=true;
