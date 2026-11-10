@@ -238,14 +238,18 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any]) -> str:
   function selectedStudent(){{var id=$('studentSelect').value;return students.filter(function(s){{return s.student_id===id;}})[0]||null;}}
   function storageKey(){{var s=selectedStudent();return 'weglow-goal-plan:'+(s?s.student_id:'none')+':'+$('subjectSelect').value;}}
   function decompose(longTerm,weeks){{
-    var text=(longTerm||'').replace(/\\s+/g,' ').trim();
+    var text=(longTerm||'').replace(/^本学期目标\s*[:：]\s*/,'').replace(/（课标.*$/,'').replace(/\s+/g,' ').trim().replace(/[。；;]+$/,'');
     var w=Math.max(1,Math.min(36,parseInt(weeks,10)||4));
     var a=Math.max(1,Math.ceil(w/3)), b=Math.max(1,Math.ceil((w-a)/2)), c=Math.max(1,w-a-b);
-    var base=text.replace(/[。；;]+$/,'');
+    var behavior=/^(能|能够|学会|愿意|参与|做到)/.test(text);
+    var core=text.replace(/^(能|能够)/,'');
+    function first(){{return behavior?'在教师提示下，能'+core:'在教师提示下完成：'+text;}}
+    function second(){{return behavior?'减少提示后，能'+core:'减少提示后完成：'+text;}}
+    function third(){{return behavior?'独立做到：能'+core+'，并尝试在新课堂情境中保持':'独立完成：'+text+'，并尝试迁移到新材料/新情境';}}
     return [
-      {{goal:'在教师提示下完成「'+base+'」的关键步骤', criterion:'3 次机会至少 2 次完成；允许视觉/手势提示', evidence:'视频中可选择 1 段包含提示与完成的片段', support:'视觉提示、手势、分段指令', weeks:a}},
-      {{goal:'减少提示后完成「'+base+'」', criterion:'3 次机会至少 2 次完成；提示减少到 1 次', evidence:'视频中教师提示次数与完成情况', support:'仅保留必要口头/视觉提示', weeks:b}},
-      {{goal:'独立完成「'+base+'」，并尝试在新材料/新情境中迁移', criterion:'3 次机会至少 2 次独立完成；新情境至少 1 次', evidence:'视频中无提示完成或换材料后的片段', support:'自然情境、同伴示范', weeks:c}}
+      {{goal:first(), criterion:'3 次机会至少 2 次完成；允许视觉/手势提示', evidence:'视频中可选择 1 段包含提示与完成的片段', support:'视觉提示、手势、分段指令', weeks:a}},
+      {{goal:second(), criterion:'3 次机会至少 2 次完成；提示减少到 1 次', evidence:'视频中教师提示次数与完成情况', support:'仅保留必要口头/视觉提示', weeks:b}},
+      {{goal:third(), criterion:'3 次机会至少 2 次独立完成；新情境至少 1 次', evidence:'视频中无提示完成或换材料后的片段', support:'自然情境、同伴示范', weeks:c}}
     ];
   }}
   function render(){{
