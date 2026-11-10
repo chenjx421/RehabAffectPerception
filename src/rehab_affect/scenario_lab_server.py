@@ -823,7 +823,7 @@ def create_handler(
                 "/demo2/simple-result",
                 "/demo2/dossier", "/demo2/course-dossier", "/demo2/admin/dossiers",
                 "/demo2/student-summary", "/demo2/admin/student-summaries",
-                "/demo2/measurement", "/demo2/long-term", "/demo2/goal-plan", "/demo2/assessment", "/demo2/admin/measurements", "/demo2/capture", "/demo2/evaluation", "/demo2/safety",
+                "/demo2/measurement", "/demo2/long-term", "/demo2/goal-plan", "/demo2/assessment", "/demo2/course-assessment", "/demo2/admin/measurements", "/demo2/capture", "/demo2/evaluation", "/demo2/safety",
             }:
                 self._handle_demo2_page(parsed.path)
                 return
@@ -1160,6 +1160,37 @@ def create_handler(
                     renderer = importlib.import_module('.demo2_long_term', package=__package__)
                     self._send_text_payload(renderer.render_long_term(account, token, student_id, workspace, iep).encode('utf-8'),
                                             content_type="text/html; charset=utf-8",
+                                            extra_headers={'Cache-Control': 'no-store, private'})
+                elif path == "/demo2/course-assessment":
+                    self._require_role(account, "school_uploader")
+                    token = self._session_cookie_token()
+                    query = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+                    task_id = (query.get("task_id") or [""])[0].strip()
+                    if not task_id:
+                        raise Demo2APIError(400, "task_required", "请提供课堂")
+                    task = student_store.account_video_task(token, task_id)
+                    workspace = self._measurement_call("workspace", token)
+                    records = [r for r in workspace.get("records") or [] if r.get("task_id") == task_id]
+                    task_student_ids = {str(r.get("student_id") or "") for r in records}
+                    students = [s for s in workspace.get("students") or [] if str(s.get("student_id") or "") in task_student_ids]
+                    plans_by_student = {}
+                    for student in students:
+                        sid = student.get("student_id")
+                        if sid:
+                            plans_by_student[sid] = self._goal_plan_call("list_for_student", _account_id(account), sid)
+                    lesson_goals = []
+                    try:
+                        course = self._course_task_call("for_course", token, task.get("course_id") or "")
+                        current = (course or {}).get("current") or {}
+                        lesson_goals = [g for g in (current.get("goals") or []) if isinstance(g, dict)]
+                    except Exception:
+                        lesson_goals = []
+                    overview = self._course_overview(account, task_id)
+                    if isinstance(overview, dict) and isinstance(overview.get("overview"), dict):
+                        overview = overview["overview"]
+                    renderer = importlib.import_module('.demo2_course_assessment', package=__package__)
+                    self._send_text_payload(renderer.render_course_assessment(account, task, students, plans_by_student, lesson_goals, records, overview).encode('utf-8'),
+                                            content_type='text/html; charset=utf-8',
                                             extra_headers={'Cache-Control': 'no-store, private'})
                 elif path == "/demo2/assessment":
                     self._require_role(account, "school_uploader")
