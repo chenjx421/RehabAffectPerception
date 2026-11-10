@@ -4144,6 +4144,11 @@ def create_handler(
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Vary", "Accept-Encoding")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("X-Frame-Options", "SAMEORIGIN")
+            self.send_header("Referrer-Policy", "same-origin")
+            self.send_header("Content-Security-Policy", "frame-ancestors 'self'")
+            self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
             if use_gzip:
                 self.send_header("Content-Encoding", "gzip")
             if allow_origin:

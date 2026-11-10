@@ -67,6 +67,38 @@ def _health(url: str, db: Path, min_free_gb: float) -> dict:
     return result
 
 
+def _security(db: Path, url: str) -> dict:
+    """Non-invasive production checks; missing headers are reported, not hidden."""
+    import stat
+    checks = {}
+    try:
+        mode = stat.S_IMODE(db.stat().st_mode)
+        checks["db_private"] = (mode & 0o077) == 0
+        checks["db_mode"] = oct(mode)
+        parent_mode = stat.S_IMODE(db.parent.stat().st_mode)
+        checks["db_parent_private"] = (parent_mode & 0o007) == 0
+    except OSError:
+        checks["db_private"] = False
+    try:
+        with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
+            checks["journal_mode"] = conn.execute("PRAGMA journal_mode").fetchone()[0]
+            checks["integrity"] = conn.execute("PRAGMA integrity_check").fetchone()[0]
+    except sqlite3.Error:
+        checks["integrity"] = "error"
+    try:
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            headers = {k.lower(): v for k, v in resp.headers.items()}
+        checks["https"] = url.startswith("https://")
+        checks["headers"] = {name: bool(headers.get(name)) for name in (
+            "x-content-type-options", "x-frame-options", "content-security-policy", "referrer-policy")}
+    except Exception as exc:
+        checks["http_error"] = type(exc).__name__
+    checks["ok"] = bool(checks.get("db_private") and checks.get("integrity") == "ok"
+                        and checks.get("db_parent_private"))
+    return checks
+
+
 def _concurrency(base: str, workers: int, count: int) -> dict:
     username = os.environ.get("REHAB_PILOT_USER", "")
     password = os.environ.get("REHAB_PILOT_PASSWORD", "")
@@ -104,6 +136,9 @@ def main() -> int:
     h.add_argument("--url", default="http://127.0.0.1:9184/demo2/login")
     h.add_argument("--db", type=Path, required=True)
     h.add_argument("--min-free-gb", type=float, default=5.0)
+    sec = sub.add_parser("security")
+    sec.add_argument("--db", type=Path, required=True)
+    sec.add_argument("--url", default="http://127.0.0.1:9184/demo2/login")
     c = sub.add_parser("concurrency")
     c.add_argument("--base", default="http://127.0.0.1:9184")
     c.add_argument("--workers", type=int, default=5)
@@ -111,6 +146,10 @@ def main() -> int:
     args = parser.parse_args()
     if args.command == "backup":
         print(json.dumps(_backup(args.db, args.out, max(1, args.keep), args.dry_run), ensure_ascii=False))
+    elif args.command == "security":
+        result = _security(args.db, args.url)
+        print(json.dumps(result, ensure_ascii=False))
+        return 0 if result["ok"] else 1
     elif args.command == "health":
         result = _health(args.url, args.db, args.min_free_gb)
         print(json.dumps(result, ensure_ascii=False))
