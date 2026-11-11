@@ -87,7 +87,7 @@ window.IepIntake=(function(){
     const $=name=>document.getElementById(id(name));
     root.innerHTML=`<div class="iep-intake" id="${id('box')}" data-confirmed="false">
       <div class="iep-head"><label for="${id('file')}">最小 IEP 支持摘要 <span class="iep-req">*</span>（必填）</label><span class="iep-state" id="${id('state')}">待填写</span></div>
-      <p class="iep-hint">上传 IEP 文件（Word/PDF），系统自动筛查长期/短期目标、支持方式、教学策略、注意事项和评估方式，生成带页码的条目摘要；诊断原文、身份证号、手机号、住址不会进入摘要。也可直接在「人工补充」中填写。</p>
+      <p class="iep-hint">上传 IEP 文件（Word/PDF/扫描件），扫描件会自动 OCR；系统自动筛查长期/短期目标、支持方式、教学策略、注意事项和评估方式，生成带页码的条目摘要；诊断原文、身份证号、手机号、住址不会进入摘要。OCR 结果请逐条核对，也可直接在「人工补充」中填写。</p>
       <div class="iep-choice" id="${id('choice')}" hidden></div>
       <div class="iep-row" id="${id('uploadRow')}"><input class="iep-file" id="${id('file')}" type="file" accept=".pdf,.docx,.doc,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"><label class="iep-btn" for="${id('file')}" id="${id('fileBtn')}">上传 IEP 文件（Word/PDF）</label><span class="iep-file-status" id="${id('fileStatus')}" role="status">尚未上传；支持 PDF、DOCX、DOC，最大 20 MB</span></div>
       <div class="iep-summary" id="${id('summary')}" hidden>
