@@ -309,7 +309,8 @@ def apply_person_filter(analysis: Any, overrides: dict[str, str] | None = None) 
         else:
             counts[info["status"] if info["status"] in counts else STATUS_BLANK] += 1
             excluded.append(person)
-    if not isinstance(expected, int) and not zone and not any(p.get("manual_seat") for p in students) and 2 <= len(students) <= 12:
+    if (not isinstance(expected, int) and not zone and not any(p.get("manual_seat") for p in students)
+            and 2 <= len(students) <= 6):
         centers = []
         for p in students:
             box = p.get("anchor_bbox") or {}
