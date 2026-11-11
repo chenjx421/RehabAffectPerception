@@ -2097,7 +2097,16 @@ def create_handler(
                 if parsed.path == f"{DEMO2_API_PREFIX}/admin/schools/review":
                     self._handle_school_review_post(parsed, account)
                     return
-                if parsed.path == f"{DEMO2_API_PREFIX}/assessment/share":
+                if parsed.path == f"{DEMO2_API_PREFIX}/assessment/share/revoke":
+                    self._require_role(account, "school_uploader")
+                    self._require_json_command()
+                    payload = self._read_json(max_bytes=4096)
+                    token = str((payload or {}).get("token") or "")
+                    if not token:
+                        raise Demo2APIError(400, "share_token_required", "缺少分享 token")
+                    removed = self._share_call('revoke', token)
+                    self._send_demo2_json({'ok': True, 'revoked': bool(removed)})
+                elif parsed.path == f"{DEMO2_API_PREFIX}/assessment/share":
                     self._require_role(account, "school_uploader")
                     self._require_json_command()
                     payload = self._read_json(max_bytes=4096)

@@ -151,7 +151,7 @@ def render_assessment(account: dict[str, Any], task: dict[str, Any], student: di
     btn.disabled=true;box.hidden=true;
     fetch('/api/v1/demo2/assessment/share',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{task_id:{task_json},student_id:{student_json}}})}})
       .then(function(r){{return r.json().catch(function(){{return {{}};}}).then(function(j){{if(!r.ok||j.ok===false)throw new Error((j.error&&j.error.message)||'生成失败');return j;}});}})
-      .then(function(j){{var url=location.origin+j.url;box.innerHTML='24 小时只读报告链接：<a href="'+url+'" target="_blank" rel="noopener">'+url+'</a><br><small>拿到链接的人无需登录即可下载 Word 报告；到期自动失效。</small>';box.hidden=false;}})
+      .then(function(j){{var token=j.url.split('/').pop(),url=location.origin+j.url;box.innerHTML='24 小时只读报告链接：<a href="'+url+'" target="_blank" rel="noopener">'+url+'</a> <button type="button" id="revokeShareBtn">撤销链接</button><br><small>拿到链接的人无需登录即可下载 Word 报告；到期自动失效。</small>';box.hidden=false;var rb=document.getElementById('revokeShareBtn');if(rb)rb.onclick=function(){{rb.disabled=true;fetch('/api/v1/demo2/assessment/share/revoke',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{token:token}})}}).then(function(r){{return r.json();}}).then(function(x){{if(!x.ok)throw new Error('撤销失败');box.textContent='链接已撤销，旧链接立即失效。';}}).catch(function(e){{rb.disabled=false;box.textContent=e.message||'撤销失败';}});}};}})
       .catch(function(e){{box.textContent=e.message||'生成失败';box.hidden=false;}})
       .then(function(){{btn.disabled=false;}});
   }});

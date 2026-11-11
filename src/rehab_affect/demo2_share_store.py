@@ -47,6 +47,17 @@ class Demo2ShareStore:
         return {"token": token, "filename": filename, "byte_size": len(body),
                 "expires_at": expires.isoformat(timespec="seconds")}
 
+    def revoke(self, token: str) -> bool:
+        if not token or len(token) > 256:
+            return False
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        with self.records._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self._ensure(db)
+            cur = db.execute("DELETE FROM demo2_shared_reports WHERE token_hash=?", (token_hash,))
+            db.commit()
+            return cur.rowcount > 0
+
     def get(self, token: str) -> tuple[bytes, str]:
         if not token or len(token) > 256:
             raise ShareError(404, "share_not_found")
