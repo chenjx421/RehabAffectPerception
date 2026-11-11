@@ -25,11 +25,16 @@ class Demo2ShareStore:
             filename TEXT NOT NULL,
             body BLOB NOT NULL,
             byte_size INTEGER NOT NULL,
+            role TEXT NOT NULL DEFAULT 'parent',
             created_at TEXT NOT NULL,
             expires_at TEXT NOT NULL
         )""")
+        columns = {row[1] for row in db.execute("PRAGMA table_info(demo2_shared_reports)").fetchall()}
+        if "role" not in columns:
+            db.execute("ALTER TABLE demo2_shared_reports ADD COLUMN role TEXT NOT NULL DEFAULT 'parent'")
 
-    def create(self, account_id: str, filename: str, body: bytes, hours: int = 24) -> dict[str, Any]:
+    def create(self, account_id: str, filename: str, body: bytes, hours: int = 24, role: str = "parent") -> dict[str, Any]:
+        role = role if role in {"parent", "manager"} else "parent"
         token = secrets.token_urlsafe(32)
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         now = datetime.now().astimezone()
@@ -39,12 +44,12 @@ class Demo2ShareStore:
             self._ensure(db)
             db.execute("DELETE FROM demo2_shared_reports WHERE expires_at < ?", (now.isoformat(timespec="seconds"),))
             db.execute("""INSERT INTO demo2_shared_reports
-                (token_hash, account_id, filename, body, byte_size, created_at, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                       (token_hash, account_id, filename, body, len(body),
+                (token_hash, account_id, filename, body, byte_size, role, created_at, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                       (token_hash, account_id, filename, body, len(body), role,
                         now.isoformat(timespec="seconds"), expires.isoformat(timespec="seconds")))
             db.commit()
-        return {"token": token, "filename": filename, "byte_size": len(body),
+        return {"token": token, "filename": filename, "byte_size": len(body), "role": role,
                 "expires_at": expires.isoformat(timespec="seconds")}
 
     def revoke(self, token: str) -> bool:

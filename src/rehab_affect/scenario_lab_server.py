@@ -1658,7 +1658,8 @@ def create_handler(
                     builder = importlib.import_module('.demo2_assessment_report', package=__package__)
                     data = builder.build_assessment_report(task=task, student=student, plan=plan,
                                                            lesson_goals=lesson_goals, records=records, overview=overview)
-                    created = self._share_call('create', _account_id(account), f"student-assessment-{student_id[:8]}.docx", data, 24)
+                    role = str((payload or {}).get('role') or 'parent')
+                    created = self._share_call('create', _account_id(account), f"student-assessment-{student_id[:8]}.docx", data, 24, role)
                     self._send_demo2_json({'ok': True, 'url': '/share/report/' + created['token'],
                                            'expires_at': created['expires_at']}, status=201)
                 elif parsed.path == f"{DEMO2_API_PREFIX}/course-overview":
