@@ -86,6 +86,38 @@ def _restore_check(backup: Path) -> dict:
             return {"ok": False, "error": type(exc).__name__}
 
 
+def _pull_backup(remote: str, remote_dir: str, local: Path, keep: int) -> dict:
+    """Pull cloud backups to an operator-controlled offsite folder."""
+    import subprocess
+    local.mkdir(parents=True, exist_ok=True)
+    source = f"{remote}:{remote_dir.rstrip('/')}/"
+    completed = subprocess.run(["rsync", "-az", "--rsync-path=sudo -n rsync", "--include=rehab_affect_demo2_*.sqlite3.gz",
+                                "--include=rehab_affect_demo2_*.json", "--exclude=*", source, str(local)],
+                               capture_output=True, text=True, timeout=180)
+    if completed.returncode != 0:
+        return {"ok": False, "error": "rsync_failed", "stderr": completed.stderr[-300:]}
+    files = sorted(local.glob("rehab_affect_demo2_*.sqlite3.gz"), key=lambda p: p.stat().st_mtime, reverse=True)
+    removed = []
+    for old in files[max(1, keep):]:
+        old.unlink(missing_ok=True)
+        old.with_suffix("").with_suffix(".json").unlink(missing_ok=True)
+        removed.append(old.name)
+    return {"ok": bool(files), "local": str(local), "latest": files[0].name if files else "",
+            "count": len(files), "removed": removed}
+
+
+def _queue_status(db: Path) -> dict:
+    with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
+        try:
+            rows = conn.execute("SELECT analysis_status, count(*) FROM video_analysis_tasks GROUP BY analysis_status").fetchall()
+        except sqlite3.Error:
+            rows = []
+    counts = {str(status): int(count) for status, count in rows}
+    blocked = sum(count for status, count in counts.items() if status in {"failed", "error"})
+    return {"counts": counts, "queued": counts.get("queued", 0), "processing": counts.get("processing", 0),
+            "ready": counts.get("evidence_ready", 0), "failed": blocked, "ok": blocked == 0}
+
+
 def _stages(db: Path, today: str) -> dict:
     from datetime import date, timedelta
     try:
@@ -183,6 +215,13 @@ def main() -> int:
     h.add_argument("--url", default="http://127.0.0.1:9184/demo2/login")
     h.add_argument("--db", type=Path, required=True)
     h.add_argument("--min-free-gb", type=float, default=5.0)
+    q = sub.add_parser("queue-status")
+    q.add_argument("--db", type=Path, required=True)
+    pb = sub.add_parser("pull-backup")
+    pb.add_argument("--remote", default="rehab-cloud")
+    pb.add_argument("--remote-dir", default="/var/lib/rehabaffect/cloud_backups/daily")
+    pb.add_argument("--local", type=Path, default=Path.home() / "Downloads" / "WeGlow_cloud_backup")
+    pb.add_argument("--keep", type=int, default=3)
     st = sub.add_parser("stages")
     st.add_argument("--db", type=Path, required=True)
     st.add_argument("--today", default="")
@@ -198,6 +237,14 @@ def main() -> int:
     args = parser.parse_args()
     if args.command == "backup":
         print(json.dumps(_backup(args.db, args.out, max(1, args.keep), args.dry_run), ensure_ascii=False))
+    elif args.command == "queue-status":
+        result = _queue_status(args.db)
+        print(json.dumps(result, ensure_ascii=False))
+        return 0 if result["ok"] else 1
+    elif args.command == "pull-backup":
+        result = _pull_backup(args.remote, args.remote_dir, args.local, max(1, args.keep))
+        print(json.dumps(result, ensure_ascii=False))
+        return 0 if result["ok"] else 1
     elif args.command == "stages":
         print(json.dumps(_stages(args.db, args.today), ensure_ascii=False))
     elif args.command == "restore-check":
