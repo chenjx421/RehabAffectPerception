@@ -528,18 +528,55 @@ def _tesseract_info() -> tuple[str, str] | None:
     return None
 
 
+@lru_cache(maxsize=1)
+def _rapidocr_engine():
+    try:
+        from rapidocr_onnxruntime import RapidOCR
+        return RapidOCR()
+    except Exception:
+        return None
+
+
+def _rapidocr_available() -> bool:
+    try:
+        import rapidocr_onnxruntime  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
 def ocr_available() -> bool:
-    return _tesseract_info() is not None
+    return _tesseract_info() is not None or _rapidocr_available()
 
 
 def reset_ocr_cache() -> None:
     _tesseract_info.cache_clear()
+    _rapidocr_engine.cache_clear()
+
+
+def _rapidocr_page(page) -> str:
+    engine = _rapidocr_engine()
+    if engine is None:
+        return ""
+    try:
+        import numpy as np
+        image = page.to_image(resolution=220).original.convert("RGB")
+        result, _ = engine(np.asarray(image))
+    except Exception:
+        return ""
+    lines = []
+    for item in result or []:
+        if isinstance(item, (list, tuple)) and len(item) >= 2:
+            text = str(item[1] or "").strip()
+            if text:
+                lines.append(text)
+    return "\n".join(lines)
 
 
 def _ocr_page(page) -> str:
     info = _tesseract_info()
     if info is None:
-        return ""
+        return _rapidocr_page(page)
     binary, langs = info
     with tempfile.TemporaryDirectory(prefix="rx-ocr-") as folder:
         image_path = Path(folder) / "page.png"
@@ -557,7 +594,8 @@ def _ocr_page(page) -> str:
                   r"(?<=[\u4e00-\u9fff\d])[ \t]+(?=[\u4e00-\u9fff])", "", text)
     # A leading "1." is commonly read as "|." or "l.".
     text = re.sub(r"(?m)^[ \t]*[|lI][ \t]*[.．、](?=[ \t]*[\u4e00-\u9fff])", "1.", text)
-    return re.sub(r"(?<=[\u4e00-\u9fff])[ \t]*:[ \t]*", "：", text)
+    text = re.sub(r"(?<=[\u4e00-\u9fff])[ \t]*:[ \t]*", "：", text)
+    return text or _rapidocr_page(page)
 
 
 class _Blocks:
