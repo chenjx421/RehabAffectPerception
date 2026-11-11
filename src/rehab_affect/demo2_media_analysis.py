@@ -517,6 +517,9 @@ def process_video_task(
         meta = _probe_media(ffprobe, source, stop_event)
         config = task.get("processing_config") if isinstance(task.get("processing_config"), dict) else {}
         meta["manual_seats"] = config.get("manual_seats") if isinstance(config.get("manual_seats"), list) else []
+        meta["student_zone"] = config.get("student_zone") if isinstance(config.get("student_zone"), dict) else None
+        expected = config.get("expected_students")
+        meta["expected_students"] = expected if isinstance(expected, int) and 1 <= expected <= 30 else None
         config = task.get("processing_config", {})
         if not isinstance(config, dict):
             raise MediaAnalysisError("invalid_task", "Processing configuration must be an object.")
@@ -725,7 +728,11 @@ def _build_simple_student_analysis(
                 "window_sec": SIMPLE_STATE_WINDOW_SEC,
                 "message": "视频证据已生成，但学生状态分析模块未加载。",
             }
-    return build_analysis(segments, run, meta, stop_event=stop_event)
+    analysis = build_analysis(segments, run, meta, stop_event=stop_event)
+    if isinstance(analysis, dict):
+        analysis["student_zone"] = meta.get("student_zone")
+        analysis["expected_students"] = meta.get("expected_students")
+    return analysis
 
 
 def _audio_evidence(

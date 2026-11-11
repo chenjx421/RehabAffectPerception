@@ -627,6 +627,73 @@ class Demo2IdentityStore:
                         {"seat_count": len(seats), "configuration": revision[:16]})
         return {"task_id": task_id, "status": "queued", "seats": seats}
 
+    def save_student_zone(self, token, payload):
+        """One teacher-confirmed student table/zone; zero-shot adult/background filter."""
+        account = self._account(token, write=True)
+        if not isinstance(payload, dict) or set(payload) != {"task_id", "zone"}:
+            raise IdentityError(400, "invalid_student_zone", "请提交任务和学生区域")
+        task_id = _field(payload.get("task_id"), 120, required=True)
+        item = payload.get("zone")
+        if not isinstance(item, dict):
+            raise IdentityError(400, "invalid_student_zone", "学生区域格式无效")
+        box = {key: item.get(key) for key in ("x", "y", "width", "height")}
+        if any(type(v) not in (int, float) or not math.isfinite(v) for v in box.values()):
+            raise IdentityError(400, "invalid_student_zone", "学生区域坐标无效")
+        if (box["x"] < 0 or box["y"] < 0 or box["width"] <= 0 or box["height"] <= 0
+                or box["x"] + box["width"] > 1 or box["y"] + box["height"] > 1):
+            raise IdentityError(400, "invalid_student_zone", "学生区域必须位于画面内")
+        zone = {key: float(value) for key, value in box.items()}
+        with self.record_store._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            task = self._task(db, account, task_id)
+            self._require_media(task)
+            if task.get("analysis_status") == "processing":
+                raise IdentityError(409, "analysis_running", "视频正在处理中，请稍后再试")
+            config = json.loads(task.get("processing_config_json") or "{}")
+            if not isinstance(config, dict):
+                config = {}
+            config["student_zone"] = zone
+            encoded = json.dumps(config, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+            revision = hashlib.sha256(encoded.encode()).hexdigest()
+            db.execute("""UPDATE video_analysis_tasks SET processing_config_json=?, processing_config_hash=?,
+                analysis_status='queued', processing_stage='queued', processing_progress=0,
+                processing_error_json='{}', processing_claim_id='', updated_at=? WHERE task_id=?""",
+                (encoded, revision, _iso(), task_id))
+            self._audit(db, account, "student_zone_queued", task_id,
+                        {"zone": zone, "configuration": revision[:16]})
+        return {"task_id": task_id, "status": "queued", "zone": zone}
+
+    def save_expected_students(self, token, payload):
+        account = self._account(token, write=True)
+        if not isinstance(payload, dict) or set(payload) != {"task_id", "expected_students"}:
+            raise IdentityError(400, "invalid_expected_students", "请提交任务和本课学生数")
+        task_id = _field(payload.get("task_id"), 120, required=True)
+        try:
+            expected = int(payload.get("expected_students"))
+        except (TypeError, ValueError):
+            raise IdentityError(400, "invalid_expected_students", "学生数必须是整数") from None
+        if not 1 <= expected <= 30:
+            raise IdentityError(400, "invalid_expected_students", "学生数必须在 1–30 之间")
+        with self.record_store._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            task = self._task(db, account, task_id)
+            self._require_media(task)
+            if task.get("analysis_status") == "processing":
+                raise IdentityError(409, "analysis_running", "视频正在处理中，请稍后再试")
+            config = json.loads(task.get("processing_config_json") or "{}")
+            if not isinstance(config, dict):
+                config = {}
+            config["expected_students"] = expected
+            encoded = json.dumps(config, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+            revision = hashlib.sha256(encoded.encode()).hexdigest()
+            db.execute("""UPDATE video_analysis_tasks SET processing_config_json=?, processing_config_hash=?,
+                analysis_status='queued', processing_stage='queued', processing_progress=0,
+                processing_error_json='{}', processing_claim_id='', updated_at=? WHERE task_id=?""",
+                (encoded, revision, _iso(), task_id))
+            self._audit(db, account, "expected_students_queued", task_id,
+                        {"expected_students": expected, "configuration": revision[:16]})
+        return {"task_id": task_id, "status": "queued", "expected_students": expected}
+
     def save_binding(self, token, payload):
         return self._logged("identity_confirm", self._save_binding, token, payload)
 

@@ -47,6 +47,8 @@ DECISION_OPERATIONS = {"restore": "person_restore", "include": "person_include",
 MIN_EXPECTED_STUDENTS = 3
 
 REASON_LABELS = {
+    "outside_expected_cluster": "不在本课学生聚类内",
+    "outside_student_zone": "不在教师框选的学生区域",
     "few_face_frames": "有效人脸帧过少",
     "low_face_ratio": "有效人脸帧占比过低",
     "low_confidence": "人脸置信度偏低",
@@ -262,6 +264,8 @@ def apply_person_filter(analysis: Any, overrides: dict[str, str] | None = None) 
     if not has_filter(analysis):
         return analysis
     result = deepcopy(analysis)
+    zone = result.get("student_zone") if isinstance(result.get("student_zone"), dict) else None
+    expected = result.get("expected_students")
     overrides = overrides or {}
     students, excluded = [], []
     counts = {STATUS_TEACHER: 0, STATUS_BLANK: 0, STATUS_EXCLUDED: 0}
@@ -284,6 +288,17 @@ def apply_person_filter(analysis: Any, overrides: dict[str, str] | None = None) 
         if info["manual"]:
             reasons.append({STATUS_TEACHER: "manual_teacher", STATUS_EXCLUDED: "manual_excluded"}
                            .get(info["status"], "manual_restore"))
+        if zone and not person.get("manual_seat") and info["status"] == STATUS_STUDENT:
+            box = person.get("anchor_bbox") or {}
+            cx = float(box.get("x", 0)) + float(box.get("width", 0)) / 2
+            cy = float(box.get("y", 0)) + float(box.get("height", 0)) / 2
+            inside = (float(zone.get("x", 0)) <= cx <= float(zone.get("x", 0)) + float(zone.get("width", 0))
+                      and float(zone.get("y", 0)) <= cy <= float(zone.get("y", 0)) + float(zone.get("height", 0)))
+            if not inside:
+                info["auto_status"] = STATUS_TEACHER
+                info["status"] = STATUS_TEACHER
+                reasons.append("outside_student_zone")
+                info["reasons"] = reasons
         info["included"] = info["status"] == STATUS_STUDENT
         info["reasons"] = reasons
         info["reason_labels"] = [REASON_LABELS.get(r, r) for r in reasons]
@@ -294,6 +309,42 @@ def apply_person_filter(analysis: Any, overrides: dict[str, str] | None = None) 
         else:
             counts[info["status"] if info["status"] in counts else STATUS_BLANK] += 1
             excluded.append(person)
+    if isinstance(expected, int) and expected > 0 and len(students) > expected and not any(p.get("manual_seat") for p in students):
+        centers = []
+        for p in students:
+            box = p.get("anchor_bbox") or {}
+            centers.append((float(box.get("x", 0)) + float(box.get("width", 0)) / 2,
+                            float(box.get("y", 0)) + float(box.get("height", 0)) / 2))
+        # Choose the tightest spatial cluster of the expected size; background
+        # adults and the standing teacher are usually farther from the seated group.
+        best = None
+        best_score = None
+        import itertools
+        for combo in itertools.combinations(range(len(students)), expected):
+            pts = [centers[i] for i in combo]
+            score = 0.0
+            for a, b in itertools.combinations(pts, 2):
+                score += (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2
+            if best_score is None or score < best_score:
+                best_score, best = score, set(combo)
+        if best is not None:
+            kept = []
+            for i, person in enumerate(students):
+                if i in best:
+                    kept.append(person)
+                else:
+                    info = person.setdefault("person_filter", {})
+                    info["auto_status"] = STATUS_TEACHER
+                    info["status"] = STATUS_TEACHER
+                    info["included"] = False
+                    reasons = list(info.get("reasons") or [])
+                    reasons.append("outside_expected_cluster")
+                    info["reasons"] = reasons
+                    info["reason_labels"] = [REASON_LABELS.get(r, r) for r in reasons]
+                    info["status_zh"] = STATUS_LABELS.get(STATUS_TEACHER, "疑似老师")
+                    counts[STATUS_TEACHER] += 1
+                    excluded.append(person)
+            students = kept
     for number, person in enumerate(students, 1):
         person["display_name"] = f"学生 {number}"
         person["student_number"] = number

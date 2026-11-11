@@ -3736,6 +3736,57 @@ def create_handler(
                                                     report=str(report_id)[:8] if report_id else None)
             return {"report_regenerated": True, "report_id": report_id}
 
+        def _apply_plan_aware_overview(self, account: Any, task_id: str, workspace: dict[str, Any],
+                                      overview: dict[str, Any]) -> dict[str, Any]:
+            """Replace only the formal conclusion when every student has reviewed short-goal evidence."""
+            if not isinstance(overview, dict) or not isinstance(overview.get('conclusion'), dict):
+                return overview
+            conclusion = overview['conclusion']
+            formula = conclusion.get('formula') if isinstance(conclusion.get('formula'), dict) else {}
+            course_total = formula.get('course_total')
+            if not isinstance(course_total, (int, float)) or not conclusion.get('available'):
+                return overview
+            try:
+                lesson_goals = []
+                course_task = workspace.get('course_task') if isinstance(workspace.get('course_task'), dict) else {}
+                lesson_goals = [g for g in (course_task.get('goals') or []) if isinstance(g, dict)]
+                students = [s for s in (workspace.get('people') or workspace.get('students') or []) if s.get('student_id')]
+                records = [r for r in (workspace.get('records') or []) if isinstance(r, dict)]
+                plan_scores = []
+                for student in students:
+                    sid = str(student.get('student_id'))
+                    plans = self._goal_plan_call('list_for_student', _account_id(account), sid)
+                    plan = next((p for p in plans if p.get('status') == 'confirmed'), plans[0] if plans else None)
+                    goals = (plan or {}).get('goals') or []
+                    mapped = {str(g.get('lesson_goal_id')) for g in goals if g.get('lesson_goal_id')}
+                    if not mapped or not any(str(g.get('goal_code')) in mapped for g in lesson_goals):
+                        continue
+                    reviewed = [r for r in records if str(r.get('student_id')) == sid
+                                and str(r.get('task_id')) == task_id and r.get('reviewed')]
+                    vals = [((r.get('assessment') or {}).get('overall_score') if isinstance(r.get('assessment'), dict) and (r.get('assessment') or {}).get('overall_score') is not None else (r.get('assessment') or {}).get('score')) for r in reviewed if isinstance(r.get('assessment'), dict)]
+                    vals = [v for v in vals if isinstance(v, (int, float))]
+                    if vals:
+                        plan_scores.append(sum(vals) / len(vals) * 10)
+                if len(students) != len(plan_scores) or not plan_scores:
+                    overview['plan_aware'] = {'complete': False, 'evidenced_students': len(plan_scores),
+                                              'student_count': len(students)}
+                    return overview
+                plan_mean = round(sum(plan_scores) / len(plan_scores), 1)
+                from .assessment_rubric import course_conclusion_score
+                updated = course_conclusion_score(course_total, plan_mean)
+                updated['text'] = ('结论分 = 课程评价总分 ' + format(float(course_total), 'g') + ' × 0.6 + 学生短期目标达成度均值 '
+                                   + format(plan_mean, 'g') + ' × 0.4 = ' + format(updated['course_part'], 'g') + ' + '
+                                   + format(updated['attainment_part'], 'g') + ' = ' + format(updated['score'], 'g'))
+                conclusion.update(updated)
+                conclusion['plan_aware'] = True
+                conclusion['plan_mean'] = plan_mean
+                conclusion['plan_complete'] = True
+                overview['plan_aware'] = {'complete': True, 'evidenced_students': len(plan_scores),
+                                          'student_count': len(students), 'plan_mean': plan_mean}
+            except Exception:
+                overview['plan_aware'] = {'complete': False, 'error': True}
+            return overview
+
         def _course_overview(self, account: Any, task_id: str) -> dict[str, Any]:
             """GET /course-overview: teachers get the live lesson overview, company admins the redacted snapshot."""
             overview_module = importlib.import_module(".demo2_course_overview", package=__package__)
@@ -3762,6 +3813,7 @@ def create_handler(
             except Demo2APIError as exc:
                 saved = {'saved': False, 'code': exc.code}
             overview = workspace.get('course_overview') or {}
+            overview = self._apply_plan_aware_overview(account, task_id, workspace, overview)
             conclusion = overview.get('conclusion') or {}
             report_debug_event(student_store, "course_overview_view", "ok" if overview.get('version') else "unavailable",
                                role="teacher", account_id=_account_id(account), task_id=task_id,
@@ -3921,6 +3973,8 @@ def create_handler(
                 f"{DEMO2_IDENTITY_API_PREFIX}/students": ("create_student", "student"),
                 f"{DEMO2_IDENTITY_API_PREFIX}/bindings": ("save_binding", "binding"),
                 f"{DEMO2_IDENTITY_API_PREFIX}/manual-seats": ("save_manual_seats", "manual_seats"),
+                f"{DEMO2_IDENTITY_API_PREFIX}/student-zone": ("save_student_zone", "zone"),
+                f"{DEMO2_IDENTITY_API_PREFIX}/expected-students": ("save_expected_students", "expected_students"),
                 f"{DEMO2_IDENTITY_API_PREFIX}/bindings/revoke": ("revoke_binding", "binding"),
                 f"{DEMO2_IDENTITY_API_PREFIX}/task-school": ("confirm_task_school", "workspace"),
                 f"{DEMO2_IDENTITY_API_PREFIX}/debug-event": ("client_debug_event", "event"),
