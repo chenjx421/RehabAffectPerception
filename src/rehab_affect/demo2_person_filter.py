@@ -309,6 +309,35 @@ def apply_person_filter(analysis: Any, overrides: dict[str, str] | None = None) 
         else:
             counts[info["status"] if info["status"] in counts else STATUS_BLANK] += 1
             excluded.append(person)
+    if not isinstance(expected, int) and not zone and not any(p.get("manual_seat") for p in students) and 2 <= len(students) <= 12:
+        centers = []
+        for p in students:
+            box = p.get("anchor_bbox") or {}
+            centers.append((float(box.get("x", 0)) + float(box.get("width", 0)) / 2,
+                            float(box.get("y", 0)) + float(box.get("height", 0)) / 2))
+        seen = set()
+        groups = []
+        for i in range(len(centers)):
+            if i in seen:
+                continue
+            stack = [i]
+            seen.add(i)
+            group = []
+            while stack:
+                current = stack.pop()
+                group.append(current)
+                for j in range(len(centers)):
+                    if j in seen:
+                        continue
+                    dx = centers[current][0] - centers[j][0]
+                    dy = centers[current][1] - centers[j][1]
+                    if dx * dx + dy * dy <= 0.055 * 0.055:
+                        seen.add(j)
+                        stack.append(j)
+            groups.append(group)
+        largest = max(groups, key=len) if groups else []
+        if 2 <= len(largest) < len(students):
+            expected = len(largest)
     if isinstance(expected, int) and expected > 0 and len(students) > expected and not any(p.get("manual_seat") for p in students):
         centers = []
         for p in students:
