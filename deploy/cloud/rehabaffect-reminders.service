@@ -1,0 +1,16 @@
+[Unit]
+Description=WeGlow 1/2/4/8-week stage reminder webhook
+After=rehabaffect-app.service
+ConditionPathExists=/var/lib/rehabaffect/seewo_demo2/rehab_affect_demo2.sqlite3
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+EnvironmentFile=-/etc/rehabaffect/cloud.env
+ExecStart=/opt/rehabaffect/.venv/bin/python /opt/rehabaffect/scripts/stage_notify.py --db /var/lib/rehabaffect/seewo_demo2/rehab_affect_demo2.sqlite3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/var/lib/rehabaffect
