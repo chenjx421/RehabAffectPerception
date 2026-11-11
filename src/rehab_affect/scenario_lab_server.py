@@ -1530,7 +1530,11 @@ def create_handler(
                         workspace = self._measurement_call('workspace', self._session_cookie_token())
                         if not any(item.get('student_id') == sid for item in workspace.get('students') or []):
                             raise Demo2APIError(403, 'student_forbidden', '该学生不在当前学校名册')
-                        plan = self._goal_plan_call('get', _account_id(account), sid, subject)
+                        if subject:
+                            plan = self._goal_plan_call('get', _account_id(account), sid, subject)
+                        else:
+                            plans = self._goal_plan_call('list_for_student', _account_id(account), sid)
+                            plan = plans[0] if plans else None
                         self._send_demo2_json({'ok': True, 'plan': plan})
                 elif parsed.path == f"{DEMO2_API_PREFIX}/measurements/completeness":
                     self._require_role(account, 'school_uploader')

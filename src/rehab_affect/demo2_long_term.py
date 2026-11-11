@@ -89,15 +89,16 @@ def render_long_term(account, token: str, student_id: str, workspace: dict, iep:
 </section>
 <div class="iep-banner {tone}"><strong>{_e(label)}{_e(version)}</strong><span>{_e(note)}</span>
 <a class="button quiet" href="/demo2/dossier?student_id={_e(student_id)}">管理 IEP 与授权</a></div>
+<section class="lt-goal-plan" id="ltGoalPlan" hidden><div class="lt-goal-head"><strong>长期目标与短期目标</strong><a class="button quiet" href="/demo2/goal-plan?student_id={_e(student_id)}">编辑目标拆解</a></div><div id="ltGoalBody"></div></section>
 <section class="rx-kpi-grid">{cards}</section>
 <p class="lt-note">长期观测只汇总教师复核记录，不按视频出现次数推断能力，不做跨学生比较。没有当前 IEP 的记录不能生成正式报告；IEP 更新保留历史版本。</p>
 <h2>课程时间轴</h2>
 <div class="lt-timeline">{''.join(timeline) if timeline else empty}</div>
 </main>'''
-    return _shell(account, body)
+    return _shell(account, body, student_id)
 
 
-def _shell(account, body: str) -> str:
+def _shell(account, body: str, student_id: str = "") -> str:
     header = teacher_header("measurement", account, page="measurement")
     return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>长期观测 · WeGlow</title><style>{_COMMON_STYLE}{_WORKSPACE_STYLE}
@@ -109,10 +110,24 @@ def _shell(account, body: str) -> str:
 .eyebrow{{font-size:11px;letter-spacing:.12em;color:var(--blue);font-weight:800}}
 .iep-banner{{display:flex;gap:12px;align-items:center;flex-wrap:wrap;border-left:4px solid var(--line);background:#fff;padding:12px 16px;border-radius:8px;margin:16px 0}}
 .iep-banner.ok{{border-color:#1d9b70;background:#eef9f3}}.iep-banner.warn{{border-color:#c98a1b;background:#fff8ec}}.iep-banner span{{color:var(--muted);font-size:13px}}
+.lt-goal-plan{{background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:14px 0}}.lt-goal-head{{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}}.lt-goal-head strong{{font-size:15px}}.lt-goal-long{{color:#344b60;margin:8px 0}}.lt-goal-list{{margin:6px 0 0;padding-left:18px}}.lt-goal-list li{{margin:4px 0}}.lt-goal-meta{{color:var(--muted);font-size:12px}}
 .rx-kpi-grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0}}.rx-kpi{{background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px 16px}}.rx-kpi-label{{color:var(--muted);font-size:12px}}.rx-kpi-value{{display:block;font-size:26px;line-height:1.2;margin-top:4px}}
 .lt-note{{color:var(--muted);font-size:12px;line-height:1.7;border-left:3px solid var(--blue);padding-left:12px}}
 .lt-lesson{{background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:10px 0}}.lt-lesson header{{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:8px}}.lt-lesson header span{{color:var(--muted)}}.lt-lesson header a{{margin-left:auto}}
 .lt-record{{padding:8px 0;border-bottom:1px dashed var(--line)}}.lt-record:last-child{{border-bottom:0}}.lt-meta{{color:var(--muted);font-size:12px;margin-top:3px}}.lt-dims{{display:flex;gap:14px;flex-wrap:wrap;margin-top:5px;font-size:12px}}.lt-dims span b{{color:var(--muted);font-weight:600}}
 .empty{{background:#fff;border:1px solid var(--line);border-radius:8px;padding:24px;text-align:center}}.button{{display:inline-block;border:1px solid var(--line);background:#fff;color:var(--blue);padding:8px 14px;border-radius:6px;text-decoration:none;font-size:13px}}.button.quiet{{background:#fff}}
 @media(max-width:720px){{.rx-kpi-grid{{grid-template-columns:1fr}}}}
-</style>{UI_KIT_STYLE}</head><body>{header}{body}{UI_KIT_SCRIPT}</body></html>'''
+</style>{UI_KIT_STYLE}</head><body>{header}{body}{UI_KIT_SCRIPT}<script>
+(function(){{
+  var box=document.getElementById('ltGoalPlan'),body=document.getElementById('ltGoalBody');
+  if(!box||!body)return;
+  fetch('/api/v1/demo2/goal-plans?student_id='+encodeURIComponent('{_e(student_id)}'),{{cache:'no-store',credentials:'same-origin'}})
+    .then(function(r){{return r.json();}}).then(function(j){{
+      var plan=j.plan;if(!plan)return;
+      var goals=(plan.goals||[]).map(function(g){{return '<li>'+esc(g.goal||'')+(g.lesson_goal_id?' <span class="lt-goal-meta">→ '+esc(g.lesson_goal_id)+'</span>':'')+'</li>';}}).join('');
+      body.innerHTML='<p class="lt-goal-long"><strong>长期：</strong>'+esc(plan.long_term||'')+'</p><ul class="lt-goal-list">'+(goals||'<li>尚未填写短期目标</li>')+'</ul><p class="lt-goal-meta">状态：'+esc(plan.status==='confirmed'?'已确认':'草案')+' · '+esc(plan.subject||'')+'</p>';
+      box.hidden=false;
+    }}).catch(function(){{}});
+  function esc(x){{return String(x==null?'':x).replace(/[&<>"']/g,function(c){{return {{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c];}});}}
+}})();
+</script></body></html>'''
