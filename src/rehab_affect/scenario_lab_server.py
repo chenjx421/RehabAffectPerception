@@ -2159,6 +2159,14 @@ def create_handler(
                                                duration_ms=(time.monotonic() - parse_started) * 1000)
                     self._send_demo2_json({"ok": True, "result": parse_result})
                     return
+                if parsed.path == f"{DEMO2_API_PREFIX}/goal-plans/owner-accept":
+                    self._require_role(account, 'school_uploader')
+                    self._require_json_command()
+                    payload = self._read_json(max_bytes=4096)
+                    plan_id = str((payload or {}).get('plan_id') or '')
+                    if not plan_id:
+                        raise Demo2APIError(400, 'plan_required', '缺少目标草案')
+                    self._send_demo2_json({'ok': True, **self._goal_plan_call('owner_accept', _account_id(account), plan_id)})
                 if parsed.path == f"{DEMO2_API_PREFIX}/goal-plans":
                     self._require_role(account, 'school_uploader')
                     self._require_json_command()

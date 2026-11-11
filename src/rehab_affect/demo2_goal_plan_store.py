@@ -68,6 +68,11 @@ class Demo2GoalPlanStore:
             UNIQUE(account_id, student_id, subject)
         )""")
         db.execute("CREATE INDEX IF NOT EXISTS idx_demo2_goal_plans_owner ON demo2_goal_plans(account_id, student_id)")
+        db.execute("""CREATE TABLE IF NOT EXISTS demo2_goal_plan_owner_acceptance (
+            plan_id TEXT PRIMARY KEY,
+            account_id TEXT NOT NULL,
+            accepted_at TEXT NOT NULL
+        )""")
 
     @staticmethod
     def _public(row: Any) -> dict[str, Any]:
@@ -82,6 +87,27 @@ class Demo2GoalPlanStore:
             "created_at": row["created_at"], "updated_at": row["updated_at"],
             "confirmed_at": row["confirmed_at"],
         }
+
+    def owner_accept(self, account_id: str, plan_id: str) -> dict[str, Any]:
+        with self.records._connect() as db:
+            self._ensure(db)
+            row = db.execute("SELECT plan_id FROM demo2_goal_plans WHERE plan_id=? AND account_id=?",
+                             (plan_id, account_id)).fetchone()
+            if row is None:
+                raise GoalPlanError(404, "goal_plan_not_found", "目标草案不存在")
+            accepted = _now()
+            db.execute("""INSERT INTO demo2_goal_plan_owner_acceptance(plan_id, account_id, accepted_at)
+                VALUES(?,?,?) ON CONFLICT(plan_id) DO UPDATE SET accepted_at=excluded.accepted_at,
+                account_id=excluded.account_id""", (plan_id, account_id, accepted))
+            db.commit()
+        return {"plan_id": plan_id, "owner_accepted_at": accepted}
+
+    def owner_accepted(self, plan_id: str) -> str:
+        with self.records._connect() as db:
+            self._ensure(db)
+            row = db.execute("SELECT accepted_at FROM demo2_goal_plan_owner_acceptance WHERE plan_id=?",
+                             (plan_id,)).fetchone()
+            return str(row["accepted_at"]) if row else ""
 
     def get(self, account_id: str, student_id: str, subject: str) -> dict[str, Any] | None:
         with self.records._connect() as db:

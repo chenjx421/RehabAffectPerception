@@ -187,7 +187,7 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any], lesson_
 <p class="gp-hint" id="taskNote">{task_note}</p>
 
 <section class="gp-card" id="resultCard" hidden>
-  <div class="gp-result-head"><div><h2>短期目标草案</h2><p class="lead">每条都应可观察、可计数；不需要的目标直接删除。</p></div><div class="gp-actions"><button class="button" id="addGoalBtn" type="button">新增一条</button><button class="button primary" id="saveBtn" type="button">保存草案</button><button class="button" id="confirmBtn" type="button">教师确认</button><button class="button" id="exportBtn" type="button">导出 JSON</button></div></div>
+  <div class="gp-result-head"><div><h2>短期目标草案</h2><p class="lead">每条都应可观察、可计数；不需要的目标直接删除。</p></div><div class="gp-actions"><button class="button" id="addGoalBtn" type="button">新增一条</button><button class="button primary" id="saveBtn" type="button">保存草案</button><button class="button" id="confirmBtn" type="button">教师确认</button><button class="button" id="ownerAcceptBtn" type="button">产品负责人验收</button><button class="button" id="exportBtn" type="button">导出 JSON</button></div></div>
   <div class="table-wrap"><table class="goal-table"><thead><tr><th>#</th><th>短期目标</th><th>本课目标</th><th>通过标准</th><th>视频/课堂证据</th><th>支持方式</th><th></th></tr></thead><tbody id="goalRows"></tbody></table></div>
   <p class="gp-boundary">边界：本页只做目标拆解草案；IEP 的法定目标、诊断与安置结论仍由学校 IEP 团队确认。</p>
 </section>
@@ -298,7 +298,7 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any], lesson_
     host.querySelectorAll('[data-rm]').forEach(function(btn){{btn.onclick=function(){{rows.splice(+btn.dataset.rm,1);render();}};}});
     setTimeout(loadEvidence,0);
   }}
-  function applyPlan(d){{$('longTerm').value=d.long_term||'';$('baseline').value=d.baseline||'';$('weeksInput').value=d.weeks||4;rows=d.goals||[];$('resultCard').hidden=!rows.length;render();}}
+  function applyPlan(d){{lastPlanId=d.plan_id||'';$('longTerm').value=d.long_term||'';$('baseline').value=d.baseline||'';$('weeksInput').value=d.weeks||4;rows=d.goals||[];$('resultCard').hidden=!rows.length;render();}}
   function loadLocal(){{try{{var raw=localStorage.getItem(storageKey());if(raw){{applyPlan(JSON.parse(raw));return;}}}}catch(e){{}}rows=[];$('resultCard').hidden=true;}}
   function updateAssessmentLink(){{
     var s=selectedStudent(),a=$('assessmentLink'),task=window.GP_TASK_ID||'';
@@ -352,6 +352,7 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any], lesson_
   }}
   $('saveBtn').onclick=function(){{persist('draft',$('saveBtn'));}};
   $('confirmBtn').onclick=function(){{persist('confirmed',$('confirmBtn'));}};
+  $('ownerAcceptBtn').onclick=async function(){{if(!lastPlanId){{$('statusHint').textContent='请先保存目标草案，再由产品负责人验收。';$('statusHint').className='gp-hint status-warn';return;}}$('ownerAcceptBtn').disabled=true;try{{var r=await fetch('/api/v1/demo2/goal-plans/owner-accept',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{plan_id:lastPlanId}})}});var j=await r.json();if(!r.ok||j.ok===false)throw new Error((j.error&&j.error.message)||'验收失败');$('statusHint').textContent='产品负责人已验收：'+j.owner_accepted_at;$('statusHint').className='gp-hint status-ok';}}catch(e){{$('statusHint').textContent=e.message||'验收失败';$('statusHint').className='gp-hint status-warn';}}finally{{$('ownerAcceptBtn').disabled=false;}}}};
   $('exportBtn').onclick=function(){{var b=new Blob([JSON.stringify(payload(),null,2)],{{type:'application/json'}});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='goal-plan.json';a.click();URL.revokeObjectURL(a.href);}};
   $('clearBtn').onclick=function(){{rows=[];$('longTerm').value='';$('baseline').value='';$('resultCard').hidden=true;}};
   refreshGrades();
