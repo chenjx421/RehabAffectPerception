@@ -869,6 +869,7 @@ a{color:var(--rx-primary,#1f5fbf)}
 .home-fact span{color:var(--rx-muted);font-size:11px}.home-fact strong{color:var(--rx-ink);font-size:14px;overflow-wrap:anywhere}
 .home-message{margin:16px 0 0;padding:12px 16px;border-left:3px solid var(--rx-danger);background:var(--rx-danger-soft);color:var(--rx-danger);font-weight:700}
 .home-message[hidden]{display:none}
+.home-due{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;padding:11px 14px;border:1px solid #e7c98e;border-left:4px solid var(--rx-warning);border-radius:var(--rx-radius-md);background:#fff8ea;color:#704b12;font-size:13px}.home-due strong{color:#5c3b06}.home-due[hidden]{display:none}
 .home-next{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding:14px 18px;background:var(--rx-primary-soft);border:1px solid #b9cff0;border-radius:var(--rx-radius-lg)}
 .home-next strong{color:var(--rx-primary-hover);font-size:15px}.home-next p{margin:2px 0 0;color:var(--rx-text)}
 .home-next[hidden]{display:none}
@@ -1009,6 +1010,20 @@ async function load(){
   }finally{clearTimeout(timer);}
 }
 load();
+async function loadDue(){
+  try{
+    const r=await fetch('/api/v1/demo2/goal-plans/due',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
+    if(!r.ok)return;
+    const j=await r.json(),items=Array.isArray(j.due)?j.due:[];
+    if(!items.length)return;
+    const main=document.querySelector('.home-main');if(!main)return;
+    const overdue=items.reduce((m,x)=>Math.max(m,Number(x.days_overdue)||0),0);
+    const box=document.createElement('div');box.className='home-due';box.id='homeDue';
+    box.innerHTML='<span><strong>阶段复测提醒</strong>：'+items.length+' 个阶段已到期，最长逾期 '+overdue+' 天。</span><a class="rx-btn rx-btn-primary" href="/demo2/goal-plan">查看并补测</a>';
+    const welcome=main.querySelector('.home-welcome');if(welcome&&welcome.nextSibling)main.insertBefore(box,welcome.nextSibling);else main.prepend(box);
+  }catch(e){}
+}
+loadDue();
 </script></body></html>'''
 
 
