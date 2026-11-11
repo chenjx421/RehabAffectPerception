@@ -166,7 +166,7 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any], lesson_
     body = f'''<main class="page-shell">
 <section class="gp-head"><div><span class="eyebrow">个别化目标 · 教师工作台</span><h1>长期目标拆短期目标</h1>
 <p class="lead">先把长期目标拆成可教的短期目标，再挂到本节课的视频证据。这里生成的是<strong>规则草案</strong>，必须由特教老师修改并确认，不能自动替代 IEP。</p></div>
-<div class="gp-actions"><a class="button" href="/demo2/long-term?student_id=" id="longTermLink">长期观测</a><a class="button" id="assessmentLink" href="#" hidden>学生综合评估</a></div></section>
+<div class="gp-actions"><a class="button" href="/demo2/long-term?student_id=" id="longTermLink">长期观测</a><a class="button" id="assessmentLink" href="#" hidden>学生综合评估</a><button class="button" id="ownerAcceptBtn" type="button">产品负责人验收</button></div></section>
 
 <div class="gp-due" id="dueBanner" hidden></div>
 <section class="gp-card">
@@ -187,7 +187,7 @@ def render_goal_plan(account: dict[str, Any], workspace: dict[str, Any], lesson_
 <p class="gp-hint" id="taskNote">{task_note}</p>
 
 <section class="gp-card" id="resultCard" hidden>
-  <div class="gp-result-head"><div><h2>短期目标草案</h2><p class="lead">每条都应可观察、可计数；不需要的目标直接删除。</p></div><div class="gp-actions"><button class="button" id="addGoalBtn" type="button">新增一条</button><button class="button primary" id="saveBtn" type="button">保存草案</button><button class="button" id="confirmBtn" type="button">教师确认</button><button class="button" id="ownerAcceptBtn" type="button">产品负责人验收</button><button class="button" id="exportBtn" type="button">导出 JSON</button></div></div>
+  <div class="gp-result-head"><div><h2>短期目标草案</h2><p class="lead">每条都应可观察、可计数；不需要的目标直接删除。</p></div><div class="gp-actions"><button class="button" id="addGoalBtn" type="button">新增一条</button><button class="button primary" id="saveBtn" type="button">保存草案</button><button class="button" id="confirmBtn" type="button">教师确认</button><button class="button" id="exportBtn" type="button">导出 JSON</button></div></div>
   <div class="table-wrap"><table class="goal-table"><thead><tr><th>#</th><th>短期目标</th><th>本课目标</th><th>通过标准</th><th>视频/课堂证据</th><th>支持方式</th><th></th></tr></thead><tbody id="goalRows"></tbody></table></div>
   <p class="gp-boundary">边界：本页只做目标拆解草案；IEP 的法定目标、诊断与安置结论仍由学校 IEP 团队确认。</p>
 </section>
