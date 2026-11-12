@@ -93,6 +93,19 @@ def render_assessment(account: dict[str, Any], task: dict[str, Any], student: di
                 if isinstance(value, (int, float)):
                     points.append(value)
         return len(points), (_score(sum(points) / len(points)) if points else "—")
+    baseline_points = []
+    for record in records:
+        raw = str(record.get("lesson_date") or record.get("updated_at") or "")[:10]
+        try:
+            point_date = date.fromisoformat(raw)
+        except ValueError:
+            continue
+        if point_date <= base_date and record.get("reviewed"):
+            value = (record.get("assessment") or {}).get("score")
+            if isinstance(value, (int, float)):
+                baseline_points.append(value)
+    baseline_text = (f"基线：{base_date.isoformat()} 及以前已有 {len(baseline_points)} 条已复核测量，均分 {_score(sum(baseline_points) / len(baseline_points))}；阶段窗口从目标确认后开始计算。"
+                     if baseline_points else "基线：目标确认前还没有已复核测量；阶段窗口从目标确认后开始计算。")
     stage_cards = []
     for week in (1, 2, 4, 8):
         count, avg = stage_metrics(week)
@@ -134,7 +147,7 @@ def render_assessment(account: dict[str, Any], task: dict[str, Any], student: di
 <section class="as-card"><h2>目标与证据链</h2>
 <p class="as-note">链路：长期目标 → 短期目标 → 本课目标 → 测量 → 视频证据。未关联或未复核时明确显示缺口，不自动补分。</p>
 <div class="as-wrap"><table class="as-table"><thead><tr><th>#</th><th>短期目标</th><th>本课目标</th><th>测量状态</th><th>综合分</th><th>视频证据</th></tr></thead><tbody>{''.join(rows) if rows else '<tr><td colspan="6">尚未生成并确认短期目标。</td></tr>'}</tbody></table></div></section>
-<section class="as-card"><h2>阶段复测排程（草案）</h2><p class="as-note">从目标确认/更新日期起算 1、2、4、8 周；显示该阶段窗口内已复核记录的均分，不把缺失阶段补 0。到期后请在学生测量中补记并复核。</p><div class="as-stages">{stages}</div></section>
+<section class="as-card"><h2>阶段复测排程（草案）</h2><p class="as-note">从目标确认/更新日期起算 1、2、4、8 周；显示该阶段窗口内已复核记录的均分，不把缺失阶段补 0。到期后请在学生测量中补记并复核。</p><p class="as-note">{_e(baseline_text)}</p><div class="as-stages">{stages}</div></section>
 {trend_html}
 <section class="as-card"><h2>课程结论的来源</h2><p class="as-note">课程评价是教师评分；学生短期目标达成来自已映射且已复核的测量。5/5 名学生都有短期目标证据时，课程总览已正式按“课程评价 60% + 短期目标达成 40%”计算；证据不全时保留原口径并标记缺口。</p>
 <p><a class="as-link" href="/demo2/course-overview?task_id={_e(task.get("task_id"))}">打开课程总览</a> · <a class="as-link" href="/demo2/measurement?student_id={_e(student.get("student_id"))}">打开学生测量</a></p></section>
