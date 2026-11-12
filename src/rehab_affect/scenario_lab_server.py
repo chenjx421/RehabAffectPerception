@@ -1623,6 +1623,38 @@ def create_handler(
                         code=(report_saved or {}).get('code'),
                         stale_reasons=(report_saved or {}).get('previous_stale_codes') or [])
                     self._send_demo2_json({'ok': True, 'workspace': workspace, 'report_saved': report_saved})
+                elif parsed.path == f"{DEMO2_API_PREFIX}/plan-analysis/report":
+                    self._require_role(account, "school_uploader")
+                    query = parse_qs(parsed.query, keep_blank_values=True)
+                    task_id = (query.get("task_id") or [""])[0].strip()
+                    student_id = (query.get("student_id") or [""])[0].strip()
+                    if not task_id or not student_id:
+                        raise Demo2APIError(400, "task_student_required", "请提供课堂和学生")
+                    token = self._session_cookie_token()
+                    task = student_store.account_video_task(token, task_id)
+                    workspace = self._measurement_call("workspace", token)
+                    student = next((s for s in workspace.get("students") or [] if s.get("student_id") == student_id), None)
+                    if student is None:
+                        raise Demo2APIError(403, "student_forbidden", "该学生不在当前学校名册")
+                    records = [r for r in workspace.get("records") or [] if r.get("student_id") == student_id]
+                    plans = self._goal_plan_call("list_for_student", _account_id(account), student_id)
+                    plan = plans[0] if plans else None
+                    lesson_goals = []
+                    try:
+                        course = self._course_task_call("for_course", token, task.get("course_id") or "")
+                        current = (course or {}).get("current") or {}
+                        lesson_goals = [g for g in (current.get("goals") or []) if isinstance(g, dict)]
+                    except Exception:
+                        lesson_goals = []
+                    report_task = dict(task)
+                    report_task['lesson_date'] = next((str(r.get('lesson_date') or '') for r in records
+                                                       if str(r.get('task_id') or '') == task_id and r.get('lesson_date')), '')
+                    builder = importlib.import_module('.demo2_plan_report', package=__package__)
+                    data = builder.build_plan_report(task=report_task, student=student, plan=plan,
+                                                     lesson_goals=lesson_goals, records=records)
+                    self._send_text_payload(data, content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                            extra_headers={"Content-Disposition": f'attachment; filename="student-plan-{student_id[:8]}.docx"',
+                                                           "Cache-Control": "no-store, private"})
                 elif parsed.path == f"{DEMO2_API_PREFIX}/assessment/report":
                     self._require_role(account, "school_uploader")
                     query = parse_qs(parsed.query, keep_blank_values=True)
