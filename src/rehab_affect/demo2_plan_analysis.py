@@ -114,6 +114,11 @@ def render_plan_analysis(account: dict[str, Any], task: dict[str, Any], student:
     above = [r for r in rows if isinstance(r.get("score"), (int, float)) and r["score"] >= 6]
     base = _parse((plan or {}).get("confirmed_at") or (plan or {}).get("updated_at") or task.get("lesson_date"))
     today = date.today()
+    elapsed_days = max(0, (today - base).days) if base else 0
+    current_week = 0
+    for week in (1, 2, 4, 8):
+        if elapsed_days >= week * 7:
+            current_week = week
     stages = []
     for week in (1, 2, 4, 8):
         when = (base or today) + timedelta(weeks=week)
@@ -136,8 +141,16 @@ def render_plan_analysis(account: dict[str, Any], task: dict[str, Any], student:
             badge = '<span class="pa-pill bad">低于参考线</span>'
         width = max(0, min(100, (score or 0) * 10))
         diff = "—" if score is None else f"{score - 6:+.1f}"
+        if score is not None and score >= 6:
+            stage_note = "已在本阶段达到 6 分参考线"
+        elif score is not None and current_week >= 4:
+            stage_note = "第 4 周已过仍未达到 6 分参考线，按计划偏差标记为偏慢"
+        elif score is not None:
+            stage_note = f"目标尚未到期（当前第 {current_week} 周），暂不判断超前/落后"
+        else:
+            stage_note = "尚无已复核测量"
         goal_html.append(f'''<div class="pa-goal"><div class="pa-goal-head"><div><strong>G-{index:02d} {_e(item['goal'])}</strong><div class="pa-goal-meta">本课目标：{_e(item['lesson_id'] or '未关联')} · 已复核 {item['reviewed']} 条</div></div>{badge}</div>
-<div class="pa-bar"><i style="width:{width:.1f}%"></i><em></em></div><div class="pa-goal-meta">当前 {_num(score)} / 10，距 6 分参考线 {diff}</div></div>''')
+<div class="pa-bar"><i style="width:{width:.1f}%"></i><em></em></div><div class="pa-goal-meta">当前 {_num(score)} / 10，距 6 分参考线 {diff}</div><div class="pa-goal-meta">{_e(stage_note)}</div></div>''')
 
     # Rule-based plan suggestions; no invented numeric velocity.
     weakest = weak[0] if weak else ("暂无", None)
