@@ -363,6 +363,27 @@ def build_learning_report(*, task: dict[str, Any], student: dict[str, Any], plan
         cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
         cap.style = "Caption"
 
+    # Manager-facing quick answers before the detailed sections.
+    passed = sum(1 for g in goals if g.get("passed"))
+    weak = "尚无四维评分"
+    for record in reviewed:
+        dims = (record.get("assessment") or {}).get("dimensions") or {}
+        values = []
+        for key, label in (("accuracy", "准确"), ("independence", "独立"), ("consistency", "一致"), ("transfer", "迁移")):
+            dim = dims.get(key) or {}
+            if isinstance(dim.get("score"), (int, float)):
+                values.append((float(dim["score"]), label))
+        if values:
+            weak = min(values)[1] + " " + _num(min(values)[0])
+            break
+    doc.add_heading("结论速览", level=1)
+    _table(doc, ["报告问题", "本课结论"], [
+        ["本次学习状态", f"主要状态线索：{metrics.get('dominant_state') if metrics else '未标注'}；稳定参与 {_pct(metrics.get('engaged_ratio')) if metrics else '—'}"],
+        ["是否达成课程目标", f"{passed}/{len(goals)} 条短期目标达到 6 分参考线；学生均分 {_num(student_score)}，课程总览 {_num(class_score)} {grade}"],
+        ["集中度与评分偏差", f"回应信号较低 {_pct(metrics.get('low_response_ratio')) if metrics else '—'}；当前最弱维度：{weak}"],
+        ["IEP 与长期建议", "先补最弱维度，保留未达标目标，4 周复测；详见第 4 部分"],
+    ], widths=[3.8, 12.0])
+
     # Required point 1: learning state.
     doc.add_heading("1. 本次课程的学习状态", level=1)
     if metrics:
