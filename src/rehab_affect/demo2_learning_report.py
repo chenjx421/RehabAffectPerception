@@ -196,6 +196,28 @@ def _student_metrics(records: list[dict[str, Any]], task_id: str) -> dict[str, A
     return metrics
 
 
+def _timeline(records: list[dict[str, Any]]) -> list[tuple[str, str, str]]:
+    rows = []
+    seen = set()
+    for record in records:
+        for segment in record.get("evidence_segments") or []:
+            if not isinstance(segment, dict):
+                continue
+            start = segment.get("start_sec")
+            if not isinstance(start, (int, float)):
+                continue
+            key = round(float(start))
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append((f"{int(float(start)) // 60:02d}:{int(float(start)) % 60:02d}",
+                         str(segment.get("state_label") or segment.get("state") or "未标注"),
+                         _num(segment.get("score"))))
+            if len(rows) >= 6:
+                return rows
+    return rows
+
+
 def _portrait(task: dict[str, Any], records: list[dict[str, Any]]) -> BytesIO | None:
     """Crop the detected student from the anchor frame; no invented identity."""
     try:
@@ -294,6 +316,7 @@ def build_learning_report(*, task: dict[str, Any], student: dict[str, Any], plan
     grade = ((conclusion.get("grade") or {}).get("label") if isinstance(conclusion, dict) else "") or ""
     metrics = _student_metrics(records, task_id)
     iep_rows, iep_manual = _iep_support(task_records)
+    timeline_rows = _timeline(task_records)
     states = Counter(str(r.get("observed_state") or "未标注") for r in task_records)
     state_text = "、".join(f"{k} {v} 条" for k, v in states.most_common(4)) or "暂无状态标注"
 
@@ -351,6 +374,9 @@ def build_learning_report(*, task: dict[str, Any], student: dict[str, Any], plan
     else:
         doc.add_paragraph("本课没有可用的逐人课堂状态窗口；学习状态只按教师测量记录描述，不补推测。")
     doc.add_paragraph(f"测量记录中的学生状态：{state_text}。")
+    if timeline_rows:
+        doc.add_paragraph("课堂切片复核（按原始视频时间）：")
+        _table(doc, ["时间", "状态线索", "片段参考分"], timeline_rows, widths=[2.2, 7.2, 3.0])
     _add_picture(doc, _engagement_chart(metrics) if metrics else None, "图 1  本课课堂状态线索占比")
 
     # Required point 2: goals and score.
@@ -450,20 +476,19 @@ def build_learning_report(*, task: dict[str, Any], student: dict[str, Any], plan
     # Evidence images.
     doc.add_heading("课堂证据帧", level=1)
     chosen = []
-    seen_states = set()
+    seen_times = set()
     for record in task_records:
         segments = record.get("evidence_segments") if isinstance(record.get("evidence_segments"), list) else []
         for segment in segments:
-            state = str(segment.get("state_label") or segment.get("state") or "")
-            if state in seen_states:
-                continue
             sec = segment.get("start_sec")
-            if isinstance(sec, (int, float)):
-                chosen.append((float(sec), f"{state} · {int(float(sec)) // 60:02d}:{int(float(sec)) % 60:02d}"))
-                seen_states.add(state)
-            if len(chosen) >= 2:
+            if not isinstance(sec, (int, float)) or round(float(sec)) in seen_times:
+                continue
+            seen_times.add(round(float(sec)))
+            state = str(segment.get("state_label") or segment.get("state") or "课堂片段")
+            chosen.append((float(sec), f"{state} · {int(float(sec)) // 60:02d}:{int(float(sec)) % 60:02d}"))
+            if len(chosen) >= 3:
                 break
-        if len(chosen) >= 2:
+        if len(chosen) >= 3:
             break
     video_path = str(task.get("file_path") or "")
     for index, (sec, caption) in enumerate(chosen, start=1):
