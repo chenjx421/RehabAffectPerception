@@ -156,17 +156,28 @@ def build_plan_report(*, task: dict[str, Any], student: dict[str, Any], plan: di
         stage_rows.append([f"第 {week} 周", when.isoformat(), "已到期，建议补测" if when <= today else "待复测"])
     _table(doc, ["阶段", "日期", "状态"], stage_rows, widths=[2.2, 4.0, 6.0])
 
-    doc.add_heading("四、教学节奏建议", level=1)
-    weakest = "当前最弱维度"
-    plan_rows = [
-        ["每周", f"围绕“{rows[0]['goal'] if rows else '当前长期目标'}”安排 2 次 10–15 分钟短练；每次只练一个步骤，记录完成/未完成。", "视觉提示、手势、等待时间"],
+    doc.add_heading("四、逐周教学建议（草案）", level=1)
+    first_goal = rows[0]["goal"] if rows else "当前长期目标"
+    second_goal = rows[1]["goal"] if len(rows) > 1 else first_goal
+    weekly_rows = [
+        ["第 1 周", first_goal, "建立基线：教师示范一次，学生完成一个步骤；记录是否需要视觉提示。", "视觉提示、手势、一次等待", "完成/未完成 + 提示等级"],
+        ["第 2 周", first_goal, "重复同一目标，减少一次提示；把“拿”和“放”拆成两个短回合。", "视觉提示、分段指令", "每个回合的记录"],
+        ["第 3 周", second_goal, "加入第二个目标或迁移情境；保持短回合，不一次增加两个新要求。", "手势逐步撤除、同伴示范", "课堂观察 + 1 次测量"],
+        ["第 4 周", "阶段复测", "同目标复测；比较分数与提示等级，决定进阶、维持或降阶。", "同目标、同支持条件", "复测记录 + 教师复核"],
+    ]
+    _table(doc, ["周次", "教学重点", "活动建议", "支持方式", "证据"], weekly_rows,
+           widths=[1.7, 4.2, 6.0, 3.2, 3.0])
+    doc.add_paragraph("每周建议只作为一个短周期，不把 4 周表当成固定教案；学生接受度慢时，重复第 1–2 周，不强行进入第 3 周。")
+
+    doc.add_heading("五、月 / 季度 / 年安排", level=1)
+    rhythm_rows = [
         ["每月", "第 4 周做一次同目标复测；比较分数和提示等级，不只看一次课堂表现。", "同目标复测、教师观察"],
         ["每季度", "回看长期目标和 1/2/4/8 周记录；保留有效支持，删除无效提示，把已达到目标转为维持/迁移。", "阶段复盘、目标调整"],
         ["每学年", f"围绕长期目标“{(plan or {}).get('long_term') or '未填写'}”安排年度主题；年度结论同时看目标、参与线索和教师观察。", "年度复盘、家校沟通"],
     ]
-    _table(doc, ["周期", "建议", "支持/评估"], plan_rows, widths=[2.0, 9.0, 5.0])
+    _table(doc, ["周期", "建议", "支持/评估"], rhythm_rows, widths=[2.0, 9.0, 5.0])
 
-    doc.add_heading("五、边界", level=1)
+    doc.add_heading("六、边界", level=1)
     doc.add_paragraph("本报告由规则草案生成，必须由特教老师结合学生实际修改后使用；不替代正式 IEP、医学或心理诊断。")
     doc.add_paragraph("未复核测量、缺失阶段不按 0 分补齐；不同学生之间不做横向排名。")
     buffer = BytesIO(); doc.save(buffer); return buffer.getvalue()
