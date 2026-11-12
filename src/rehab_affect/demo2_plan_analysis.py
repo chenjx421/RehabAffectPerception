@@ -77,6 +77,32 @@ def _weak_dimensions(records: list[dict[str, Any]]) -> list[tuple[str, float]]:
     return values
 
 
+def _pace_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Only real repeated lesson dates produce a trend; never interpolate."""
+    result = []
+    for item in rows:
+        by_date: dict[str, list[float]] = {}
+        for record in item.get("matched") or []:
+            day = str(record.get("lesson_date") or "")[:10]
+            value = (record.get("assessment") or {}).get("score")
+            if not day or not isinstance(value, (int, float)):
+                continue
+            by_date.setdefault(day, []).append(float(value))
+        points = [(day, round(sum(vals) / len(vals), 1)) for day, vals in sorted(by_date.items())]
+        if len(points) >= 2:
+            first_day, first = points[0]
+            last_day, last = points[-1]
+            try:
+                weeks = max(1 / 7, (date.fromisoformat(last_day) - date.fromisoformat(first_day)).days / 7)
+            except ValueError:
+                weeks = 1
+            slope = (last - first) / weeks
+            projection = ("预计约 " + _num(max(0, (6 - last) / slope), 1) + " 周达到 6 分") if slope > 0 and last < 6 else (
+                "已达到 6 分参考线" if last >= 6 else "趋势未上升，暂不能按线性外推")
+            result.append({"goal": item["goal"], "points": points, "slope": slope, "projection": projection})
+    return result
+
+
 def render_plan_analysis(account: dict[str, Any], task: dict[str, Any], student: dict[str, Any],
                          plan: dict[str, Any] | None, lesson_goals: list[dict[str, Any]],
                          records: list[dict[str, Any]]) -> str:
@@ -92,6 +118,7 @@ def render_plan_analysis(account: dict[str, Any], task: dict[str, Any], student:
     for week in (1, 2, 4, 8):
         when = (base or today) + timedelta(weeks=week)
         stages.append((week, when, when <= today))
+    pace_rows = _pace_rows(rows)
     weak = _weak_dimensions([r for r in records if str(r.get("task_id") or "") == task_id])
     weak_text = "、".join(f"{name} {_num(value)}" for name, value in weak[:2]) if weak else "暂无四维评分"
     task_records = [r for r in records if str(r.get("task_id") or "") == task_id]
@@ -155,6 +182,12 @@ def render_plan_analysis(account: dict[str, Any], task: dict[str, Any], student:
         return '<div class="pa-box"><h3>%s</h3><ul>%s</ul></div>' % (
             _e(title), "".join(f"<li>{_e(item)}</li>" for item in items))
 
+    pace_html = ""
+    for item in pace_rows:
+        points = "；".join(f"{day} {_num(value)}" for day, value in item["points"])
+        pace_html += f'<div class="pa-box"><h3>{_e(item["goal"])}</h3><p>{_e(points)}</p><p>趋势：{_e(_num(item["slope"], 2))} 分/周；{_e(item["projection"])}</p></div>'
+    if not pace_html:
+        pace_html = '<p class="pa-note">当前没有两个以上不同课堂日期的同目标测量，不能计算速度或预测达到时间。补一次阶段复测后再看。</p>'
     body = f'''<main class="page-shell">
 <section class="pa-head"><div><span class="eyebrow">IEP 计划与进度 · 教师工作台</span><h1>{_e(student.get('display_name') or '学生')} · 计划与进度分析</h1>
 <p class="lead">{_e(task.get('course_name') or '课堂')} · {_e(task.get('lesson_date') or '日期未记录')} · 规则建议草案，教师修改后使用</p></div>
@@ -163,6 +196,7 @@ def render_plan_analysis(account: dict[str, Any], task: dict[str, Any], student:
 <section class="pa-card"><h2>目标进度</h2><p class="pa-note">6 分是试行参考线，不是正式及格/诊断；缺失测量不按 0 分补齐。</p>{''.join(goal_html) if goal_html else '<p class="pa-note">还没有短期目标。</p>'}</section>
 <section class="pa-card"><h2>学习速度与计划偏差</h2><p class="pa-note">{_e(speed_text)}</p><p class="pa-note">{_e(pace_text)}</p>
 <div class="pa-timeline">{stage_html}</div></section>
+<section class="pa-card"><h2>学习速度：同目标多次测量</h2><p class="pa-note">只有同一条短期目标在两个以上不同课堂日期都有已复核测量时，才计算分/周趋势；不把不同目标或同一天重复记录拼成趋势。</p>{pace_html}</section>
 <section class="pa-card"><h2>个案教学节奏建议</h2><p class="pa-note">以下为规则生成的草案，按学生实际接受度调整；不是正式教案，也不替代特教老师设计。</p>
 <div class="pa-grid">{boxes('每周', weekly)}{boxes('每月', monthly)}{boxes('每季度', quarterly)}{boxes('每学年', yearly)}</div></section>
 <section class="pa-card"><h2>边界</h2><p class="pa-note">学习速度只在有两次以上不同课堂日期的测量时才可比较；本页不伪造预测值。课堂状态线索受遮挡、光线、镜头影响，需教师结合现场观察。</p></section>
