@@ -196,6 +196,53 @@ def _student_metrics(records: list[dict[str, Any]], task_id: str) -> dict[str, A
     return metrics
 
 
+def _portrait(task: dict[str, Any], records: list[dict[str, Any]]) -> BytesIO | None:
+    """Crop the detected student from the anchor frame; no invented identity."""
+    try:
+        import json
+        result_path = str(task.get("result_path") or "")
+        video_path = str(task.get("file_path") or "")
+        if not result_path or not video_path:
+            return None
+        with open(result_path, encoding="utf-8") as handle:
+            raw = json.load(handle)
+        persons = ((raw.get("simple_student_analysis") or {}).get("persons") or [])
+        person_id = next((str(r.get("person_id") or "") for r in records if r.get("person_id")), "")
+        person = next((p for p in persons if str(p.get("person_id") or "") == person_id), None)
+        if not person:
+            return None
+        box = person.get("anchor_bbox") or {}
+        x, y = float(box.get("x", 0)), float(box.get("y", 0))
+        w, h = float(box.get("width", 0)), float(box.get("height", 0))
+        if w <= 0 or h <= 0:
+            return None
+        cap = cv2.VideoCapture(video_path)
+        try:
+            cap.set(cv2.CAP_PROP_POS_MSEC, max(0.0, float(person.get("anchor_time_sec") or 0)) * 1000)
+            ok, frame = cap.read()
+        finally:
+            cap.release()
+        if not ok or frame is None:
+            return None
+        height, width = frame.shape[:2]
+        pad = 0.25
+        x0 = max(0, int((x - w * pad) * width))
+        y0 = max(0, int((y - h * pad) * height))
+        x1 = min(width, int((x + w * (1 + pad)) * width))
+        y1 = min(height, int((y + h * (1 + pad)) * height))
+        crop = frame[y0:y1, x0:x1]
+        if crop.size == 0:
+            return None
+        crop = cv2.resize(crop, (360, int(crop.shape[0] * 360 / crop.shape[1])))
+        image = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
+        draw = ImageDraw.Draw(image, "RGBA")
+        draw.rectangle((0, image.height - 32, image.width, image.height), fill=(15, 42, 72, 180))
+        draw.text((10, image.height - 25), "检测到的学生画面", font=_font(15), fill="#ffffff")
+        return _image_bytes(image)
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
+
+
 def _add_picture(doc, image: BytesIO | None, caption: str, width=Inches(6.4)) -> None:
     if image is None:
         doc.add_paragraph("（本次没有可嵌入的课堂画面；仅保留文字与数据。）").style = "Caption"
@@ -285,6 +332,13 @@ def build_learning_report(*, task: dict[str, Any], student: dict[str, Any], plan
     doc.add_paragraph(f"{task.get('course_name') or '课堂'} · {task.get('lesson_date') or '日期未记录'} · 只读").runs[0].font.color.rgb = MUTED
     doc.add_paragraph(f"本课测量 {len(task_records)} 条，其中已复核 {len(reviewed)} 条。").runs[0].font.color.rgb = MUTED
     doc.add_paragraph()
+    portrait = _portrait(task, task_records)
+    if portrait is not None:
+        doc.add_picture(portrait, width=Inches(2.1))
+        doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        cap = doc.add_paragraph("学生画面（来自课堂证据帧）")
+        cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        cap.style = "Caption"
 
     # Required point 1: learning state.
     doc.add_heading("1. 本次课程的学习状态", level=1)
