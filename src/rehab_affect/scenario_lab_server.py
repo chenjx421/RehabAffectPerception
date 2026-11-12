@@ -1623,7 +1623,10 @@ def create_handler(
                     if isinstance(overview, dict) and isinstance(overview.get("overview"), dict):
                         overview = overview["overview"]
                     builder = importlib.import_module('.demo2_assessment_report', package=__package__)
-                    data = builder.build_assessment_report(task=task, student=student, plan=plan,
+                    report_task = dict(task)
+                    report_task['lesson_date'] = next((str(r.get('lesson_date') or '') for r in records
+                                                       if str(r.get('task_id') or '') == task_id and r.get('lesson_date')), '')
+                    data = builder.build_assessment_report(task=report_task, student=student, plan=plan,
                                                            lesson_goals=lesson_goals, records=records, overview=overview)
                     self._send_text_payload(data, content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                             extra_headers={"Content-Disposition": f'attachment; filename="student-assessment-{student_id[:8]}.docx"',

@@ -117,7 +117,7 @@ def build_assessment_report(*, task: dict[str, Any], student: dict[str, Any], pl
 
     doc.add_heading("口径与边界", level=1)
     doc.add_paragraph("本报告是教师复核辅助，不是正式 IEP，也不替代特教/临床判断。未关联、未复核或缺失的数据不按 0 分补齐。")
-    doc.add_paragraph("课程结论仍是原课程评价与学生目标达成的 60/40 口径；学生短期目标重算只在证据覆盖完整时展示。")
+    doc.add_paragraph("课程结论按课程评价 60% + 学生短期目标达成 40% 计算；5/5 学生证据完整时采用短期目标口径，覆盖不完整时保留原口径并标记缺口。")
     buffer = BytesIO()
     doc.save(buffer)
     return buffer.getvalue()
