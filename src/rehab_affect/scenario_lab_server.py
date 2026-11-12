@@ -1619,15 +1619,28 @@ def create_handler(
                         lesson_goals = [g for g in (current.get("goals") or []) if isinstance(g, dict)]
                     except Exception:
                         lesson_goals = []
-                    overview = self._course_overview(account, task_id)
-                    if isinstance(overview, dict) and isinstance(overview.get("overview"), dict):
-                        overview = overview["overview"]
-                    builder = importlib.import_module('.demo2_assessment_report', package=__package__)
+                    overview_payload = self._course_overview(account, task_id)
+                    overview = overview_payload.get("overview") if isinstance(overview_payload, dict) and isinstance(overview_payload.get("overview"), dict) else overview_payload
+                    if isinstance(overview, dict):
+                        try:
+                            overview["class_score"] = ((overview.get("conclusion") or {}).get("score")
+                                                       if isinstance(overview.get("conclusion"), dict) else None)
+                        except Exception:
+                            pass
+                    builder = importlib.import_module('.demo2_learning_report', package=__package__)
                     report_task = dict(task)
                     report_task['lesson_date'] = next((str(r.get('lesson_date') or '') for r in records
                                                        if str(r.get('task_id') or '') == task_id and r.get('lesson_date')), '')
-                    data = builder.build_assessment_report(task=report_task, student=student, plan=plan,
-                                                           lesson_goals=lesson_goals, records=records, overview=overview)
+                    try:
+                        with student_store._connect() as _db:
+                            _row = _db.execute("SELECT file_path, result_path FROM video_analysis_tasks WHERE task_id=?", (task_id,)).fetchone()
+                        if _row:
+                            report_task['file_path'] = _row['file_path'] or report_task.get('file_path', '')
+                            report_task['result_path'] = _row['result_path'] or report_task.get('result_path', '')
+                    except Exception:
+                        pass
+                    data = builder.build_learning_report(task=report_task, student=student, plan=plan,
+                                                         lesson_goals=lesson_goals, records=records, overview=overview)
                     self._send_text_payload(data, content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                             extra_headers={"Content-Disposition": f'attachment; filename="student-assessment-{student_id[:8]}.docx"',
                                                            "Cache-Control": "no-store, private"})
