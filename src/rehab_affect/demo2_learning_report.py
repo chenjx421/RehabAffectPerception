@@ -207,6 +207,31 @@ def _add_picture(doc, image: BytesIO | None, caption: str, width=Inches(6.4)) ->
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
 
+def _iep_support(records: list[dict[str, Any]]) -> tuple[list[tuple[str, str, str]], str]:
+    wanted = {"support_needs", "teaching_strategies", "precautions", "assessment_methods"}
+    seen = set()
+    rows = []
+    manual = ""
+    for record in records:
+        if not isinstance(record.get("iep_support"), list):
+            continue
+        for item in record["iep_support"]:
+            if not isinstance(item, dict):
+                continue
+            category = str(item.get("category") or "")
+            text = str(item.get("text") or "").strip()
+            if category not in wanted or not text or text in seen:
+                continue
+            seen.add(text)
+            rows.append((str(item.get("category_label") or category), text, str(item.get("page") or "")))
+            if len(rows) >= 8:
+                break
+        manual = manual or str(record.get("iep_manual_supplement") or "").strip()
+        if len(rows) >= 8:
+            break
+    return rows, manual
+
+
 def build_learning_report(*, task: dict[str, Any], student: dict[str, Any], plan: dict[str, Any] | None,
                           lesson_goals: list[dict[str, Any]], records: list[dict[str, Any]],
                           overview: dict[str, Any]) -> bytes:
@@ -221,6 +246,7 @@ def build_learning_report(*, task: dict[str, Any], student: dict[str, Any], plan
     class_score = conclusion.get("score") if isinstance(conclusion, dict) else (overview.get("class_score") if isinstance(overview, dict) else None)
     grade = ((conclusion.get("grade") or {}).get("label") if isinstance(conclusion, dict) else "") or ""
     metrics = _student_metrics(records, task_id)
+    iep_rows, iep_manual = _iep_support(task_records)
     states = Counter(str(r.get("observed_state") or "未标注") for r in task_records)
     state_text = "、".join(f"{k} {v} 条" for k, v in states.most_common(4)) or "暂无状态标注"
 
@@ -337,6 +363,11 @@ def build_learning_report(*, task: dict[str, Any], student: dict[str, Any], plan
     doc.add_heading("4. IEP 与长期教学规划建议", level=1)
     long_term = (plan or {}).get("long_term") or "未填写长期目标"
     doc.add_paragraph(f"长期目标：{long_term}")
+    if iep_rows:
+        doc.add_paragraph("本课 IEP 支持摘要（只列支持方式、教学策略、注意事项和评估方式）：")
+        _table(doc, ["类别", "内容", "页码"], [[a, b, c] for a, b, c in iep_rows], widths=[3.2, 10.4, 2.0])
+    if iep_manual:
+        doc.add_paragraph("教师人工补充：" + iep_manual)
     if goals:
         doc.add_paragraph("短期目标与建议：")
         for index, g in enumerate(goals, start=1):
