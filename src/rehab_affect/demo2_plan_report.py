@@ -169,7 +169,20 @@ def build_plan_report(*, task: dict[str, Any], student: dict[str, Any], plan: di
            widths=[1.7, 4.2, 6.0, 3.2, 3.0])
     doc.add_paragraph("每周建议只作为一个短周期，不把 4 周表当成固定教案；学生接受度慢时，重复第 1–2 周，不强行进入第 3 周。")
 
-    doc.add_heading("五、月 / 季度 / 年安排", level=1)
+    doc.add_heading("五、每条短期目标的四周安排", level=1)
+    per_goal_rows = []
+    for index, row in enumerate(rows, start=1):
+        goal = row["goal"]
+        per_goal_rows.extend([
+            [f"G-{index:02d}", "第 1 周", f"基线探测：围绕“{goal}”示范一次，学生完成第一步；记录提示等级。", "视觉提示/手势", "完成/未完成 + 提示等级"],
+            [f"G-{index:02d}", "第 2 周", f"重复“{goal}”，减少一次提示；把任务拆成两个短回合。", "分段指令/等待", "每回合记录"],
+            [f"G-{index:02d}", "第 3 周", f"把“{goal}”迁移到另一种材料或加入同伴情境；不一次增加两个新要求。", "同伴示范/逐步撤除提示", "课堂观察"],
+            [f"G-{index:02d}", "第 4 周", f"同目标同条件复测“{goal}”；根据分数和提示等级决定进阶、维持或降阶。", "同目标同支持", "复测记录"],
+        ])
+    _table(doc, ["目标", "周次", "活动建议", "支持方式", "证据"], per_goal_rows,
+           widths=[1.4, 1.8, 8.0, 3.5, 3.0])
+
+    doc.add_heading("六、月 / 季度 / 年安排", level=1)
     rhythm_rows = [
         ["每月", "第 4 周做一次同目标复测；比较分数和提示等级，不只看一次课堂表现。", "同目标复测、教师观察"],
         ["每季度", "回看长期目标和 1/2/4/8 周记录；保留有效支持，删除无效提示，把已达到目标转为维持/迁移。", "阶段复盘、目标调整"],
@@ -177,7 +190,7 @@ def build_plan_report(*, task: dict[str, Any], student: dict[str, Any], plan: di
     ]
     _table(doc, ["周期", "建议", "支持/评估"], rhythm_rows, widths=[2.0, 9.0, 5.0])
 
-    doc.add_heading("六、边界", level=1)
+    doc.add_heading("七、边界", level=1)
     doc.add_paragraph("本报告由规则草案生成，必须由特教老师结合学生实际修改后使用；不替代正式 IEP、医学或心理诊断。")
     doc.add_paragraph("未复核测量、缺失阶段不按 0 分补齐；不同学生之间不做横向排名。")
     buffer = BytesIO(); doc.save(buffer); return buffer.getvalue()
