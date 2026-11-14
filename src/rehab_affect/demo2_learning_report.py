@@ -218,12 +218,35 @@ def _timeline(records: list[dict[str, Any]]) -> list[tuple[str, str, str]]:
     return rows
 
 
-def _portrait(task: dict[str, Any], records: list[dict[str, Any]]) -> BytesIO | None:
-    """Crop the detected student from the anchor frame; no invented identity."""
+def _portrait(task: dict[str, Any], records: list[dict[str, Any]], bbox: dict[str, Any] | None = None) -> BytesIO | None:
+    """Crop the teacher-confirmed seat if available; otherwise use the detected anchor."""
     try:
         import json
         result_path = str(task.get("result_path") or "")
         video_path = str(task.get("file_path") or "")
+        if bbox and video_path:
+            x, y = float(bbox.get("x", 0)), float(bbox.get("y", 0))
+            w, h = float(bbox.get("width", 0)), float(bbox.get("height", 0))
+            if w > 0 and h > 0:
+                cap = cv2.VideoCapture(video_path)
+                try:
+                    cap.set(cv2.CAP_PROP_POS_MSEC, 300.0 * 1000)
+                    ok, frame = cap.read()
+                finally:
+                    cap.release()
+                if ok and frame is not None:
+                    height, width = frame.shape[:2]
+                    pad = 0.35
+                    x0 = max(0, int((x - w * pad) * width)); y0 = max(0, int((y - h * pad) * height))
+                    x1 = min(width, int((x + w * (1 + pad)) * width)); y1 = min(height, int((y + h * (1 + pad)) * height))
+                    crop = frame[y0:y1, x0:x1]
+                    if crop.size:
+                        crop = cv2.resize(crop, (360, int(crop.shape[0] * 360 / crop.shape[1])))
+                        image = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
+                        draw = ImageDraw.Draw(image, "RGBA")
+                        draw.rectangle((0, image.height - 32, image.width, image.height), fill=(15, 42, 72, 180))
+                        draw.text((10, image.height - 25), "教师确认座位中的学生画面", font=_font(13), fill="#ffffff")
+                        return _image_bytes(image)
         if not result_path or not video_path:
             return None
         with open(result_path, encoding="utf-8") as handle:
@@ -303,7 +326,7 @@ def _iep_support(records: list[dict[str, Any]]) -> tuple[list[tuple[str, str, st
 
 def build_learning_report(*, task: dict[str, Any], student: dict[str, Any], plan: dict[str, Any] | None,
                           lesson_goals: list[dict[str, Any]], records: list[dict[str, Any]],
-                          overview: dict[str, Any]) -> bytes:
+                          overview: dict[str, Any], student_bbox: dict[str, Any] | None = None) -> bytes:
     task_id = str(task.get("task_id") or "")
     task_records = [r for r in records if str(r.get("task_id") or "") == task_id]
     goals = _plan_goals(plan, task_records, lesson_goals)
@@ -355,7 +378,7 @@ def build_learning_report(*, task: dict[str, Any], student: dict[str, Any], plan
     doc.add_paragraph(f"{task.get('course_name') or '课堂'} · {task.get('lesson_date') or '日期未记录'} · 只读").runs[0].font.color.rgb = MUTED
     doc.add_paragraph(f"本课测量 {len(task_records)} 条，其中已复核 {len(reviewed)} 条。").runs[0].font.color.rgb = MUTED
     doc.add_paragraph()
-    portrait = _portrait(task, task_records)
+    portrait = _portrait(task, task_records, student_bbox)
     if portrait is not None:
         doc.add_picture(portrait, width=Inches(2.1))
         doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER

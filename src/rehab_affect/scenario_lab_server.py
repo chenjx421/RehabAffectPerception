@@ -1690,16 +1690,23 @@ def create_handler(
                     report_task = dict(task)
                     report_task['lesson_date'] = next((str(r.get('lesson_date') or '') for r in records
                                                        if str(r.get('task_id') or '') == task_id and r.get('lesson_date')), '')
+                    student_bbox = None
                     try:
                         with student_store._connect() as _db:
                             _row = _db.execute("SELECT file_path, result_path FROM video_analysis_tasks WHERE task_id=?", (task_id,)).fetchone()
+                            _binding = _db.execute("""SELECT bbox_json FROM demo2_identity_bindings
+                                WHERE task_id=? AND student_id=? AND status='confirmed'
+                                ORDER BY created_at DESC LIMIT 1""", (task_id, student_id)).fetchone()
                         if _row:
                             report_task['file_path'] = _row['file_path'] or report_task.get('file_path', '')
                             report_task['result_path'] = _row['result_path'] or report_task.get('result_path', '')
+                        if _binding:
+                            student_bbox = json.loads(_binding['bbox_json'])
                     except Exception:
                         pass
                     data = builder.build_learning_report(task=report_task, student=student, plan=plan,
-                                                         lesson_goals=lesson_goals, records=records, overview=overview)
+                                                         lesson_goals=lesson_goals, records=records, overview=overview,
+                                                         student_bbox=student_bbox)
                     self._send_text_payload(data, content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                             extra_headers={"Content-Disposition": f'attachment; filename="student-assessment-{student_id[:8]}.docx"',
                                                            "Cache-Control": "no-store, private"})
