@@ -143,6 +143,17 @@ def build_plan_report(*, task: dict[str, Any], student: dict[str, Any], plan: di
     else:
         doc.add_paragraph(f"目前有 {len(dates)} 个不同课堂日期（{dates[0]} 至 {dates[-1]}），可比较同目标分数变化；"
                           "本报告只描述分差，不把分差直接等同学习能力。")
+    plan_weeks = int((plan or {}).get("weeks") or 4)
+    if avg is not None and avg < 6:
+        weeks_done = 0
+        if dates:
+            try:
+                weeks_done = max(0, (datetime.fromisoformat(dates[-1]).date() - base).days // 7)
+            except ValueError:
+                weeks_done = 0
+        remaining = max(1, plan_weeks - weeks_done)
+        doc.add_paragraph(f"计划线：按 {plan_weeks} 周目标，剩余约 {remaining} 周需平均每周提高 "
+                          f"{(6 - avg) / remaining:.2f} 分才能到 6 分参考线；这是计划要求，不是已验证速度。")
     if below:
         doc.add_paragraph(f"当前有 {len(below)} 条目标低于 6 分参考线。建议先补最弱维度，不增加新目标；"
                           "连续两次低于参考线时降低任务难度或增加支持。")

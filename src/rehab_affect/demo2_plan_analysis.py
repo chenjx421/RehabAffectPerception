@@ -161,6 +161,16 @@ def render_plan_analysis(account: dict[str, Any], task: dict[str, Any], student:
                       "先按阶段补一次复测，再用两次测量差判断。")
     else:
         speed_text = f"已有 {len(dates)} 个课堂日期，可比较趋势；本页只显示分差，不把分差直接等同学习能力。"
+    plan_weeks = int((plan or {}).get("weeks") or 4)
+    remaining_weeks = max(1, plan_weeks - current_week)
+    if student_avg is not None and student_avg < 6:
+        required = (6 - student_avg) / remaining_weeks
+        plan_line = (f"计划线：按 {plan_weeks} 周目标，剩余 {remaining_weeks} 周需平均每周提高 {_num(required, 2)} 分才能到 6 分参考线；"
+                     "这是计划要求，不是已经验证的学习速度。")
+    elif student_avg is not None:
+        plan_line = "计划线：当前已达到 6 分参考线，下一阶段以维持和迁移为主。"
+    else:
+        plan_line = "计划线：当前没有已复核测量，不能计算所需周增益。"
     if below:
         pace_text = f"当前有 {len(below)} 条目标低于 6 分参考线，建议下一阶段先补最弱维度“{weakest[0]}”，不要同时加新目标。"
     elif above:
@@ -209,6 +219,7 @@ def render_plan_analysis(account: dict[str, Any], task: dict[str, Any], student:
 <section class="pa-card"><h2>目标进度</h2><p class="pa-note">6 分是试行参考线，不是正式及格/诊断；缺失测量不按 0 分补齐。</p>{''.join(goal_html) if goal_html else '<p class="pa-note">还没有短期目标。</p>'}</section>
 <section class="pa-card"><h2>学习速度与计划偏差</h2><p class="pa-note">{_e(speed_text)}</p><p class="pa-note">{_e(pace_text)}</p>
 <div class="pa-timeline">{stage_html}</div></section>
+<section class="pa-card"><h2>计划线与所需周增益</h2><p class="pa-note">{_e(plan_line)}</p></section>
 <section class="pa-card"><h2>学习速度：同目标多次测量</h2><p class="pa-note">只有同一条短期目标在两个以上不同课堂日期都有已复核测量时，才计算分/周趋势；不把不同目标或同一天重复记录拼成趋势。</p>{pace_html}</section>
 <section class="pa-card"><h2>个案教学节奏建议</h2><p class="pa-note">以下为规则生成的草案，按学生实际接受度调整；不是正式教案，也不替代特教老师设计。</p>
 <div class="pa-grid">{boxes('每周', weekly)}{boxes('每月', monthly)}{boxes('每季度', quarterly)}{boxes('每学年', yearly)}</div></section>
